@@ -1109,6 +1109,7 @@ body{background:#03070a;font-family:'Inter',sans-serif;}
   radial-gradient(120% 80% at 50% 125%,rgba(63,240,192,.06),transparent 60%),
   radial-gradient(100% 70% at 50% -25%,rgba(86,40,150,.12),transparent 60%),#03070a;}
 #entity{position:fixed;inset:0;z-index:-2;pointer-events:none;}
+#watcher{position:fixed;inset:0;z-index:57;pointer-events:none;opacity:.5;mix-blend-mode:screen;}
 #eldPulse{position:fixed;inset:0;z-index:59;pointer-events:none;opacity:0;transition:opacity .07s linear;
   background:radial-gradient(circle at 50% 50%,transparent 46%,rgba(63,240,192,.20) 78%,rgba(123,77,255,.30) 100%);}
 #eldCursor{position:fixed;left:-600px;top:-600px;width:280px;height:280px;border-radius:50%;
@@ -1143,6 +1144,7 @@ body.insane{animation:insane 2.6s ease-in-out infinite;}
 
 <div id="abyss"></div>
 <canvas id="entity"></canvas>
+<canvas id="watcher"></canvas>
 <div id="eldCursor"></div>
 <div id="eldPulse"></div>
 <div id="eldVig"></div>
@@ -1188,13 +1190,69 @@ body.insane{animation:insane 2.6s ease-in-out infinite;}
   addEventListener('pointermove',e=>{cg.style.left=e.clientX+'px';cg.style.top=e.clientY+'px';},{passive:true});
 
   /* ---- abyss entity canvas (drifting bioluminescent spores) ---- */
-  const cv=document.getElementById('entity'),ctx=cv.getContext('2d');let w,h,spores;
-  function resize(){w=cv.width=innerWidth;h=cv.height=innerHeight;
+  const cv=document.getElementById('entity'),ctx=cv.getContext('2d');
+  const wc=document.getElementById('watcher'),wx=wc.getContext('2d');
+  let w,h,spores;
+  function resize(){w=cv.width=wc.width=innerWidth;h=cv.height=wc.height=innerHeight;
     const N=Math.min(90,Math.floor(innerWidth/16));
     spores=Array.from({length:N},()=>({x:Math.random()*w,y:Math.random()*h,r:Math.random()*1.8+.4,
       vx:(Math.random()-.5)*.15,vy:(Math.random()-.5)*.15,tw:Math.random()*6.28,
       c:Math.random()<.5?'#3ff0c0':'#7dffae'}));}
   resize();addEventListener('resize',resize);
+
+  /* ---- the watching entity: giant eye + writhing tentacles ---- */
+  let T=0, eyeOpen=1, blinking=false, blinkPhase=0, blinkCountdown=160;
+  function drawTentacle(c,bx,by,ang0,len,col,phase,a){
+    const segs=14;let x=bx,y=by,ang=ang0,px=x,py=y;
+    const writhe=0.20+a*0.55;
+    c.globalCompositeOperation='lighter';c.lineCap='round';
+    for(let i=1;i<=segs;i++){
+      const f=i/segs;
+      ang+=Math.sin(T*1.1+phase+i*0.5)*writhe*(0.4+f);
+      const seg=len/segs;x+=Math.cos(ang)*seg;y+=Math.sin(ang)*seg;
+      c.lineWidth=(1-f)*(len*0.05)+1.2;
+      c.strokeStyle=col.replace('A',(0.10+(1-f)*0.22+a*0.18).toFixed(3));
+      c.beginPath();c.moveTo(px,py);c.lineTo(x,y);c.stroke();
+      if(i%2===0){c.fillStyle=col.replace('A',(0.14+a*0.18).toFixed(3));
+        c.beginPath();c.arc(px,py,(1-f)*(len*0.022)+0.8,0,6.283);c.fill();}
+      px=x;py=y;
+    }
+  }
+  function drawTentacles(c,a){
+    const L=Math.min(w,h);
+    drawTentacle(c,w*0.04,h+12,-Math.PI*0.62,L*0.72,'rgba(63,240,192,A)',0.0,a);
+    drawTentacle(c,w*0.21,h+12,-Math.PI*0.52,L*0.62,'rgba(123,77,255,A)',1.3,a);
+    drawTentacle(c,w*0.97,h+12,-Math.PI*0.40,L*0.72,'rgba(63,240,192,A)',2.1,a);
+    drawTentacle(c,w*0.80,h+12,-Math.PI*0.48,L*0.60,'rgba(123,77,255,A)',3.0,a);
+    drawTentacle(c,-12,h*0.72,-Math.PI*0.06,L*0.50,'rgba(63,240,192,A)',4.0,a);
+    drawTentacle(c,w+12,h*0.66,-Math.PI*0.94,L*0.50,'rgba(123,77,255,A)',5.0,a);
+  }
+  function drawEye(c,a){
+    const cx=w/2, cy=h*0.43, R=Math.min(w,h)*0.27, eh=R*0.60*eyeOpen;
+    c.save();c.globalCompositeOperation='lighter';
+    const g=c.createRadialGradient(cx,cy,0,cx,cy,R*1.6);
+    g.addColorStop(0,'rgba(63,240,192,'+(0.05+a*0.22)+')');g.addColorStop(1,'rgba(63,240,192,0)');
+    c.fillStyle=g;c.beginPath();c.arc(cx,cy,R*1.6,0,6.283);c.fill();
+    if(eyeOpen<0.06){c.restore();return;}
+    // almond shape
+    c.beginPath();c.moveTo(cx-R,cy);c.quadraticCurveTo(cx,cy-eh,cx+R,cy);c.quadraticCurveTo(cx,cy+eh,cx-R,cy);c.closePath();
+    c.fillStyle='rgba(8,34,30,'+(0.55*eyeOpen)+')';c.fill();
+    c.save();c.clip();
+    const irisR=eh*1.35;
+    const ig=c.createRadialGradient(cx,cy,irisR*0.1,cx,cy,irisR);
+    ig.addColorStop(0,'rgba(125,255,174,'+(0.5+a)+')');ig.addColorStop(.5,'rgba(63,240,192,.6)');ig.addColorStop(1,'rgba(123,77,255,.55)');
+    c.fillStyle=ig;c.beginPath();c.arc(cx,cy,irisR,0,6.283);c.fill();
+    c.strokeStyle='rgba(3,7,10,.35)';c.lineWidth=1;
+    for(let i=0;i<26;i++){const an=i/26*6.283;c.beginPath();c.moveTo(cx,cy);c.lineTo(cx+Math.cos(an)*irisR,cy+Math.sin(an)*irisR);c.stroke();}
+    const pw=irisR*(0.12+a*0.5), ph=irisR*(0.92-a*0.3);
+    c.globalCompositeOperation='source-over';c.fillStyle='#02040a';c.beginPath();c.ellipse(cx,cy,pw,ph,0,0,6.283);c.fill();
+    c.globalCompositeOperation='lighter';c.strokeStyle='rgba(125,255,174,'+(0.3+a)+')';c.lineWidth=1.5;
+    c.beginPath();c.ellipse(cx,cy,pw,ph,0,0,6.283);c.stroke();
+    c.restore();
+    c.strokeStyle='rgba(63,240,192,.45)';c.lineWidth=1.5;
+    c.beginPath();c.moveTo(cx-R,cy);c.quadraticCurveTo(cx,cy-eh,cx+R,cy);c.quadraticCurveTo(cx,cy+eh,cx-R,cy);c.stroke();
+    c.restore();
+  }
 
   /* ---- whispers ---- */
   const wEl=document.getElementById('whisper');let wTimer;
@@ -1233,7 +1291,7 @@ body.insane{animation:insane 2.6s ease-in-out infinite;}
     updateSanity();
     document.body.classList.toggle('insane',sanity<35);
     if(a>0.20&&Math.random()<0.012) showWhisper();
-    // draw spores
+    // draw spores (behind)
     ctx.clearRect(0,0,w,h);
     const boost=1+a*4;
     for(const s of spores){
@@ -1245,6 +1303,16 @@ body.insane{animation:insane 2.6s ease-in-out infinite;}
       ctx.globalAlpha=tw*0.08;ctx.beginPath();ctx.arc(s.x,s.y,s.r*boost*4,0,6.283);ctx.fill();
     }
     ctx.globalAlpha=1;
+    // the watcher (front overlay): tentacles + giant eye
+    T+=0.016;
+    blinkCountdown--;
+    if(blinkCountdown<=0&&!blinking){blinking=true;blinkPhase=0;}
+    if(blinking){blinkPhase+=0.13;eyeOpen=Math.abs(Math.cos(blinkPhase));
+      if(blinkPhase>=Math.PI){blinking=false;eyeOpen=1;blinkCountdown=160+Math.floor(Math.random()*320);}}
+    wx.clearRect(0,0,w,h);
+    drawTentacles(wx,a);
+    drawEye(wx,a);
+    wx.globalCompositeOperation='source-over';
   }
   tick();
 
@@ -1254,16 +1322,22 @@ body.insane{animation:insane 2.6s ease-in-out infinite;}
   const pick=a=>a[Math.floor(Math.random()*a.length)];
   function summon(){
     if(typeof isAudioInitialized!=='undefined'&&!isAudioInitialized){const b=document.getElementById('btnInitAudio');if(b)b.click();}
-    const types=['sawtooth','square','sine','triangle'];
+    const dark=['sawtooth','square','triangle'];
     const p={
-      osc1:{type:pick(types),octave:Math.round(RND(-1,1)),detune:Math.round(RND(-12,12)),mix:RND(.45,.9)},
-      osc2:{type:pick(types),octave:Math.round(RND(-2,1)),detune:Math.round(RND(-12,12)),mix:RND(.2,.8)},
-      sub:{mix:RND(0,.6)},noise:{mix:RND(0,.25)},
-      filter:{type:pick(['lowpass','highpass','bandpass']),cutoff:RND(220,6500),reso:RND(1,16),envAmt:RND(0,4500)},
-      envAmp:{a:RND(.005,.5),d:RND(.1,.8),s:RND(.2,.9),r:RND(.2,1.4)},
-      envFlt:{a:RND(.01,.45),d:RND(.1,.6),s:RND(.1,.7),r:RND(.2,1)},
-      lfo1:{rate:RND(.2,8),pitchAmt:RND(0,28)},lfo2:{rate:RND(.2,6),fltAmt:RND(0,1800)},
-      fx:{eqLow:RND(-5,5),eqHigh:RND(-5,5),dist:RND(0,.45),chorusDepth:RND(0,.01),delayMix:RND(0,.4),reverbMix:RND(0,.6)}
+      // 2基のオシレーターを逆方向へ最大デチューン → 不協和なうなり
+      osc1:{type:pick(dark),octave:pick([0,0,-1]),    detune:Math.round(RND(-50,-18)),mix:RND(.65,.95)},
+      osc2:{type:pick(dark),octave:pick([-2,-1,-1,0]),detune:Math.round(RND(18,50)),  mix:RND(.55,.92)},
+      sub:{mix:RND(.5,.9)},              // 深い土台
+      noise:{mix:RND(.06,.3)},           // 息づかい/ヒス
+      // 暗く・こもった・共鳴する咆哮
+      filter:{type:pick(['lowpass','lowpass','bandpass']),cutoff:RND(170,1300),reso:RND(9,26),envAmt:RND(-1200,2600)},
+      // ゆっくり立ち上がり長く尾を引くドローン
+      envAmp:{a:RND(.4,1.9),d:RND(.3,1.2),s:RND(.7,1.0),r:RND(1.8,4.8)},
+      envFlt:{a:RND(.4,2.2),d:RND(.5,2),s:RND(.3,.8),r:RND(1.2,3.5)},
+      // 酔うようなピッチ揺れ & うめくフィルター
+      lfo1:{rate:RND(.1,1.1),pitchAmt:RND(10,45)},lfo2:{rate:RND(.1,1.4),fltAmt:RND(400,1700)},
+      // 地鳴り低域・暗い高域・歪み・洞窟の残響
+      fx:{eqLow:RND(3,11),eqHigh:RND(-13,-3),dist:RND(.15,.6),chorusDepth:RND(.005,.018),delayMix:RND(.2,.6),reverbMix:RND(.55,.95)}
     };
     if(typeof applyAiPreset==='function') applyAiPreset(p);
     showWhisper("⛧ "+pick(SUMMON_NAMES)+" ⛧");
