@@ -227,6 +227,36 @@
   footer .social a:hover{color:#fff;border-color:var(--p2);transform:translateY(-2px);box-shadow:0 0 20px -6px var(--p2)}
   footer .sig{font-family:var(--mono);letter-spacing:.04em}
 
+  /* ===== end gate (hidden door to the studio) ===== */
+  .endgate{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:34px;text-align:center;position:relative;border-top:1px solid var(--line);overflow:hidden}
+  .endgate .eg-kicker{font-family:var(--mono);font-size:12px;letter-spacing:.34em;color:var(--muted)}
+  .endgate h2{font-size:clamp(30px,6vw,66px);font-weight:900;letter-spacing:-.02em;line-height:1.05}
+  .endgate h2 .g{background:linear-gradient(110deg,#7dffae,#33e7c8 45%,#7b4dff);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .endgate p.note{font-family:var(--mono);color:var(--muted);font-size:13px;max-width:460px}
+  .gate{position:relative;width:220px;height:220px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;text-decoration:none;transition:transform .3s,box-shadow .3s}
+  .gate:hover{transform:scale(1.06)}
+  .gate .core{position:absolute;inset:30px;border-radius:50%;
+    background:radial-gradient(circle,rgba(51,231,200,.18),rgba(123,77,255,.1) 55%,transparent 72%);
+    box-shadow:0 0 60px rgba(51,231,200,.25) inset;animation:portal 6s ease-in-out infinite}
+  .gate .ring{position:absolute;inset:0;border-radius:50%;border:1px dashed rgba(51,231,200,.4);animation:spin 14s linear infinite}
+  .gate .ring.r2{inset:18px;border-style:solid;border-color:rgba(123,77,255,.3);animation-duration:9s;animation-direction:reverse}
+  .gate .label{position:relative;z-index:2;font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.1em;
+    text-transform:uppercase;color:#eaf7f2;text-shadow:0 0 12px rgba(51,231,200,.6)}
+  .gate:hover .core{box-shadow:0 0 90px rgba(51,231,200,.45) inset}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* pull-to-enter indicator */
+  #pull{position:fixed;left:50%;bottom:38px;transform:translateX(-50%) scale(.8);z-index:55;
+    width:74px;height:74px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
+    background:conic-gradient(var(--p2) calc(var(--pp,0)*1%),rgba(255,255,255,.07) 0)}
+  #pull.show{opacity:1;transform:translateX(-50%) scale(1)}
+  #pull .inner{width:62px;height:62px;border-radius:50%;background:rgba(4,5,10,.92);display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--p2);text-align:center;line-height:1.2}
+
   ::-webkit-scrollbar{width:11px}
   ::-webkit-scrollbar-track{background:var(--bg)}
   ::-webkit-scrollbar-thumb{background:linear-gradient(var(--p1),var(--p2));border-radius:99px;border:3px solid var(--bg)}
@@ -340,6 +370,21 @@
   </div>
 </footer>
 
+<!-- hidden door at the very bottom -> the Studio -->
+<section class="endgate" id="endgate">
+  <div class="eg-kicker">// END OF TRANSMISSION</div>
+  <h2>その先に、<span class="g">音の実験室</span>。</h2>
+  <a class="gate" href="sy.html" id="gate">
+    <span class="ring"></span>
+    <span class="ring r2"></span>
+    <span class="core"></span>
+    <span class="label">Enter<br>Studio</span>
+  </a>
+  <p class="note">深淵の底に隠された SYNTH STUDIO。<br>クリックして起動 — あるいは、さらにスクロールして落ちろ。</p>
+</section>
+
+<div id="pull"><div class="inner" id="pull-inner">PULL</div></div>
+
 <script>
 /* =================================================================
    ▼▼▼ ここだけ編集すればOK（CONFIG） ▼▼▼
@@ -452,6 +497,25 @@ function initEffects(){
   setInterval(glitchOnce,4200);
 }
 
+/* ---------- pull-to-enter the studio ---------- */
+function initEndgate(){
+  const pull=$("#pull"),pi=$("#pull-inner");let p=0,atBottom=false,decay;
+  function check(){const d=document.documentElement;atBottom=(d.scrollTop+innerHeight)>=(d.scrollHeight-3)}
+  addEventListener("scroll",check,{passive:true});check();
+  function setP(v){p=Math.max(0,Math.min(100,v));pull.style.setProperty("--pp",p);
+    pull.classList.toggle("show",p>2);pi.textContent=p>=100?"GO →":(p>55?"MORE":"PULL");
+    if(p>=100){location.href="sy.html"}}
+  addEventListener("wheel",e=>{
+    if(atBottom&&e.deltaY>0){setP(p+e.deltaY*0.22);clearTimeout(decay);decay=setTimeout(()=>setP(0),700)}
+    else if(e.deltaY<0&&p>0){setP(p-16)}
+  },{passive:true});
+  // touch overscroll (mobile)
+  let ty=0;
+  addEventListener("touchstart",e=>{ty=e.touches[0].clientY},{passive:true});
+  addEventListener("touchmove",e=>{const dy=ty-e.touches[0].clientY;ty=e.touches[0].clientY;
+    if(atBottom&&dy>0){setP(p+dy*0.6);clearTimeout(decay);decay=setTimeout(()=>setP(0),700)}},{passive:true});
+}
+
 /* ---------- boot sequence ---------- */
 function boot(){
   const word=$("#boot-word"),log=$("#boot-log");
@@ -466,7 +530,7 @@ function boot(){
   },2300);
 }
 
-renderSite();renderGames();renderVideos();starfield();initEffects();boot();
+renderSite();renderGames();renderVideos();starfield();initEffects();initEndgate();boot();
 </script>
 </body>
 </html>

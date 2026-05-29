@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Ultimate Web Synth Studio</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+    /* 全体・スクロールバー設定 */
+    :root { --p-bg: #111827; --p-panel: #1f2937; --p-border: #374151; --accent: #0ea5e9; --accent-hover: #38bdf8; --text-main: #f3f4f6; --text-muted: #9ca3af; }
+    body { background-color: var(--p-bg); color: var(--text-main); font-family: 'Inter', sans-serif; touch-action: none; overflow: hidden; margin: 0; padding: 0; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--p-bg); }
+    ::-webkit-scrollbar-thumb { background: var(--p-border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+    
+    /* レイアウトグリッド：余白を極限まで削減 */
+    .app-container { display: flex; flex-direction: column; height: 100vh; padding: 6px; gap: 6px; box-sizing: border-box; }
+    .header-area { display: flex; justify-content: space-between; align-items: center; background: var(--p-panel); padding: 6px 12px; border-radius: 6px; border: 1px solid var(--p-border); flex-shrink: 0; }
+    .main-area { display: grid; grid-template-columns: 2fr 1fr; gap: 6px; flex: 1; overflow: hidden; min-height: 0; }
+    .synth-rack { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; overflow-y: auto; padding-right: 4px; align-content: start; }
+    @media (max-width: 1024px) { .main-area { grid-template-columns: 1fr; overflow-y: auto; } .synth-rack { grid-template-columns: repeat(2, 1fr); overflow: visible; } }
+    @media (max-width: 640px) { .synth-rack { grid-template-columns: 1fr; } }
+    
+    /* パネル共通：パディングを縮小 */
+    .module-panel { background: var(--p-panel); border: 1px solid var(--p-border); border-radius: 6px; padding: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column; }
+    .module-title { font-size: 0.7rem; font-weight: 700; color: var(--accent); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--p-border); padding-bottom: 3px; display: flex; justify-content: space-between; align-items: center;}
+    
+    /* カスタムツマミ (Knob) UI：小型化して密度アップ */
+    .knobs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(42px, 1fr)); gap: 4px; justify-items: center; }
+    .knob-container { display: flex; flex-direction: column; align-items: center; width: 42px; }
+    .knob-label { font-size: 0.55rem; color: var(--text-muted); margin-bottom: 2px; text-align: center; height: 12px; overflow: hidden; white-space: nowrap; width: 100%; text-overflow: ellipsis;}
+    .knob-value { font-size: 0.55rem; color: var(--accent); margin-top: 2px; font-family: monospace; }
+    .knob-body { width: 32px; height: 32px; border-radius: 50%; background: conic-gradient(from 210deg, var(--accent) 0%, var(--p-border) 0%); box-shadow: inset 0 0 4px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.3); position: relative; cursor: ns-resize; display: flex; justify-content: center; align-items: center; }
+    .knob-inner { width: 22px; height: 22px; border-radius: 50%; background: #2a3441; border: 1px solid #111; position: absolute; pointer-events: none; }
+    .knob-indicator { width: 2px; height: 10px; background: #fff; position: absolute; top: 2px; border-radius: 1px; transform-origin: 50% 14px; pointer-events: none; }
+    
+    /* トグル・セレクト */
+    .ctrl-select { background: #111; color: var(--text-main); border: 1px solid var(--p-border); border-radius: 4px; padding: 2px 4px; font-size: 0.65rem; width: 100%; outline: none; margin-bottom: 6px;}
+    
+    /* ビジュアライザー：高さを抑える */
+    .visualizer-container { background: #000; border-radius: 4px; border: 1px solid var(--p-border); overflow: hidden; position: relative; flex: 1; min-height: 60px;}
+    canvas { display: block; width: 100%; height: 100%; }
+    
+    /* シーケンサー (ピアノロール) */
+    .seq-panel { display: flex; flex-direction: column; overflow: hidden; flex: 1; }
+    .seq-controls { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+    .seq-grid-container { flex: 1; overflow: auto; background: #111; border: 1px solid var(--p-border); border-radius: 4px; position: relative; min-height: 100px; }
+    .seq-grid { display: grid; position: relative; }
+    .seq-cell { border-right: 1px solid #222; border-bottom: 1px solid #222; cursor: pointer; transition: background 0.1s; }
+    .seq-cell:hover { background: #2a3441; }
+    .seq-cell.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); border-radius: 2px; margin: 1px;}
+    .seq-row-label { font-size: 0.5rem; color: #666; display: flex; align-items: center; justify-content: flex-end; padding-right: 4px; border-bottom: 1px solid #222; background: #0a0a0a; position: sticky; left: 0; z-index: 10;}
+    .seq-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(255, 255, 255, 0.5); pointer-events: none; box-shadow: 0 0 10px #fff; display: none;}
+    
+    /* 鍵盤：高さを縮小 */
+    .keyboard-area { height: 80px; display: flex; justify-content: center; background: var(--p-panel); border: 1px solid var(--p-border); border-radius: 6px; padding: 6px; position: relative; user-select: none; flex-shrink: 0; }
+    .keys-container { position: relative; height: 100%; display: flex; }
+    .key-w { background: linear-gradient(to bottom, #fff 0%, #e0e0e0 100%); border: 1px solid #999; border-radius: 0 0 3px 3px; width: 32px; height: 100%; position: relative; z-index: 1; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; color: #666; font-size: 0.6rem; cursor: pointer; }
+    .key-w.active { background: linear-gradient(to bottom, #e0e0e0 0%, #ccc 100%); }
+    .key-b { background: linear-gradient(to bottom, #333 0%, #000 100%); border: 1px solid #000; border-radius: 0 0 2px 2px; width: 20px; height: 60%; position: absolute; z-index: 2; color: #aaa; font-size: 0.5rem; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px; cursor: pointer; }
+    .key-b.active { background: linear-gradient(to bottom, #555 0%, #222 100%); }
+    
+    /* ボタン類 */
+    .btn { background: #374151; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer; transition: all 0.2s; font-weight: bold; }
+    .btn:hover { background: #4b5563; }
+    .btn-primary { background: var(--accent); }
+    .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 10px rgba(14, 165, 233, 0.5); }
+    .btn-danger { background: #ef4444; }
+    .btn-danger:hover { background: #f87171; box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+</style>
+</head>
+<body>
+
+<div class="app-container">
+    <!-- Header -->
+    <header class="header-area">
+        <h1 class="text-lg font-black tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600 m-0">ULTIMATE SYNTH STUDIO</h1>
+        <div class="flex items-center gap-3">
+            <div class="flex gap-1">
+                <button id="btnExport" class="btn text-[10px] bg-gray-700 hover:bg-gray-600" title="Save to file">💾 EXPORT</button>
+                <button id="btnImport" class="btn text-[10px] bg-gray-700 hover:bg-gray-600" title="Load from file">📂 IMPORT</button>
+                <input type="file" id="fileImport" style="display:none" accept=".json">
+            </div>
+            <button id="btnInitAudio" class="btn btn-primary px-4 text-xs">POWER ON</button>
+            <div id="masterVolContainer" style="display:none;" class="flex items-center gap-2">
+                <span class="text-[10px] font-bold text-gray-400">MASTER VOL</span>
+                <input type="range" id="masterVol" min="0" max="1" step="0.01" value="0.7" class="w-20 accent-cyan-500">
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="main-area" id="mainArea" style="opacity: 0.5; pointer-events: none;">
+        <!-- Left: Synth Parameters Rack -->
+        <div class="synth-rack" id="synthRack">
+            <!-- 動的にJSでモジュールを生成します -->
+        </div>
+
+        <!-- Right: Sequencer & Visualizer -->
+        <div class="flex flex-col gap-1.5 h-full min-h-0">
+            <!-- AI Assistant -->
+            <div class="module-panel" style="flex-shrink: 0;">
+                <div class="module-title m-0 pb-1"><span class="flex items-center gap-1">✨ AI STUDIO ASSISTANT</span></div>
+                <div class="flex flex-col gap-1.5">
+                    <textarea id="aiPrompt" class="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1 text-xs text-white outline-none resize-none focus:border-cyan-500 transition-colors" rows="1" placeholder="Describe sound or melody..."></textarea>
+                    <div class="flex gap-1.5">
+                        <button id="btnAiPreset" class="btn btn-primary flex-1 text-[10px] py-1" title="Generate Synth Parameters">✨ Gen Preset</button>
+                        <button id="btnAiSeq" class="btn btn-primary flex-1 text-[10px] py-1" title="Generate 16-Step Pattern">✨ Gen Sequence</button>
+                    </div>
+                    <div id="aiStatus" class="text-[10px] text-center font-bold hidden"></div>
+                </div>
+            </div>
+
+            <!-- Visualizers -->
+            <div class="module-panel flex flex-col" style="height: 120px; flex-shrink: 0;">
+                <div class="module-title m-0 pb-1"><span>Oscilloscope & Spectrum</span></div>
+                <div class="visualizer-container">
+                    <canvas id="canvasScope"></canvas>
+                </div>
+            </div>
+            
+            <!-- Sequencer -->
+            <div class="module-panel seq-panel">
+                <div class="module-title m-0 pb-1">
+                    <span>16-Step Poly Sequencer</span>
+                    <span id="seqStatus" class="text-[10px] text-gray-500">STOPPED</span>
+                </div>
+                <div class="seq-controls m-0 mb-1">
+                    <button id="btnSeqPlay" class="btn btn-primary text-[10px] py-1">▶ PLAY</button>
+                    <button id="btnSeqClear" class="btn text-[10px] py-1">CLEAR</button>
+                    <div class="flex items-center gap-1 ml-auto">
+                        <span class="text-[10px]">BPM:</span>
+                        <input type="number" id="seqBpm" value="120" min="60" max="240" class="w-12 bg-gray-800 border border-gray-600 rounded px-1 text-[10px] text-center outline-none">
+                    </div>
+                </div>
+                <div class="seq-grid-container" id="seqGridContainer">
+                    <div class="seq-grid" id="seqGrid"></div>
+                    <div class="seq-playhead" id="seqPlayhead"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer: Keyboard -->
+    <footer class="keyboard-area" id="keyboardArea">
+        <div class="absolute left-3 top-1 text-[10px] text-gray-500 font-bold">OCT: <span id="octaveLabel">0</span></div>
+        <div class="absolute left-3 bottom-1 flex gap-1">
+            <button class="btn px-2 py-0.5 text-[10px]" id="btnOctDown">▼</button>
+            <button class="btn px-2 py-0.5 text-[10px]" id="btnOctUp">▲</button>
+        </div>
+        <div class="keys-container" id="keysContainer">
+            <!-- JSで鍵盤を生成 -->
+        </div>
+    </footer>
+</div>
+
+<script>
+/**
+ * Ultimate Web Synthesizer Engine
+ * かさまし無しの超高密度コード
+ */
+
+// ==========================================
+// 1. Synth Architecture & Audio Context
+// ==========================================
+let audioCtx;
+let masterGain;
+let analyser;
+let fxChain = {};
+const activeVoices = new Map(); // 発音中のボイス管理
+let isAudioInitialized = false;
+
+// シンセの全パラメータ状態を一元管理
+const S = {
+    osc1: { type: 'sawtooth', detune: 0, octave: 0, mix: 0.7 },
+    osc2: { type: 'square', detune: 7, octave: -1, mix: 0.5 },
+    sub:  { mix: 0.3 },
+    noise:{ mix: 0.0 },
+    filter: { type: 'lowpass', cutoff: 2000, reso: 5, envAmt: 4000 },
+    envAmp: { a: 0.01, d: 0.3, s: 0.5, r: 0.5 },
+    envFlt: { a: 0.05, d: 0.2, s: 0.2, r: 0.4 },
+    lfo1: { type: 'sine', rate: 5, pitchAmt: 0 },
+    lfo2: { type: 'triangle', rate: 2, fltAmt: 0 },
+    fx: { 
+        eqLow: 0, eqMid: 0, eqHigh: 0,
+        dist: 0, 
+        chorusRate: 0.5, chorusDepth: 0, 
+        delayTime: 0.3, delayFb: 0.4, delayMix: 0,
+        reverbMix: 0 
+    }
+};
+
+// ノート周波数計算
+const getFreq = (note) => 440 * Math.pow(2, (note - 69) / 12);
+
+// ==========================================
+// 2. Audio Nodes Setup (FX & Routing)
+// ==========================================
+function setupAudio() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // マスターアウト
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.7;
+    
+    // アナライザー
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    
+    // FX: EQ
+    fxChain.eqLow = audioCtx.createBiquadFilter(); fxChain.eqLow.type = 'lowshelf'; fxChain.eqLow.frequency.value = 250;
+    fxChain.eqMid = audioCtx.createBiquadFilter(); fxChain.eqMid.type = 'peaking'; fxChain.eqMid.frequency.value = 1000; fxChain.eqMid.Q.value = 1;
+    fxChain.eqHigh= audioCtx.createBiquadFilter(); fxChain.eqHigh.type = 'highshelf'; fxChain.eqHigh.frequency.value = 4000;
+    
+    // FX: Distortion (WaveShaper)
+    fxChain.dist = audioCtx.createWaveShaper();
+    fxChain.dist.oversample = '4x';
+    updateDistortionCurve(0);
+    
+    // FX: Chorus (Modulated Delay)
+    fxChain.chorusSplit = audioCtx.createGain();
+    fxChain.chorusDelay = audioCtx.createDelay(); fxChain.chorusDelay.delayTime.value = 0.03;
+    fxChain.chorusLFO = audioCtx.createOscillator(); fxChain.chorusLFO.type = 'sine'; fxChain.chorusLFO.frequency.value = 0.5;
+    fxChain.chorusDepth = audioCtx.createGain(); fxChain.chorusDepth.gain.value = 0;
+    fxChain.chorusMix = audioCtx.createGain();
+    fxChain.chorusLFO.connect(fxChain.chorusDepth); fxChain.chorusDepth.connect(fxChain.chorusDelay.delayTime);
+    fxChain.chorusLFO.start();
+    
+    // FX: Delay (Ping-Pong)
+    fxChain.delay = audioCtx.createDelay(2.0);
+    fxChain.delayFb = audioCtx.createGain();
+    fxChain.delayFilter = audioCtx.createBiquadFilter(); fxChain.delayFilter.type = 'lowpass'; fxChain.delayFilter.frequency.value = 2000;
+    fxChain.delayMix = audioCtx.createGain(); fxChain.delayMix.gain.value = 0;
+    fxChain.delay.connect(fxChain.delayFilter); fxChain.delayFilter.connect(fxChain.delayFb); fxChain.delayFb.connect(fxChain.delay);
+    fxChain.delayFilter.connect(fxChain.delayMix);
+
+    // FX: Reverb (Convolver generated via code)
+    fxChain.reverb = audioCtx.createConvolver();
+    fxChain.reverbMix = audioCtx.createGain(); fxChain.reverbMix.gain.value = 0;
+    generateReverbIR(3.0, 2.0); // 3sec duration, decay curve
+
+    // FX Routing
+    const preFx = audioCtx.createGain();
+    const dryNode = audioCtx.createGain();
+    
+    preFx.connect(fxChain.dist);
+    fxChain.dist.connect(fxChain.eqLow); fxChain.eqLow.connect(fxChain.eqMid); fxChain.eqMid.connect(fxChain.eqHigh);
+    
+    // Split point
+    fxChain.eqHigh.connect(dryNode);
+    fxChain.eqHigh.connect(fxChain.chorusDelay);
+    fxChain.eqHigh.connect(fxChain.delay);
+    fxChain.eqHigh.connect(fxChain.reverb);
+    
+    // Chorus merge
+    fxChain.eqHigh.connect(fxChain.chorusMix); // dry for chorus
+    fxChain.chorusDelay.connect(fxChain.chorusMix); // wet for chorus
+    
+    // Summing to Master
+    dryNode.connect(masterGain);
+    fxChain.delayMix.connect(masterGain);
+    fxChain.reverb.connect(fxChain.reverbMix); fxChain.reverbMix.connect(masterGain);
+    
+    masterGain.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    
+    fxChain.input = preFx; // シンセボイスの出力先
+}
+
+// リバーブ用のインパルス応答（IR）を計算で生成
+function generateReverbIR(duration, decay) {
+    const rate = audioCtx.sampleRate;
+    const length = rate * duration;
+    const impulse = audioCtx.createBuffer(2, length, rate);
+    const left = impulse.getChannelData(0);
+    const right = impulse.getChannelData(1);
+    for (let i = 0; i < length; i++) {
+        const n = i;
+        left[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / length, decay);
+        right[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / length, decay);
+    }
+    fxChain.reverb.buffer = impulse;
+}
+
+// ディストーションカーブ生成
+function updateDistortionCurve(amount) {
+    if(amount === 0) { fxChain.dist.curve = null; return; }
+    const k = amount * 100;
+    const n_samples = 44100;
+    const curve = new Float32Array(n_samples);
+    const deg = Math.PI / 180;
+    for (let i = 0; i < n_samples; ++i) {
+        let x = i * 2 / n_samples - 1;
+        curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+    }
+    fxChain.dist.curve = curve;
+}
+
+// ==========================================
+// 3. Synth Voice Class (Polyphonic)
+// ==========================================
+class Voice {
+    constructor(note, velocity = 1) {
+        this.note = note;
+        this.freq = getFreq(note);
+        this.nodes = [];
+        this.gains = [];
+        
+        const t = audioCtx.currentTime;
+        
+        // --- Oscillators ---
+        const mixNode = audioCtx.createGain();
+        
+        // Osc 1
+        if(S.osc1.mix > 0) {
+            const o1 = audioCtx.createOscillator(); o1.type = S.osc1.type;
+            o1.frequency.value = getFreq(note + (S.osc1.octave * 12)); o1.detune.value = S.osc1.detune;
+            const g1 = audioCtx.createGain(); g1.gain.value = S.osc1.mix;
+            o1.connect(g1); g1.connect(mixNode); o1.start(t);
+            this.nodes.push(o1); this.gains.push(g1);
+        }
+        
+        // Osc 2
+        if(S.osc2.mix > 0) {
+            const o2 = audioCtx.createOscillator(); o2.type = S.osc2.type;
+            o2.frequency.value = getFreq(note + (S.osc2.octave * 12)); o2.detune.value = S.osc2.detune;
+            const g2 = audioCtx.createGain(); g2.gain.value = S.osc2.mix;
+            o2.connect(g2); g2.connect(mixNode); o2.start(t);
+            this.nodes.push(o2); this.gains.push(g2);
+        }
+
+        // Sub Osc (Sine -1 Octave)
+        if(S.sub.mix > 0) {
+            const os = audioCtx.createOscillator(); os.type = 'sine';
+            os.frequency.value = getFreq(note - 12);
+            const gs = audioCtx.createGain(); gs.gain.value = S.sub.mix;
+            os.connect(gs); gs.connect(mixNode); os.start(t);
+            this.nodes.push(os); this.gains.push(gs);
+        }
+        
+        // Noise
+        if(S.noise.mix > 0) {
+            const bSize = audioCtx.sampleRate * 2;
+            const buf = audioCtx.createBuffer(1, bSize, audioCtx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < bSize; i++) data[i] = Math.random() * 2 - 1;
+            const n = audioCtx.createBufferSource(); n.buffer = buf; n.loop = true;
+            const gn = audioCtx.createGain(); gn.gain.value = S.noise.mix;
+            n.connect(gn); gn.connect(mixNode); n.start(t);
+            this.nodes.push(n); this.gains.push(gn);
+        }
+
+        // --- Filter ---
+        this.filter = audioCtx.createBiquadFilter();
+        this.filter.type = S.filter.type;
+        this.filter.Q.value = S.filter.reso;
+        mixNode.connect(this.filter);
+        
+        // Filter EG (Attack, Decay, Sustain)
+        const fBase = S.filter.cutoff;
+        const fPeak = fBase + S.filter.envAmt;
+        const fSus = fBase + (S.filter.envAmt * S.envFlt.s);
+        this.filter.frequency.setValueAtTime(fBase, t);
+        this.filter.frequency.linearRampToValueAtTime(fPeak, t + S.envFlt.a);
+        this.filter.frequency.exponentialRampToValueAtTime(Math.max(fSus, 20), t + S.envFlt.a + S.envFlt.d);
+
+        // --- Amp EG ---
+        this.vca = audioCtx.createGain();
+        this.vca.gain.setValueAtTime(0, t);
+        this.vca.gain.linearRampToValueAtTime(velocity, t + S.envAmp.a);
+        this.vca.gain.exponentialRampToValueAtTime(Math.max(velocity * S.envAmp.s, 0.001), t + S.envAmp.a + S.envAmp.d);
+        
+        this.filter.connect(this.vca);
+        this.vca.connect(fxChain.input);
+        
+        // --- LFO Routing (per voice for simplicity in web audio) ---
+        if(S.lfo1.pitchAmt > 0) {
+            const lfo1 = audioCtx.createOscillator(); lfo1.type = S.lfo1.type; lfo1.frequency.value = S.lfo1.rate;
+            const lfo1Gain = audioCtx.createGain(); lfo1Gain.gain.value = S.lfo1.pitchAmt;
+            lfo1.connect(lfo1Gain);
+            this.nodes.filter(n => n.detune).forEach(n => lfo1Gain.connect(n.detune));
+            lfo1.start(t); this.nodes.push(lfo1);
+        }
+        if(S.lfo2.fltAmt > 0) {
+            const lfo2 = audioCtx.createOscillator(); lfo2.type = S.lfo2.type; lfo2.frequency.value = S.lfo2.rate;
+            const lfo2Gain = audioCtx.createGain(); lfo2Gain.gain.value = S.lfo2.fltAmt;
+            lfo2.connect(lfo2Gain); lfo2Gain.connect(this.filter.frequency);
+            lfo2.start(t); this.nodes.push(lfo2);
+        }
+    }
+
+    stop() {
+        const t = audioCtx.currentTime;
+        // Amp Release
+        this.vca.gain.cancelScheduledValues(t);
+        this.vca.gain.setValueAtTime(this.vca.gain.value, t);
+        this.vca.gain.exponentialRampToValueAtTime(0.001, t + S.envAmp.r);
+        
+        // Filter Release
+        this.filter.frequency.cancelScheduledValues(t);
+        this.filter.frequency.setValueAtTime(this.filter.frequency.value, t);
+        this.filter.frequency.exponentialRampToValueAtTime(Math.max(S.filter.cutoff, 20), t + S.envFlt.r);
+
+        // Stop Nodes
+        setTimeout(() => {
+            this.nodes.forEach(n => { n.stop(); n.disconnect(); });
+            this.gains.forEach(g => g.disconnect());
+            this.filter.disconnect();
+            this.vca.disconnect();
+        }, S.envAmp.r * 1000 + 100);
+    }
+}
+
+// 発音インターフェース
+function noteOn(note, velocity = 1) {
+    if(!isAudioInitialized) return;
+    if(activeVoices.has(note)) noteOff(note); // Retrigger
+    activeVoices.set(note, new Voice(note, velocity));
+    highlightKey(note, true);
+}
+function noteOff(note) {
+    if(activeVoices.has(note)) {
+        activeVoices.get(note).stop();
+        activeVoices.delete(note);
+    }
+    highlightKey(note, false);
+}
+
+// ==========================================
+// 4. UI Components (Knobs & Panels)
+// ==========================================
+const knobsUI = {};
+
+class UIKnob {
+    constructor(parent, id, label, min, max, val, step, isBi, onChange) {
+        this.id = id;
+        this.min = min; this.max = max; this.step = step; this.val = val; this.isBi = isBi; this.onChange = onChange;
+        this.el = document.createElement('div'); this.el.className = 'knob-container';
+        this.el.innerHTML = `
+            <div class="knob-label">${label}</div>
+            <div class="knob-body" id="knob_${id}">
+                <div class="knob-inner"></div>
+                <div class="knob-indicator" id="ind_${id}"></div>
+            </div>
+            <div class="knob-value" id="val_${id}">${val}</div>
+        `;
+        parent.appendChild(this.el);
+        this.body = this.el.querySelector('.knob-body');
+        this.ind = this.el.querySelector('.knob-indicator');
+        this.valDisplay = this.el.querySelector('.knob-value');
+        
+        this.isDragging = false; this.startY = 0; this.startVal = 0;
+        this.body.addEventListener('mousedown', this.startDrag.bind(this));
+        this.body.addEventListener('touchstart', (e)=>{ e.preventDefault(); this.startDrag(e.touches[0]); }, {passive:false});
+        this.updateView();
+        knobsUI[id] = this;
+    }
+    startDrag(e) {
+        this.isDragging = true; this.startY = e.clientY; this.startVal = this.val;
+        const move = (ev) => this.onDrag(ev.clientY || ev.touches[0].clientY);
+        const up = () => {
+            this.isDragging = false;
+            document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+            document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up);
+        };
+        document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+        document.addEventListener('touchmove', move, {passive:false}); document.addEventListener('touchend', up);
+    }
+    onDrag(y) {
+        if(!this.isDragging) return;
+        const delta = (this.startY - y) * (this.max - this.min) / 150; // 感度
+        let newVal = this.startVal + delta;
+        newVal = Math.max(this.min, Math.min(this.max, newVal));
+        if(this.step) newVal = Math.round(newVal / this.step) * this.step;
+        this.val = newVal;
+        this.updateView();
+        if(this.onChange) this.onChange(this.val);
+    }
+    updateView() {
+        let pct = (this.val - this.min) / (this.max - this.min);
+        let deg = -150 + (pct * 300); // -150deg to +150deg
+        this.ind.style.transform = `rotate(${deg}deg)`;
+        let disp = Number.isInteger(this.step) ? Math.round(this.val) : this.val.toFixed(2);
+        this.valDisplay.innerText = disp;
+        
+        // CSS Conic gradient update
+        let cPct = pct * 100;
+        let pDeg = 210; // start 210deg (-150)
+        let fillAmt = cPct * 3; // 300deg total
+        if(this.isBi) {
+            let zeroPct = (0 - this.min) / (this.max - this.min) * 100;
+            if(pct > zeroPct) {
+                this.body.style.background = `conic-gradient(from ${pDeg + (zeroPct*3)}deg, var(--accent) 0%, var(--accent) ${(pct-zeroPct/100)*300}deg, var(--p-border) ${(pct-zeroPct/100)*300}deg)`;
+            } else {
+                 this.body.style.background = `conic-gradient(from ${pDeg}deg, var(--accent) 0%, var(--accent) ${fillAmt}deg, var(--p-border) ${fillAmt}deg)`;
+            }
+        } else {
+            this.body.style.background = `conic-gradient(from ${pDeg}deg, var(--accent) 0%, var(--accent) ${fillAmt}deg, var(--p-border) ${fillAmt}deg)`;
+        }
+    }
+    setValue(newVal) {
+        let val = Math.max(this.min, Math.min(this.max, newVal));
+        if(this.step) val = Math.round(val / this.step) * this.step;
+        this.val = val;
+        this.updateView();
+        if(this.onChange) this.onChange(this.val);
+    }
+}
+
+// パネル生成ロジック
+function buildUI() {
+    const rack = document.getElementById('synthRack');
+    const mkPanel = (id, title, contentHTML) => {
+        const p = document.createElement('div'); p.className = 'module-panel'; p.id = `panel_${id}`;
+        p.innerHTML = `<div class="module-title">${title}</div><div class="knobs-grid" id="grid_${id}">${contentHTML||''}</div>`;
+        rack.appendChild(p); return document.getElementById(`grid_${id}`);
+    };
+
+    // --- OSC 1 & 2 ---
+    const gridOsc1 = mkPanel('osc1', 'VCO 1', `<select id="selO1Type" class="ctrl-select"><option value="sawtooth">Saw</option><option value="square">Square</option><option value="sine">Sine</option><option value="triangle">Tri</option></select>`);
+    document.getElementById('selO1Type').addEventListener('change', e => S.osc1.type = e.target.value);
+    new UIKnob(gridOsc1, 'o1oct', 'OCTAVE', -2, 2, S.osc1.octave, 1, true, v => S.osc1.octave = v);
+    new UIKnob(gridOsc1, 'o1det', 'DETUNE', -50, 50, S.osc1.detune, 1, true, v => S.osc1.detune = v);
+    new UIKnob(gridOsc1, 'o1mix', 'MIX', 0, 1, S.osc1.mix, 0.01, false, v => S.osc1.mix = v);
+
+    const gridOsc2 = mkPanel('osc2', 'VCO 2', `<select id="selO2Type" class="ctrl-select"><option value="square" selected>Square</option><option value="sawtooth">Saw</option><option value="sine">Sine</option><option value="triangle">Tri</option></select>`);
+    document.getElementById('selO2Type').addEventListener('change', e => S.osc2.type = e.target.value);
+    new UIKnob(gridOsc2, 'o2oct', 'OCTAVE', -2, 2, S.osc2.octave, 1, true, v => S.osc2.octave = v);
+    new UIKnob(gridOsc2, 'o2det', 'DETUNE', -50, 50, S.osc2.detune, 1, true, v => S.osc2.detune = v);
+    new UIKnob(gridOsc2, 'o2mix', 'MIX', 0, 1, S.osc2.mix, 0.01, false, v => S.osc2.mix = v);
+
+    // --- MIXER ---
+    const gridMix = mkPanel('mix', 'MIXER');
+    new UIKnob(gridMix, 'mixSub', 'SUB OSC', 0, 1, S.sub.mix, 0.01, false, v => S.sub.mix = v);
+    new UIKnob(gridMix, 'mixNoi', 'NOISE', 0, 1, S.noise.mix, 0.01, false, v => S.noise.mix = v);
+
+    // --- VCF ---
+    const gridVcf = mkPanel('vcf', 'VCF (FILTER)', `<select id="selFType" class="ctrl-select"><option value="lowpass">LowPass</option><option value="highpass">HighPass</option><option value="bandpass">BandPass</option></select>`);
+    document.getElementById('selFType').addEventListener('change', e => S.filter.type = e.target.value);
+    new UIKnob(gridVcf, 'fCut', 'CUTOFF', 20, 10000, S.filter.cutoff, 1, false, v => S.filter.cutoff = v);
+    new UIKnob(gridVcf, 'fRes', 'RESO', 0, 30, S.filter.reso, 0.1, false, v => S.filter.reso = v);
+    new UIKnob(gridVcf, 'fEnv', 'EG INT', -5000, 5000, S.filter.envAmt, 10, true, v => S.filter.envAmt = v);
+
+    // --- ENVELOPES ---
+    const gridEgF = mkPanel('egf', 'FILTER EG');
+    new UIKnob(gridEgF, 'efa', 'ATTACK', 0, 5, S.envFlt.a, 0.01, false, v => S.envFlt.a = v);
+    new UIKnob(gridEgF, 'efd', 'DECAY', 0, 5, S.envFlt.d, 0.01, false, v => S.envFlt.d = v);
+    new UIKnob(gridEgF, 'efs', 'SUSTAIN', 0, 1, S.envFlt.s, 0.01, false, v => S.envFlt.s = v);
+    new UIKnob(gridEgF, 'efr', 'RELEASE', 0, 5, S.envFlt.r, 0.01, false, v => S.envFlt.r = v);
+
+    const gridEgA = mkPanel('ega', 'AMP EG');
+    new UIKnob(gridEgA, 'eaa', 'ATTACK', 0, 5, S.envAmp.a, 0.01, false, v => S.envAmp.a = v);
+    new UIKnob(gridEgA, 'ead', 'DECAY', 0, 5, S.envAmp.d, 0.01, false, v => S.envAmp.d = v);
+    new UIKnob(gridEgA, 'eas', 'SUSTAIN', 0, 1, S.envAmp.s, 0.01, false, v => S.envAmp.s = v);
+    new UIKnob(gridEgA, 'ear', 'RELEASE', 0, 5, S.envAmp.r, 0.01, false, v => S.envAmp.r = v);
+
+    // --- LFO ---
+    const gridLfo = mkPanel('lfo', 'LFO 1 & 2');
+    new UIKnob(gridLfo, 'l1r', 'L1 RATE', 0.1, 20, S.lfo1.rate, 0.1, false, v => S.lfo1.rate = v);
+    new UIKnob(gridLfo, 'l1p', 'PITCH MOD', 0, 100, S.lfo1.pitchAmt, 1, false, v => S.lfo1.pitchAmt = v);
+    new UIKnob(gridLfo, 'l2r', 'L2 RATE', 0.1, 20, S.lfo2.rate, 0.1, false, v => S.lfo2.rate = v);
+    new UIKnob(gridLfo, 'l2f', 'FLT MOD', 0, 2000, S.lfo2.fltAmt, 10, false, v => S.lfo2.fltAmt = v);
+
+    // --- FX ---
+    const gridFx = mkPanel('fx', 'EFFECTS');
+    new UIKnob(gridFx, 'fxEqL', 'EQ LOW', -15, 15, S.fx.eqLow, 0.1, true, v => { S.fx.eqLow = v; if(fxChain.eqLow) fxChain.eqLow.gain.value = v; });
+    new UIKnob(gridFx, 'fxEqH', 'EQ HIGH', -15, 15, S.fx.eqHigh, 0.1, true, v => { S.fx.eqHigh = v; if(fxChain.eqHigh) fxChain.eqHigh.gain.value = v; });
+    new UIKnob(gridFx, 'fxDst', 'DRIVE', 0, 1, S.fx.dist, 0.01, false, v => { S.fx.dist = v; if(isAudioInitialized) updateDistortionCurve(v); });
+    new UIKnob(gridFx, 'fxCho', 'CHORUS', 0, 0.02, S.fx.chorusDepth, 0.001, false, v => { S.fx.chorusDepth = v; if(fxChain.chorusDepth) fxChain.chorusDepth.gain.value = v; });
+    new UIKnob(gridFx, 'fxDly', 'DELAY', 0, 1, S.fx.delayMix, 0.01, false, v => { S.fx.delayMix = v; if(fxChain.delayMix) fxChain.delayMix.gain.value = v; });
+    new UIKnob(gridFx, 'fxRev', 'REVERB', 0, 1, S.fx.reverbMix, 0.01, false, v => { S.fx.reverbMix = v; if(fxChain.reverbMix) fxChain.reverbMix.gain.value = v; });
+}
+
+// ==========================================
+// 5. Visualizer (Canvas)
+// ==========================================
+let visCtx;
+let visW, visH;
+function initVisualizer() {
+    const canvas = document.getElementById('canvasScope');
+    visCtx = canvas.getContext('2d');
+    const resize = () => {
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+        visW = canvas.width; visH = canvas.height;
+    };
+    window.addEventListener('resize', resize);
+    resize();
+    drawVisualizer();
+}
+
+function drawVisualizer() {
+    requestAnimationFrame(drawVisualizer);
+    if(!isAudioInitialized || !analyser) return;
+
+    const dataTime = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(dataTime);
+    
+    const dataFreq = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(dataFreq);
+
+    visCtx.fillStyle = '#000';
+    visCtx.fillRect(0, 0, visW, visH);
+
+    // Spectrum (Background)
+    visCtx.fillStyle = 'rgba(14, 165, 233, 0.2)'; // Cyan shadow
+    const barW = (visW / analyser.frequencyBinCount) * 2.5;
+    let x = 0;
+    for(let i = 0; i < analyser.frequencyBinCount; i++) {
+        const barH = (dataFreq[i] / 255) * visH;
+        visCtx.fillRect(x, visH - barH, barW, barH);
+        x += barW + 1;
+    }
+
+    // Oscilloscope (Foreground)
+    visCtx.lineWidth = 2;
+    visCtx.strokeStyle = '#0ea5e9'; // Cyan
+    visCtx.beginPath();
+    const sliceWidth = visW * 1.0 / analyser.frequencyBinCount;
+    x = 0;
+    for(let i = 0; i < analyser.frequencyBinCount; i++) {
+        const v = dataTime[i] / 128.0;
+        const y = v * visH / 2;
+        if(i === 0) visCtx.moveTo(x, y); else visCtx.lineTo(x, y);
+        x += sliceWidth;
+    }
+    visCtx.lineTo(visW, visH / 2);
+    visCtx.stroke();
+    
+    // Grid
+    visCtx.strokeStyle = '#333';
+    visCtx.lineWidth = 1;
+    visCtx.beginPath(); visCtx.moveTo(0, visH/2); visCtx.lineTo(visW, visH/2); visCtx.stroke();
+}
+
+// ==========================================
+// 6. Polyphonic Sequencer
+// ==========================================
+const SEQ_STEPS = 16;
+const SEQ_NOTES = 24; // 2 Octaves (C3 - B4)
+const BASE_NOTE = 48; // C3
+let seqGrid = Array(SEQ_NOTES).fill().map(() => Array(SEQ_STEPS).fill(0));
+let seqPlaying = false;
+let currentStep = 0;
+let nextNoteTime = 0;
+let seqTimerID;
+
+function buildSequencerUI() {
+    const grid = document.getElementById('seqGrid');
+    grid.style.gridTemplateColumns = `40px repeat(${SEQ_STEPS}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${SEQ_NOTES}, 16px)`;
+    
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    
+    for(let row = 0; row < SEQ_NOTES; row++) {
+        const note = BASE_NOTE + (SEQ_NOTES - 1 - row); // 上が高い音
+        const label = document.createElement('div');
+        label.className = 'seq-row-label';
+        const nName = noteNames[note % 12] + Math.floor(note / 12 - 1);
+        label.innerText = nName;
+        grid.appendChild(label);
+        
+        for(let col = 0; col < SEQ_STEPS; col++) {
+            const cell = document.createElement('div');
+            cell.className = 'seq-cell';
+            cell.dataset.row = row; cell.dataset.col = col;
+            // 4つ打ちのガイド背景
+            if(col % 4 === 0) cell.style.background = 'rgba(255,255,255,0.05)';
+            
+            cell.addEventListener('mousedown', (e) => toggleSeqCell(row, col, cell));
+            cell.addEventListener('mouseenter', (e) => { if(e.buttons === 1) toggleSeqCell(row, col, cell); });
+            grid.appendChild(cell);
+        }
+    }
+}
+
+function toggleSeqCell(row, col, el) {
+    const note = BASE_NOTE + (SEQ_NOTES - 1 - row);
+    seqGrid[row][col] = seqGrid[row][col] ? 0 : 1;
+    if(seqGrid[row][col]) {
+        el.classList.add('active');
+        noteOn(note, 0.5); setTimeout(()=>noteOff(note), 100); // プレビュー音
+    } else {
+        el.classList.remove('active');
+    }
+}
+
+function scheduler() {
+    while(nextNoteTime < audioCtx.currentTime + 0.1) {
+        scheduleStep(currentStep, nextNoteTime);
+        nextStep();
+    }
+    seqTimerID = setTimeout(scheduler, 25);
+}
+
+function scheduleStep(step, time) {
+    // Play notes
+    for(let row = 0; row < SEQ_NOTES; row++) {
+        if(seqGrid[row][step]) {
+            const note = BASE_NOTE + (SEQ_NOTES - 1 - row);
+            const delay = (time - audioCtx.currentTime) * 1000;
+            setTimeout(() => {
+                noteOn(note, 0.8);
+                setTimeout(()=>noteOff(note), (60/document.getElementById('seqBpm').value)*250); // 16th note gate
+            }, Math.max(0, delay));
+        }
+    }
+    
+    // Move Playhead UI
+    const delay = (time - audioCtx.currentTime) * 1000;
+    setTimeout(() => {
+        const ph = document.getElementById('seqPlayhead');
+        ph.style.display = 'block';
+        const gridW = document.getElementById('seqGrid').clientWidth - 40; // label幅を引く
+        const stepW = gridW / SEQ_STEPS;
+        ph.style.left = `calc(40px + ${step * stepW}px)`;
+        ph.style.width = `${stepW}px`;
+    }, Math.max(0, delay));
+}
+
+function nextStep() {
+    const bpm = parseInt(document.getElementById('seqBpm').value) || 120;
+    const secondsPerBeat = 60.0 / bpm;
+    nextNoteTime += 0.25 * secondsPerBeat; // 16th note
+    currentStep = (currentStep + 1) % SEQ_STEPS;
+}
+
+document.getElementById('btnSeqPlay').addEventListener('click', (e) => {
+    if(!isAudioInitialized) document.getElementById('btnInitAudio').click();
+    seqPlaying = !seqPlaying;
+    if(seqPlaying) {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        currentStep = 0;
+        nextNoteTime = audioCtx.currentTime + 0.05;
+        scheduler();
+        e.target.innerText = '⏹ STOP'; e.target.classList.add('btn-danger'); e.target.classList.remove('btn-primary');
+        document.getElementById('seqStatus').innerText = 'PLAYING';
+        document.getElementById('seqStatus').style.color = 'var(--accent)';
+    } else {
+        clearTimeout(seqTimerID);
+        e.target.innerText = '▶ PLAY'; e.target.classList.remove('btn-danger'); e.target.classList.add('btn-primary');
+        document.getElementById('seqPlayhead').style.display = 'none';
+        document.getElementById('seqStatus').innerText = 'STOPPED';
+        document.getElementById('seqStatus').style.color = '';
+    }
+});
+document.getElementById('btnSeqClear').addEventListener('click', () => {
+    seqGrid = Array(SEQ_NOTES).fill().map(() => Array(SEQ_STEPS).fill(0));
+    document.querySelectorAll('.seq-cell').forEach(c => c.classList.remove('active'));
+});
+
+// ==========================================
+// 7. Keyboard UI & Events
+// ==========================================
+let currentOctave = 4; // C4 base
+const keyMap = [
+    { note: 0, k: 'A', t: 'w' }, { note: 1, k: 'W', t: 'b' }, { note: 2, k: 'S', t: 'w' }, { note: 3, k: 'E', t: 'b' },
+    { note: 4, k: 'D', t: 'w' }, { note: 5, k: 'F', t: 'w' }, { note: 6, k: 'T', t: 'b' }, { note: 7, k: 'G', t: 'w' },
+    { note: 8, k: 'Y', t: 'b' }, { note: 9, k: 'H', t: 'w' }, { note: 10,k: 'U', t: 'b' }, { note: 11,k: 'J', t: 'w' },
+    { note: 12,k: 'K', t: 'w' }, { note: 13,k: 'O', t: 'b' }, { note: 14,k: 'L', t: 'w' }, { note: 15,k: 'P', t: 'b' },
+    { note: 16,k: ';', t: 'w' }, { note: 17,k: ':', t: 'w' }
+];
+const domKeys = {}; // note -> element
+
+function buildKeyboard() {
+    const container = document.getElementById('keysContainer');
+    container.innerHTML = '';
+    let wIndex = 0;
+    
+    // 2 Octaves (24 notes + 1)
+    for(let i=0; i<=24; i++) {
+        const isBlack = [1,3,6,8,10].includes(i % 12);
+        const el = document.createElement('div');
+        const noteAbsolute = (currentOctave * 12) + 12 + i;
+        
+        el.dataset.note = noteAbsolute;
+        
+        const keyDef = keyMap.find(k => k.note === i);
+        if(keyDef) el.innerText = keyDef.k;
+
+        if(isBlack) {
+            el.className = 'key-b';
+            el.style.left = `calc(${wIndex * 34}px - 10px)`;
+        } else {
+            el.className = 'key-w';
+            wIndex++;
+        }
+        
+        const start = (e) => { e.preventDefault(); noteOn(noteAbsolute); el.setPointerCapture(e.pointerId); };
+        const end = (e) => { e.preventDefault(); noteOff(noteAbsolute); el.releasePointerCapture(e.pointerId); };
+        el.addEventListener('pointerdown', start);
+        el.addEventListener('pointerup', end);
+        el.addEventListener('pointercancel', end);
+        
+        container.appendChild(el);
+        domKeys[noteAbsolute] = el;
+    }
+}
+
+function highlightKey(note, active) {
+    if(domKeys[note]) {
+        if(active) domKeys[note].classList.add('active');
+        else domKeys[note].classList.remove('active');
+    }
+}
+
+const pressedKeys = new Set();
+window.addEventListener('keydown', e => {
+    if(e.repeat || !isAudioInitialized) return;
+    const char = e.key.toUpperCase();
+    const map = keyMap.find(k => k.k === char);
+    if(map) {
+        const note = (currentOctave * 12) + 12 + map.note;
+        noteOn(note); pressedKeys.add(char);
+    }
+});
+window.addEventListener('keyup', e => {
+    const char = e.key.toUpperCase();
+    const map = keyMap.find(k => k.k === char);
+    if(map && pressedKeys.has(char)) {
+        const note = (currentOctave * 12) + 12 + map.note;
+        noteOff(note); pressedKeys.delete(char);
+    }
+});
+
+document.getElementById('btnOctUp').onclick = () => { if(currentOctave < 7) { currentOctave++; updateOctave(); }};
+document.getElementById('btnOctDown').onclick = () => { if(currentOctave > 1) { currentOctave--; updateOctave(); }};
+function updateOctave() {
+    document.getElementById('octaveLabel').innerText = currentOctave - 4;
+    buildKeyboard();
+}
+
+// ==========================================
+// 8. Initialization
+// ==========================================
+document.getElementById('btnInitAudio').addEventListener('click', () => {
+    setupAudio();
+    isAudioInitialized = true;
+    document.getElementById('mainArea').style.opacity = '1';
+    document.getElementById('mainArea').style.pointerEvents = 'auto';
+    document.getElementById('btnInitAudio').style.display = 'none';
+    document.getElementById('masterVolContainer').style.display = 'flex';
+});
+
+document.getElementById('masterVol').addEventListener('input', e => {
+    if(masterGain) masterGain.gain.value = e.target.value;
+});
+
+// ==========================================
+// 9. Gemini AI Assistant
+// ==========================================
+const apiKey = "";
+
+async function callGemini(prompt, isSequence) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    
+    let schema, sysPrompt;
+    if (!isSequence) {
+        schema = {
+            type: "OBJECT",
+            properties: {
+                osc1: { type: "OBJECT", properties: { type: { type: "STRING", description: "sawtooth, square, sine, or triangle" }, octave: { type: "INTEGER" }, detune: { type: "NUMBER" }, mix: { type: "NUMBER" } } },
+                osc2: { type: "OBJECT", properties: { type: { type: "STRING" }, octave: { type: "INTEGER" }, detune: { type: "NUMBER" }, mix: { type: "NUMBER" } } },
+                sub: { type: "OBJECT", properties: { mix: { type: "NUMBER" } } },
+                noise: { type: "OBJECT", properties: { mix: { type: "NUMBER" } } },
+                filter: { type: "OBJECT", properties: { type: { type: "STRING", description: "lowpass, highpass, or bandpass" }, cutoff: { type: "NUMBER", description: "20 to 10000 Hz" }, reso: { type: "NUMBER", description: "0 to 30" }, envAmt: { type: "NUMBER", description: "-5000 to 5000" } } },
+                envAmp: { type: "OBJECT", properties: { a: { type: "NUMBER", description: "Attack 0-5s" }, d: { type: "NUMBER", description: "Decay 0-5s" }, s: { type: "NUMBER", description: "Sustain 0-1" }, r: { type: "NUMBER", description: "Release 0-5s" } } },
+                envFlt: { type: "OBJECT", properties: { a: { type: "NUMBER" }, d: { type: "NUMBER" }, s: { type: "NUMBER" }, r: { type: "NUMBER" } } },
+                fx: { type: "OBJECT", properties: { eqLow: { type: "NUMBER", description: "-15 to 15" }, eqHigh: { type: "NUMBER", description: "-15 to 15" }, dist: { type: "NUMBER", description: "Drive 0-1" }, chorusDepth: { type: "NUMBER", description: "0-0.02" }, delayMix: { type: "NUMBER", description: "0-1" }, reverbMix: { type: "NUMBER", description: "0-1" } } }
+            }
+        };
+        sysPrompt = "You are an expert synthesizer sound designer. Analyze the user's prompt and design a synth patch that matches the description. Return appropriate parameters. Keep mix/volumes between 0 and 1. LFOs are omitted, just focus on OSC, Filter, Envelopes, and FX.";
+    } else {
+        schema = {
+            type: "OBJECT",
+            properties: {
+                notes: {
+                    type: "ARRAY",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            step: { type: "INTEGER", description: "0 to 15 (16 steps)" },
+                            note: { type: "INTEGER", description: "0 to 23 (2 octaves, 0 is lowest)" }
+                        }
+                    }
+                },
+                bpm: { type: "INTEGER", description: "Suggested Tempo 60-240" }
+            }
+        };
+        sysPrompt = "You are an expert electronic music producer. Analyze the prompt and compose a 16-step sequence. Ensure notes are in a specific scale so they sound musical together. Max 1-3 notes per step for polyphony.";
+    }
+
+    const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: sysPrompt }] },
+        generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: schema
+        }
+    };
+
+    let retries = 5;
+    let delay = 1000;
+    while (retries > 0) {
+        try {
+            const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+            if (!res.ok) throw new Error("API Error");
+            const data = await res.json();
+            return JSON.parse(data.candidates[0].content.parts[0].text);
+        } catch (e) {
+            retries--;
+            if (retries === 0) throw e;
+            await new Promise(r => setTimeout(r, delay));
+            delay *= 2;
+        }
+    }
+}
+
+function applyAiPreset(p) {
+    if(!p) return;
+    
+    const setSel = (id, val, validVals) => {
+        if(val && (!validVals || validVals.includes(val.toLowerCase()))) {
+            const el = document.getElementById(id);
+            el.value = val.toLowerCase();
+            el.dispatchEvent(new Event('change'));
+        }
+    };
+    const setK = (id, val) => { if(val !== undefined && knobsUI[id]) knobsUI[id].setValue(val); };
+
+    if(p.osc1) {
+        setSel('selO1Type', p.osc1.type, ['sawtooth', 'square', 'sine', 'triangle']);
+        setK('o1oct', p.osc1.octave); setK('o1det', p.osc1.detune); setK('o1mix', p.osc1.mix);
+    }
+    if(p.osc2) {
+        setSel('selO2Type', p.osc2.type, ['sawtooth', 'square', 'sine', 'triangle']);
+        setK('o2oct', p.osc2.octave); setK('o2det', p.osc2.detune); setK('o2mix', p.osc2.mix);
+    }
+    if(p.sub) setK('mixSub', p.sub.mix);
+    if(p.noise) setK('mixNoi', p.noise.mix);
+    
+    if(p.filter) {
+        setSel('selFType', p.filter.type, ['lowpass', 'highpass', 'bandpass']);
+        setK('fCut', p.filter.cutoff); setK('fRes', p.filter.reso); setK('fEnv', p.filter.envAmt);
+    }
+    if(p.envAmp) { setK('eaa', p.envAmp.a); setK('ead', p.envAmp.d); setK('eas', p.envAmp.s); setK('ear', p.envAmp.r); }
+    if(p.envFlt) { setK('efa', p.envFlt.a); setK('efd', p.envFlt.d); setK('efs', p.envFlt.s); setK('efr', p.envFlt.r); }
+    
+    if(p.lfo1) { setK('l1r', p.lfo1.rate); setK('l1p', p.lfo1.pitchAmt); }
+    if(p.lfo2) { setK('l2r', p.lfo2.rate); setK('l2f', p.lfo2.fltAmt); }
+
+    if(p.fx) {
+        setK('fxEqL', p.fx.eqLow); setK('fxEqH', p.fx.eqHigh);
+        setK('fxDst', p.fx.dist); setK('fxCho', p.fx.chorusDepth);
+        setK('fxDly', p.fx.delayMix); setK('fxRev', p.fx.reverbMix);
+    }
+}
+
+function applyAiSequence(s) {
+    if(!s || !s.notes) return;
+    
+    // Clear grid
+    seqGrid = Array(SEQ_NOTES).fill().map(() => Array(SEQ_STEPS).fill(0));
+    document.querySelectorAll('.seq-cell').forEach(c => c.classList.remove('active'));
+    
+    // Apply notes
+    s.notes.forEach(n => {
+        if(n.step >= 0 && n.step < SEQ_STEPS && n.note >= 0 && n.note < SEQ_NOTES) {
+            const row = SEQ_NOTES - 1 - n.note; // 0 is lowest note, so row 23
+            seqGrid[row][n.step] = 1;
+            const el = document.querySelector(`.seq-cell[data-row="${row}"][data-col="${n.step}"]`);
+            if(el) el.classList.add('active');
+        }
+    });
+
+    if(s.bpm) {
+        const bpmEl = document.getElementById('seqBpm');
+        bpmEl.value = Math.max(60, Math.min(240, s.bpm));
+    }
+}
+
+async function handleAiGen(isSequence) {
+    const prompt = document.getElementById('aiPrompt').value;
+    if(!prompt) return;
+    
+    if(!isAudioInitialized) document.getElementById('btnInitAudio').click();
+
+    const status = document.getElementById('aiStatus');
+    status.className = 'text-[10px] text-center font-bold text-cyan-400 mt-1 block';
+    status.innerText = '✨ Generating with Gemini AI...';
+    
+    // Disable buttons
+    document.getElementById('btnAiPreset').disabled = true;
+    document.getElementById('btnAiSeq').disabled = true;
+
+    try {
+        const result = await callGemini(prompt, isSequence);
+        if(isSequence) {
+            applyAiSequence(result);
+            status.innerText = '✅ Sequence generated!';
+        } else {
+            applyAiPreset(result);
+            status.innerText = '✅ Preset generated!';
+        }
+    } catch(e) {
+        status.className = 'text-[10px] text-center font-bold text-red-400 mt-1 block';
+        status.innerText = '❌ Error: Failed to generate.';
+        console.error(e);
+    } finally {
+        document.getElementById('btnAiPreset').disabled = false;
+        document.getElementById('btnAiSeq').disabled = false;
+        setTimeout(() => status.style.display = 'none', 4000);
+    }
+}
+
+document.getElementById('btnAiPreset').addEventListener('click', () => handleAiGen(false));
+document.getElementById('btnAiSeq').addEventListener('click', () => handleAiGen(true));
+
+// ==========================================
+// 10. File Export / Import
+// ==========================================
+document.getElementById('btnExport').addEventListener('click', () => {
+    const data = {
+        preset: S,
+        sequence: {
+            grid: seqGrid,
+            bpm: document.getElementById('seqBpm').value
+        }
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'synth_patch.json';
+    a.click();
+    URL.revokeObjectURL(url);
+});
+
+document.getElementById('btnImport').addEventListener('click', () => {
+    document.getElementById('fileImport').click();
+});
+
+document.getElementById('fileImport').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if(!isAudioInitialized) document.getElementById('btnInitAudio').click();
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        try {
+            const data = JSON.parse(ev.target.result);
+            if (data.preset) applyAiPreset(data.preset);
+            if (data.sequence) {
+                applyAiSequence({ notes: [], bpm: data.sequence.bpm }); // グリッドとUIをリセット
+                seqGrid = data.sequence.grid; // グリッドデータを直接上書き
+                document.querySelectorAll('.seq-cell').forEach(c => {
+                    const row = parseInt(c.dataset.row);
+                    const col = parseInt(c.dataset.col);
+                    if(seqGrid[row][col]) c.classList.add('active');
+                });
+            }
+            // メッセージボックスで通知
+            const status = document.getElementById('aiStatus');
+            status.className = 'text-[10px] text-center font-bold text-cyan-400 mt-1 block';
+            status.innerText = '✅ ファイルを読み込みました！';
+            setTimeout(() => status.style.display = 'none', 3000);
+            
+        } catch (err) {
+            const status = document.getElementById('aiStatus');
+            status.className = 'text-[10px] text-center font-bold text-red-400 mt-1 block';
+            status.innerText = '❌ 読み込みに失敗しました。';
+            setTimeout(() => status.style.display = 'none', 3000);
+            console.error(err);
+        }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // 連続で同じファイルを読めるようにリセット
+});
+
+// Boot
+buildUI();
+buildSequencerUI();
+buildKeyboard();
+initVisualizer();
+
+</script>
+</body>
+</html>
