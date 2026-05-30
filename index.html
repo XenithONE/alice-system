@@ -145,6 +145,29 @@
   header .lead .caret{display:inline-block;width:9px;height:1.05em;background:var(--p2);
     transform:translateY(2px);margin-left:2px;animation:blink 1s steps(1) infinite}
   .hero-cta{margin-top:40px;display:flex;gap:14px;flex-wrap:wrap;opacity:0;animation:rise .9s .55s forwards}
+  /* cinematic image-buttons */
+  .hero-tiles{margin-top:40px;display:flex;gap:18px;flex-wrap:wrap;opacity:0;animation:rise .9s .55s forwards}
+  .tile{position:relative;width:310px;max-width:44vw;aspect-ratio:16/10;border-radius:14px;overflow:hidden;
+    border:1px solid var(--line);isolation:isolate;transition:transform .3s,box-shadow .3s,border-color .3s}
+  .tile-img{position:absolute;inset:0;background:var(--img) center/cover no-repeat;
+    animation:tilefloat 8s ease-in-out infinite;will-change:transform}
+  .tile-grad{position:absolute;inset:0;z-index:1;
+    background:linear-gradient(180deg,rgba(2,3,10,.08),rgba(2,3,10,.5) 58%,rgba(2,3,10,.92))}
+  .tile-label{position:absolute;left:18px;bottom:15px;z-index:3;display:flex;flex-direction:column}
+  .tile-label b{font-family:var(--mono);font-size:16px;font-weight:800;letter-spacing:.06em;text-shadow:0 2px 12px rgba(0,0,0,.8)}
+  .tile-label i{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--p2);margin-top:4px;transition:transform .3s}
+  .tile::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+    background:linear-gradient(120deg,transparent 32%,rgba(255,255,255,.16) 50%,transparent 68%);
+    transform:translateX(-120%);transition:transform .75s}
+  .tile::before{content:"";position:absolute;inset:0;border-radius:inherit;z-index:4;pointer-events:none;transition:.3s;
+    box-shadow:inset 0 0 0 1px rgba(51,231,200,0)}
+  .tile:hover{transform:translateY(-7px);border-color:var(--p2);box-shadow:0 26px 54px -20px rgba(51,231,200,.45)}
+  .tile:hover .tile-img{animation-play-state:paused;transform:scale(1.12)}
+  .tile:hover .tile-label i{transform:translateX(6px)}
+  .tile:hover::after{transform:translateX(120%)}
+  .tile:hover::before{box-shadow:inset 0 0 24px rgba(51,231,200,.22),inset 0 0 0 1px rgba(51,231,200,.45)}
+  @keyframes tilefloat{0%,100%{transform:scale(1.02)}50%{transform:scale(1.07) translateY(-4px)}}
+  @media(max-width:560px){.tile{width:100%;max-width:none}}
   @keyframes rise{from{opacity:0;transform:translateY(28px)}to{opacity:1;transform:none}}
 
   .btn{position:relative;padding:15px 30px;border-radius:6px;font-family:var(--mono);font-weight:700;font-size:14px;
@@ -317,9 +340,15 @@
     <div class="hud"><span class="live"></span> SIGNAL DETECTED <span class="sep">//</span> <span id="hud-sub">AI CREATIVE ENGINE v1.0</span></div>
     <h1 class="glitch" id="glitch" data-text="AlicE sYsTeM"><span class="g-main" id="glitch-main">AlicE sYsTeM</span></h1>
     <p class="lead"><span id="lead-typed"></span><span class="caret"></span></p>
-    <div class="hero-cta">
-      <a href="#games" class="btn primary magnetic">▶ Enter Games</a>
-      <a href="#videos" class="btn ghost magnetic">◐ Watch Videos</a>
+    <div class="hero-tiles">
+      <a href="#games" class="tile" style="--img:url('assets/btn-games.jpg')">
+        <span class="tile-img"></span><span class="tile-grad"></span>
+        <span class="tile-label"><b>ENTER GAMES</b><i>遊ぶ →</i></span>
+      </a>
+      <a href="#videos" class="tile" style="--img:url('assets/btn-videos.jpg')">
+        <span class="tile-img"></span><span class="tile-grad"></span>
+        <span class="tile-label"><b>WATCH VIDEOS</b><i>観る →</i></span>
+      </a>
     </div>
     <div class="stats">
       <div class="stat"><div class="n" id="stat-games">0</div><div class="l">GAMES</div></div>
