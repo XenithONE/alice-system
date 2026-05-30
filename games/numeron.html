@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>NUMERON // AlicE sYsTeM</title>
+<style>
+  :root{
+    --bg:#04060c; --panel:rgba(13,18,30,.6); --line:rgba(120,200,210,.14);
+    --text:#dfeef0; --muted:#7c8aa0; --p1:#7b4dff; --p2:#33e7c8; --p3:#7dffae;
+    --mono:"SFMono-Regular",ui-monospace,"Cascadia Code","Consolas",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:
+      radial-gradient(80% 60% at 70% 10%,rgba(51,231,200,.06),transparent 60%),
+      radial-gradient(70% 60% at 20% 90%,rgba(123,77,255,.10),transparent 60%),var(--bg);
+    color:var(--text);font-family:var(--mono);overflow:hidden;
+    display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none;
+    touch-action:none;}
+  /* scanline + vignette mood */
+  .fx{position:fixed;inset:0;pointer-events:none;z-index:30}
+  .fx.scan{background:repeating-linear-gradient(rgba(255,255,255,.02) 0 1px,transparent 1px 3px);opacity:.5}
+  .fx.vig{box-shadow:inset 0 0 160px 50px rgba(0,0,0,.75)}
+
+  .wrap{display:flex;gap:18px;align-items:stretch;padding:14px;max-width:100%;max-height:100%}
+  canvas{display:block;image-rendering:auto}
+  #board{background:rgba(4,7,14,.7);border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 0 0 1px rgba(51,231,200,.06),0 20px 50px -24px #000;max-height:calc(100vh - 28px)}
+
+  .side{display:flex;flex-direction:column;gap:12px;min-width:150px;justify-content:center}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;backdrop-filter:blur(6px)}
+  .label{font-size:10px;letter-spacing:.22em;color:var(--p2);text-transform:uppercase}
+  .target{font-size:46px;font-weight:800;line-height:1;
+    background:linear-gradient(120deg,#fff,#7dffae 50%,#33e7c8);-webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 0 24px rgba(51,231,200,.4)}
+  .big{font-size:26px;font-weight:800}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .muted{color:var(--muted);font-size:11px}
+  #next{display:block;margin-top:6px}
+  .title{font-weight:800;letter-spacing:.18em;font-size:15px;
+    background:linear-gradient(110deg,#dff7f0,#33e7c8 60%,#7b4dff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hint{font-size:10px;color:var(--muted);line-height:1.7;letter-spacing:.04em}
+  .hint b{color:var(--p3)}
+
+  /* overlay */
+  #over{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    background:radial-gradient(circle,rgba(4,6,12,.6),rgba(4,6,12,.94));z-index:20;text-align:center;border-radius:12px}
+  #over.show{display:flex}
+  #over h2{font-size:30px;font-weight:900;letter-spacing:.1em;
+    background:linear-gradient(110deg,#ff6b9d,#7b4dff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .btn{font-family:var(--mono);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;
+    padding:12px 26px;border-radius:8px;border:1px solid transparent;color:#fff;
+    background:linear-gradient(110deg,var(--p1),var(--p2));transition:.2s}
+  .btn:hover{filter:brightness(1.12);box-shadow:0 0 18px rgba(51,231,200,.5);transform:translateY(-2px)}
+
+  /* touch controls */
+  .touch{display:none;gap:8px;margin-top:10px}
+  .touch button{flex:1;font-family:var(--mono);font-size:18px;color:var(--text);background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;padding:12px 0;cursor:pointer}
+  .touch button:active{background:rgba(51,231,200,.15)}
+  @media(hover:none){.touch{display:flex} .hint.kb{display:none}}
+  @media(max-width:560px){
+    .wrap{flex-direction:column;gap:10px;align-items:center}
+    .side{flex-direction:row;flex-wrap:wrap;min-width:0;width:100%;justify-content:center}
+    .panel{padding:8px 12px}
+    .target{font-size:34px}
+  }
+</style>
+</head>
+<body>
+<div class="fx scan"></div><div class="fx vig"></div>
+
+<div class="wrap">
+  <div style="position:relative">
+    <canvas id="board"></canvas>
+    <div id="over">
+      <h2 id="overTitle">GAME OVER</h2>
+      <div class="muted" id="overSub"></div>
+      <button class="btn" id="restart">▶ RETRY</button>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="panel">
+      <div class="title">NUMERON</div>
+      <div class="muted" style="margin-top:4px">隣接の合計を作って消せ</div>
+    </div>
+    <div class="panel">
+      <div class="label">Target Sum</div>
+      <div class="target" id="target">10</div>
+    </div>
+    <div class="panel">
+      <div class="row"><span class="label">Score</span><span class="big" id="score">0</span></div>
+      <div class="row" style="margin-top:8px"><span class="label">Level</span><span class="big" id="level">1</span></div>
+      <div class="row" style="margin-top:8px"><span class="label">Chain</span><span class="big" id="chain">0</span></div>
+    </div>
+    <div class="panel">
+      <div class="label">Next</div>
+      <canvas id="next" width="72" height="120"></canvas>
+    </div>
+    <div class="panel hint kb">
+      <b>← →</b> 移動　<b>↑</b> 回転<br><b>↓</b> 落下　<b>SPACE</b> 一気に落とす
+    </div>
+    <div class="touch">
+      <button id="tL">◀</button>
+      <button id="tRot">⟳</button>
+      <button id="tD">▼</button>
+      <button id="tDrop">⤓</button>
+      <button id="tR">▶</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ---------- config ----------
+  const COLS=6, ROWS=13, CELL=58;
+  const TARGET=10;                 // 隣接合計がこの数で消える
+  const VALUES=[1,2,3,4,5,6,7,8,9];
+  const board=document.getElementById('board');
+  const ctx=board.getContext('2d');
+  board.width=COLS*CELL; board.height=ROWS*CELL;
+  const nextCv=document.getElementById('next'), nctx=nextCv.getContext('2d');
+
+  // fit height to viewport (keep crisp internal res, scale via CSS)
+  function fit(){
+    const maxH=Math.min(window.innerHeight-28, ROWS*CELL);
+    const scale=maxH/(ROWS*CELL);
+    board.style.height=(ROWS*CELL*scale)+'px';
+    board.style.width=(COLS*CELL*scale)+'px';
+  }
+  window.addEventListener('resize',fit);
+
+  // ---------- state ----------
+  let grid, piece, next, score, level, chain, dropMs, dropAcc, last, over, cleared;
+  const elScore=document.getElementById('score'), elLevel=document.getElementById('level'),
+        elChain=document.getElementById('chain'), elTarget=document.getElementById('target');
+  elTarget.textContent=TARGET;
+
+  function rnd(a){return a[(Math.random()*a.length)|0];}
+  function makePiece(){return {r:1,c:(COLS/2|0),o:0,a:rnd(VALUES),b:rnd(VALUES)};}
+
+  // cells of a piece given pivot/orientation
+  function cellsOf(p){
+    const off=[[-1,0],[0,1],[1,0],[0,-1]][p.o];
+    return [{r:p.r,c:p.c,v:p.a},{r:p.r+off[0],c:p.c+off[1],v:p.b}];
+  }
+  function valid(p){
+    return cellsOf(p).every(c=> c.c>=0 && c.c<COLS && c.r<ROWS && (c.r<0 || grid[c.r][c.c]===0));
+  }
+
+  function reset(){
+    grid=Array.from({length:ROWS},()=>Array(COLS).fill(0));
+    score=0; level=1; chain=0; dropMs=720; dropAcc=0; over=false; cleared=0;
+    piece=makePiece(); next=makePiece();
+    document.getElementById('over').classList.remove('show');
+    updateHUD(); drawNext();
+  }
+
+  function updateHUD(){
+    elScore.textContent=score; elLevel.textContent=level; elChain.textContent=chain;
+  }
+
+  // ---------- mechanics ----------
+  function lock(){
+    cellsOf(piece).forEach(c=>{ if(c.r>=0) grid[c.r][c.c]=c.v; });
+    settle();
+    resolveCascade(()=>{
+      piece=next; next=makePiece(); drawNext();
+      if(!valid(piece)){ gameOver(); }
+    });
+  }
+
+  // column gravity (puyo-style): compact non-empty cells to the bottom
+  function settle(){
+    for(let c=0;c<COLS;c++){
+      let write=ROWS-1;
+      for(let r=ROWS-1;r>=0;r--){
+        if(grid[r][c]!==0){ const v=grid[r][c]; grid[r][c]=0; grid[write][c]=v; write--; }
+      }
+    }
+  }
+
+  // find all cells that belong to a contiguous H/V run summing to TARGET
+  function findMatches(){
+    const mark=Array.from({length:ROWS},()=>Array(COLS).fill(false));
+    let any=false;
+    const scanSeg=(cellsList)=>{ // cellsList: array of {r,c,v} contiguous non-empty
+      const n=cellsList.length;
+      for(let i=0;i<n;i++){
+        let sum=0;
+        for(let j=i;j<n;j++){
+          sum+=cellsList[j].v;
+          if(j>i && sum===TARGET){ for(let k=i;k<=j;k++){mark[cellsList[k].r][cellsList[k].c]=true;} any=true; }
+          if(sum>TARGET) break;
+        }
+      }
+    };
+    // rows
+    for(let r=0;r<ROWS;r++){
+      let seg=[];
+      for(let c=0;c<=COLS;c++){
+        if(c<COLS && grid[r][c]!==0){ seg.push({r,c,v:grid[r][c]}); }
+        else { if(seg.length>=2) scanSeg(seg); seg=[]; }
+      }
+    }
+    // columns
+    for(let c=0;c<COLS;c++){
+      let seg=[];
+      for(let r=0;r<=ROWS;r++){
+        if(r<ROWS && grid[r][c]!==0){ seg.push({r,c,v:grid[r][c]}); }
+        else { if(seg.length>=2) scanSeg(seg); seg=[]; }
+      }
+    }
+    return any?mark:null;
+  }
+
+  let flashCells=null, flashT=0;
+  function resolveCascade(done){
+    chain=0;
+    const step=()=>{
+      const mark=findMatches();
+      if(!mark){ chain=0; updateHUD(); done&&done(); return; }
+      chain++;
+      let count=0, sumVal=0;
+      const flash=[];
+      for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++) if(mark[r][c]){ count++; sumVal+=grid[r][c]; flash.push({r,c,v:grid[r][c]}); }
+      // score: cleared value * chain combo, bonus for big clears
+      score += (sumVal*chain) + (count>=4?count*5*chain:0);
+      cleared += count;
+      const newLevel=1+Math.floor(cleared/20);
+      if(newLevel!==level){ level=newLevel; dropMs=Math.max(140, 720 - (level-1)*55); }
+      updateHUD();
+      // flash then remove
+      flashCells=flash; flashT=performance.now();
+      setTimeout(()=>{
+        for(const f of flash) grid[f.r][f.c]=0;
+        flashCells=null; settle();
+        setTimeout(step, 90);   // continue chain
+      },180);
+    };
+    step();
+  }
+
+  function gameOver(){
+    over=true;
+    document.getElementById('overSub').textContent='SCORE '+score+' ・ LEVEL '+level;
+    document.getElementById('over').classList.add('show');
+  }
+
+  // ---------- input ----------
+  function move(dc){ const p={...piece,c:piece.c+dc}; if(valid(p)) piece=p; }
+  function softDrop(){ const p={...piece,r:piece.r+1}; if(valid(p)){piece=p; dropAcc=0;} else lock(); }
+  function hardDrop(){ let p={...piece}; while(valid({...p,r:p.r+1})) p.r++; piece=p; lock(); }
+  function rotate(){
+    for(const k of [0,-1,1,-2,2]){      // basic wall kicks
+      const p={...piece,o:(piece.o+1)%4,c:piece.c+k};
+      if(valid(p)){ piece=p; return; }
+    }
+  }
+  function key(e){
+    if(over){ if(e.key==='Enter'||e.key===' ') reset(); return; }
+    let used=true;
+    switch(e.key){
+      case 'ArrowLeft': move(-1); break;
+      case 'ArrowRight': move(1); break;
+      case 'ArrowUp': case 'x': case 'X': rotate(); break;
+      case 'ArrowDown': softDrop(); break;
+      case ' ': hardDrop(); break;
+      default: used=false;
+    }
+    if(used) e.preventDefault();
+  }
+  window.addEventListener('keydown',key,{passive:false});
+  // touch buttons
+  const tb=(id,fn)=>{const el=document.getElementById(id);['click'].forEach(ev=>el.addEventListener(ev,e=>{e.preventDefault();if(!over)fn();}));};
+  tb('tL',()=>move(-1)); tb('tR',()=>move(1)); tb('tRot',rotate); tb('tD',softDrop); tb('tDrop',hardDrop);
+  document.getElementById('restart').addEventListener('click',reset);
+  // focus for keyboard when embedded in iframe
+  window.addEventListener('click',()=>window.focus());
+
+  // ---------- render ----------
+  function cellColor(v){
+    const hue=160 + (v-1)/8*110;          // teal(160) -> violet(270)
+    return {fill:`hsla(${hue},70%,16%,.95)`, glow:`hsla(${hue},85%,55%,1)`, edge:`hsla(${hue},80%,45%,.9)`};
+  }
+  function roundRect(c,x,y,w,h,r){c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+  function drawCell(c,gx,gy,v,a=1,flash=false){
+    const x=gx*CELL, y=gy*CELL, m=4;
+    const col=cellColor(v);
+    c.save(); c.globalAlpha=a;
+    roundRect(c,x+m,y+m,CELL-2*m,CELL-2*m,9);
+    c.fillStyle=flash?'rgba(255,255,255,.95)':col.fill; c.fill();
+    c.lineWidth=2; c.strokeStyle=flash?'#fff':col.edge;
+    c.shadowColor=col.glow; c.shadowBlur=flash?26:12; c.stroke(); c.shadowBlur=0;
+    c.fillStyle=flash?'#04060c':'#eafff7';
+    c.font='700 '+(CELL*0.46)+'px '+getComputedStyle(document.body).fontFamily;
+    c.textAlign='center'; c.textBaseline='middle';
+    c.fillText(String(v), x+CELL/2, y+CELL/2+1);
+    c.restore();
+  }
+  function draw(){
+    ctx.clearRect(0,0,board.width,board.height);
+    // grid lines
+    ctx.strokeStyle='rgba(120,200,210,.05)'; ctx.lineWidth=1;
+    for(let c=1;c<COLS;c++){ctx.beginPath();ctx.moveTo(c*CELL,0);ctx.lineTo(c*CELL,board.height);ctx.stroke();}
+    for(let r=1;r<ROWS;r++){ctx.beginPath();ctx.moveTo(0,r*CELL);ctx.lineTo(board.width,r*CELL);ctx.stroke();}
+    // placed cells
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++) if(grid[r][c]!==0){
+      const fl=flashCells&&flashCells.some(f=>f.r===r&&f.c===c);
+      drawCell(ctx,c,r,grid[r][c],1,fl);
+    }
+    // ghost + active piece
+    if(!over && piece){
+      // ghost
+      let g={...piece}; while(valid({...g,r:g.r+1})) g.r++;
+      cellsOf(g).forEach(c=>{ if(c.r>=0) drawCell(ctx,c.c,c.r,c.v,0.16); });
+      cellsOf(piece).forEach(c=>{ if(c.r>=0) drawCell(ctx,c.c,c.r,c.v,1); });
+    }
+  }
+  function drawNext(){
+    nctx.clearRect(0,0,nextCv.width,nextCv.height);
+    const cs=48, ox=(nextCv.width-cs)/2;
+    const cells=[{r:1,c:0,v:next.a},{r:0,c:0,v:next.b}];
+    cells.forEach(c=>{
+      const x=ox+c.c*cs, y=10+c.r*cs, m=3, col=cellColor(c.v);
+      roundRect(nctx,x+m,y+m,cs-2*m,cs-2*m,7); nctx.fillStyle=col.fill; nctx.fill();
+      nctx.lineWidth=2; nctx.strokeStyle=col.edge; nctx.shadowColor=col.glow; nctx.shadowBlur=10; nctx.stroke(); nctx.shadowBlur=0;
+      nctx.fillStyle='#eafff7'; nctx.font='700 22px '+getComputedStyle(document.body).fontFamily;
+      nctx.textAlign='center'; nctx.textBaseline='middle'; nctx.fillText(String(c.v),x+cs/2,y+cs/2+1);
+    });
+  }
+
+  // ---------- loop ----------
+  function loop(t){
+    if(!last) last=t; const dt=t-last; last=t;
+    if(!over && !flashCells){
+      dropAcc+=dt;
+      if(dropAcc>=dropMs){ dropAcc=0; const p={...piece,r:piece.r+1}; if(valid(p)) piece=p; else lock(); }
+    }
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  fit(); reset(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
