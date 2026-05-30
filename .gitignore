@@ -1,0 +1,4 @@
+assets/*.png
+generate_alice_assets.py
+openai_key.txt
+*.key

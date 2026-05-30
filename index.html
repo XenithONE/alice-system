@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AlicE sYsTeM</title>
+<link rel="preload" as="image" href="assets/hero.jpg">
 <meta name="description" content="AlicE sYsTeM — AIで作ったゲームと動画のコレクション">
 <style>
   :root{
@@ -106,7 +107,18 @@
   @media(max-width:640px){.nav-links{display:none}}
 
   /* ===== hero ===== */
-  header{min-height:100vh;display:flex;align-items:center;position:relative;padding:120px 0 90px}
+  header{min-height:100vh;display:flex;align-items:center;position:relative;padding:120px 0 90px;overflow:hidden}
+  /* AI key-visual background */
+  .hero-art{position:absolute;inset:0;z-index:0;background:url('assets/hero.jpg') center/cover no-repeat;
+    animation:kenburns 26s ease-in-out infinite alternate;will-change:transform}
+  .hero-art::after{content:"";position:absolute;inset:0;background:
+    linear-gradient(180deg,rgba(2,3,10,.30) 0%,rgba(2,3,10,.48) 45%,rgba(2,3,10,.82) 80%,#02030a 100%);}
+  @keyframes kenburns{from{transform:scale(1.03)}to{transform:scale(1.12)}}
+  header .wrap{position:relative;z-index:2}
+  /* faint nebula texture behind content sections */
+  #games::before,#videos::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+    background:url('assets/nebula.jpg') center/cover no-repeat;opacity:.10}
+  #games .wrap,#videos .wrap{position:relative;z-index:1}
   .hud{font-family:var(--mono);font-size:12px;letter-spacing:.18em;color:var(--p2);
     display:flex;align-items:center;gap:10px;margin-bottom:30px;opacity:0;animation:rise .8s .1s forwards}
   .hud .live{width:7px;height:7px;border-radius:50%;background:var(--p2);box-shadow:0 0 10px var(--p2);animation:pulse 1.6s infinite}
@@ -228,6 +240,10 @@
   footer .sig{font-family:var(--mono);letter-spacing:.04em}
 
   /* ===== end gate (hidden door to the studio) ===== */
+  .endgate-art{position:absolute;inset:0;z-index:0;background:url('assets/entity.jpg') center/cover no-repeat;opacity:.55}
+  .endgate-art::after{content:"";position:absolute;inset:0;background:
+    radial-gradient(ellipse at 50% 42%,transparent 14%,rgba(2,3,10,.55) 52%,rgba(2,3,10,.9) 82%,#02030a 100%)}
+  .endgate>*:not(.endgate-art){position:relative;z-index:2}
   .endgate{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:34px;text-align:center;position:relative;border-top:1px solid var(--line);overflow:hidden}
   .endgate .eg-kicker{font-family:var(--mono);font-size:12px;letter-spacing:.34em;color:var(--muted)}
@@ -295,6 +311,7 @@
 </nav>
 
 <header>
+  <div class="hero-art"></div>
   <div class="portal"></div>
   <div class="wrap">
     <div class="hud"><span class="live"></span> SIGNAL DETECTED <span class="sep">//</span> <span id="hud-sub">AI CREATIVE ENGINE v1.0</span></div>
@@ -372,6 +389,7 @@
 
 <!-- hidden door at the very bottom -> the Studio -->
 <section class="endgate" id="endgate">
+  <div class="endgate-art"></div>
   <div class="eg-kicker">// END OF TRANSMISSION</div>
   <h2>その先に、<span class="g">音の実験室</span>。</h2>
   <a class="gate" href="sy.html" id="gate">
