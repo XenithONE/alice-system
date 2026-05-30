@@ -108,13 +108,14 @@
 
   /* ===== hero ===== */
   header{min-height:100vh;display:flex;align-items:center;position:relative;padding:120px 0 90px;overflow:hidden}
-  /* AI key-visual background */
+  /* AI key-visual background (+ optional Runway video) */
   .hero-art{position:absolute;inset:0;z-index:0;background:url('assets/hero.jpg') center/cover no-repeat;
     animation:kenburns 26s ease-in-out infinite alternate;will-change:transform}
-  .hero-art::after{content:"";position:absolute;inset:0;background:
-    linear-gradient(180deg,rgba(2,3,10,.30) 0%,rgba(2,3,10,.48) 45%,rgba(2,3,10,.82) 80%,#02030a 100%);}
+  .hero-vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;opacity:1;transition:opacity 1.4s ease}
+  .hero-overlay{position:absolute;inset:0;z-index:2;pointer-events:none;background:
+    linear-gradient(180deg,rgba(2,3,10,.30) 0%,rgba(2,3,10,.48) 45%,rgba(2,3,10,.82) 80%,#02030a 100%)}
   @keyframes kenburns{from{transform:scale(1.03)}to{transform:scale(1.12)}}
-  header .wrap{position:relative;z-index:2}
+  header .wrap{position:relative;z-index:3}
   /* faint nebula texture behind content sections */
   #games::before,#videos::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
     background:url('assets/nebula.jpg') center/cover no-repeat;opacity:.10}
@@ -264,9 +265,10 @@
 
   /* ===== end gate (hidden door to the studio) ===== */
   .endgate-art{position:absolute;inset:0;z-index:0;background:url('assets/entity.jpg') center/cover no-repeat;opacity:.55}
-  .endgate-art::after{content:"";position:absolute;inset:0;background:
+  .endgate-vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1;opacity:.6;transition:opacity 1.4s ease}
+  .endgate-overlay{position:absolute;inset:0;z-index:2;pointer-events:none;background:
     radial-gradient(ellipse at 50% 42%,transparent 14%,rgba(2,3,10,.55) 52%,rgba(2,3,10,.9) 82%,#02030a 100%)}
-  .endgate>*:not(.endgate-art){position:relative;z-index:2}
+  .endgate>*:not(.endgate-art):not(.endgate-vid):not(.endgate-overlay){position:relative;z-index:3}
   .endgate{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:34px;text-align:center;position:relative;border-top:1px solid var(--line);overflow:hidden}
   .endgate .eg-kicker{font-family:var(--mono);font-size:12px;letter-spacing:.34em;color:var(--muted)}
@@ -335,6 +337,10 @@
 
 <header>
   <div class="hero-art"></div>
+  <video class="hero-vid" autoplay muted loop playsinline preload="auto" poster="assets/hero.jpg" onloadeddata="this.style.opacity=1">
+    <source src="assets/hero.mp4" type="video/mp4">
+  </video>
+  <div class="hero-overlay"></div>
   <div class="portal"></div>
   <div class="wrap">
     <div class="hud"><span class="live"></span> SIGNAL DETECTED <span class="sep">//</span> <span id="hud-sub">AI CREATIVE ENGINE v1.0</span></div>
@@ -419,6 +425,10 @@
 <!-- hidden door at the very bottom -> the Studio -->
 <section class="endgate" id="endgate">
   <div class="endgate-art"></div>
+  <video class="endgate-vid" autoplay muted loop playsinline preload="auto" poster="assets/entity.jpg" onloadeddata="this.style.opacity=.6">
+    <source src="assets/entity.mp4" type="video/mp4">
+  </video>
+  <div class="endgate-overlay"></div>
   <div class="eg-kicker">// END OF TRANSMISSION</div>
   <h2>その先に、<span class="g">音の実験室</span>。</h2>
   <a class="gate" href="sy.html" id="gate">
