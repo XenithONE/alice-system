@@ -6,6 +6,9 @@
 <title>AlicE sYsTeM</title>
 <link rel="preload" as="image" href="assets/hero.jpg">
 <meta name="description" content="AlicE sYsTeM — AIで作ったゲームと動画のコレクション">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Shippori+Mincho:wght@600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#02030a;
@@ -18,14 +21,17 @@
     --p3:#7dffae;   /* alien green  */
     --radius:16px;
     --mono:"SFMono-Regular",ui-monospace,"Cascadia Code","Consolas",monospace;
+    --serif:"Cormorant Garamond","Shippori Mincho",serif;
+    --sans:"Space Grotesk","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html{scroll-behavior:smooth}
   body{
-    font-family:"Segoe UI","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
-    background:var(--bg);color:var(--text);line-height:1.7;
+    font-family:var(--sans);
+    background:var(--bg);color:var(--text);line-height:1.7;letter-spacing:.005em;
     -webkit-font-smoothing:antialiased;overflow-x:hidden;
   }
+  body.cur-on,body.cur-on *{cursor:none}
   body.boot{overflow:hidden;height:100vh}
   a{color:inherit;text-decoration:none}
   .wrap{max-width:1180px;margin:0 auto;padding:0 26px}
@@ -212,7 +218,8 @@
   .sec-head{margin-bottom:48px}
   .sec-head .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.22em;color:var(--p2);font-weight:700;display:flex;align-items:center;gap:10px}
   .sec-head .kicker::before{content:"";width:26px;height:1px;background:var(--p2)}
-  .sec-head h2{font-size:clamp(30px,5.5vw,52px);font-weight:900;letter-spacing:-.02em;margin-top:12px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .sec-head h2{font-family:var(--serif);font-size:clamp(40px,7vw,76px);font-weight:600;font-style:italic;
+    letter-spacing:.005em;margin-top:6px;display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;line-height:1}
   .sec-head h2 .count{font-family:var(--mono);font-size:14px;font-weight:600;color:var(--muted);padding:5px 13px;border:1px solid var(--line);border-radius:6px}
   .sec-head .line{height:1px;background:linear-gradient(90deg,var(--line),transparent);margin-top:24px}
 
@@ -272,7 +279,7 @@
   .endgate{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:34px;text-align:center;position:relative;border-top:1px solid var(--line);overflow:hidden}
   .endgate .eg-kicker{font-family:var(--mono);font-size:12px;letter-spacing:.34em;color:var(--muted)}
-  .endgate h2{font-size:clamp(30px,6vw,66px);font-weight:900;letter-spacing:-.02em;line-height:1.05}
+  .endgate h2{font-family:var(--serif);font-size:clamp(38px,7vw,82px);font-weight:600;letter-spacing:.01em;line-height:1.08}
   .endgate h2 .g{background:linear-gradient(110deg,#7dffae,#33e7c8 45%,#7b4dff);
     -webkit-background-clip:text;background-clip:text;color:transparent}
   .endgate p.note{font-family:var(--mono);color:var(--muted);font-size:13px;max-width:460px}
@@ -396,7 +403,7 @@
 <section id="games">
   <div class="wrap">
     <div class="sec-head reveal">
-      <div class="kicker">PLAYABLE / 遊べる</div>
+      <div class="kicker"><span class="idx">01</span> PLAYABLE / 遊べる</div>
       <h2>Games <span class="count" id="games-count"></span></h2>
       <div class="line"></div>
     </div>
@@ -407,11 +414,18 @@
 <section id="videos">
   <div class="wrap">
     <div class="sec-head reveal">
-      <div class="kicker">WATCH / 観る</div>
+      <div class="kicker"><span class="idx">02</span> WATCH / 観る</div>
       <h2>Videos <span class="count" id="videos-count"></span></h2>
       <div class="line"></div>
     </div>
     <div class="grid" id="videos-grid"></div>
+  </div>
+</section>
+
+<section class="manifesto" id="manifesto">
+  <div class="wrap">
+    <p class="m-kicker"><span class="idx">03</span> TRANSMISSION</p>
+    <p class="m-text reveal">虚空の最果てで、AIと共に世界を編む。<br>ゲーム、映像、音 ── すべては<em>ひとつの信号</em>として、ここに集う。</p>
   </div>
 </section>
 
@@ -589,5 +603,104 @@ function boot(){
 
 renderSite();renderGames();renderVideos();starfield();initEffects();initEndgate();boot();
 </script>
+
+<!-- ===== stylish pass: typography polish, custom cursor, parallax, reveals ===== -->
+<style>
+  /* section index numerals */
+  .kicker .idx,.m-kicker .idx{font-family:var(--serif);font-style:italic;font-weight:600;font-size:1.45em;
+    color:var(--p3);margin-right:8px;opacity:.85;letter-spacing:0}
+  .sec-head .kicker{letter-spacing:.24em}
+  /* the count chip beside serif headings */
+  .sec-head h2 .count{font-family:var(--mono);align-self:center}
+  /* manifesto */
+  .manifesto{padding:150px 0;position:relative;text-align:center}
+  .m-kicker{font-family:var(--mono);font-size:12px;letter-spacing:.3em;color:var(--p2);margin-bottom:30px;
+    display:flex;align-items:center;justify-content:center;gap:4px}
+  .m-text{font-family:var(--serif);font-weight:500;font-size:clamp(27px,4.6vw,52px);line-height:1.5;
+    color:#eef5f2;max-width:900px;margin:0 auto;letter-spacing:.012em}
+  .m-text em{font-style:italic;background:linear-gradient(110deg,#7dffae,#33e7c8 50%,#7b4dff);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  /* refined hero lead spacing */
+  header .lead{letter-spacing:.04em}
+  /* custom cursor */
+  .cursor-ring{position:fixed;left:0;top:0;width:34px;height:34px;border:1px solid rgba(51,231,200,.55);
+    border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:9999;
+    transition:width .25s,height .25s,background .25s,border-color .25s,opacity .25s}
+  .cursor-dot{position:fixed;left:0;top:0;width:5px;height:5px;background:var(--p2);border-radius:50%;
+    transform:translate(-50%,-50%);pointer-events:none;z-index:9999;box-shadow:0 0 8px var(--p2)}
+  .cursor-ring.hot{width:58px;height:58px;background:rgba(51,231,200,.10);border-color:var(--p2)}
+  .cursor-ring.hide{opacity:0}
+  @media(hover:none){.cursor-ring,.cursor-dot{display:none}}
+</style>
+<script>
+(function(){
+  const fine = matchMedia('(hover:hover) and (pointer:fine)').matches;
+
+  /* ---- custom cursor ---- */
+  if(fine){
+    document.body.classList.add('cur-on');
+    const ring=document.createElement('div');ring.className='cursor-ring';
+    const dot=document.createElement('div');dot.className='cursor-dot';
+    document.body.append(ring,dot);
+    let rx=innerWidth/2,ry=innerHeight/2,tx=rx,ty=ry;
+    addEventListener('pointermove',e=>{tx=e.clientX;ty=e.clientY;
+      dot.style.left=tx+'px';dot.style.top=ty+'px';},{passive:true});
+    (function loop(){rx+=(tx-rx)*0.18;ry+=(ty-ry)*0.18;
+      ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(loop);})();
+    const hot='a,button,.tile,.gate,input,select,textarea,.knob-body';
+    addEventListener('pointerover',e=>{if(e.target.closest&&e.target.closest(hot))ring.classList.add('hot')},{passive:true});
+    addEventListener('pointerout',e=>{if(e.target.closest&&e.target.closest(hot))ring.classList.remove('hot')},{passive:true});
+    addEventListener('pointerdown',()=>ring.classList.add('hot'),{passive:true});
+    addEventListener('pointerup',()=>ring.classList.remove('hot'),{passive:true});
+    document.addEventListener('mouseleave',()=>{ring.classList.add('hide');dot.style.opacity=0});
+    document.addEventListener('mouseenter',()=>{ring.classList.remove('hide');dot.style.opacity=1});
+  }
+
+  /* ---- magnetic tiles ---- */
+  if(fine){
+    document.querySelectorAll('.tile').forEach(t=>{
+      t.addEventListener('pointermove',e=>{const r=t.getBoundingClientRect();
+        const mx=(e.clientX-r.left-r.width/2)/r.width, my=(e.clientY-r.top-r.height/2)/r.height;
+        t.style.transform=`translateY(-7px) perspective(900px) rotateX(${(-my*7).toFixed(2)}deg) rotateY(${(mx*9).toFixed(2)}deg)`;});
+      t.addEventListener('pointerleave',()=>t.style.transform='');
+    });
+  }
+
+  /* ---- word-by-word reveal for serif section headings (keeps .count chip) ---- */
+  const reveal=el=>el.querySelectorAll('.wrd').forEach(s=>s.classList.add('in'));
+  const io=new IntersectionObserver(es=>es.forEach(en=>{
+    if(en.isIntersecting){io.unobserve(en.target);reveal(en.target);}
+  }),{threshold:.01});
+  document.querySelectorAll('.sec-head h2').forEach(h=>{
+    const tn=h.firstChild;
+    const txt=(tn&&tn.nodeType===3?tn.textContent:'').trim();
+    if(!txt)return;
+    const words=txt.split(/\s+/).filter(Boolean);
+    const frag=document.createDocumentFragment();
+    words.forEach((w,i)=>{const s=document.createElement('span');s.className='wrd';
+      s.style.transitionDelay=(i*60)+'ms';s.textContent=w;frag.append(s,document.createTextNode(' '));});
+    tn.replaceWith(frag);                 // swap text for spans; keep .count chip & height
+    io.observe(h);
+    setTimeout(()=>reveal(h),2200);       // safety: never stay hidden
+  });
+
+  /* ---- subtle scroll parallax on hero + endgate visuals ---- */
+  const heroVid=document.querySelector('.hero-vid');
+  let ticking=false;
+  addEventListener('scroll',()=>{
+    if(ticking)return; ticking=true;
+    requestAnimationFrame(()=>{
+      const y=scrollY;
+      if(y<innerHeight && heroVid) heroVid.style.transform='translateY('+(y*0.15)+'px) scale(1.2)';
+      ticking=false;
+    });
+  },{passive:true});
+})();
+</script>
+<style>
+  .wrd{display:inline-block;opacity:0;transform:translateY(40px) rotate(2deg);
+    transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+  .wrd.in{opacity:1;transform:none}
+</style>
 </body>
 </html>
