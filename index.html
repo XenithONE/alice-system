@@ -438,7 +438,8 @@ const CMDS={
   decode:(a)=>{ if(!a){termPrint("usage: decode <word>",2);return;} const w=a.toLowerCase();
     if(w==='eidolon'||w==='alice'){termPrint("decryption accepted. the accord remembers you.",1);collect('terminal');}
     else termPrint("signal noise. nothing decoded.",2); },
-  summon:()=>termPrint("…something stirs. but it is not yet time.",1),
+  summon:()=>{ termPrint("summoning the constellation… aligning signal.",1);
+    setTimeout(()=>{ location.href='games/constellation.html'; }, 900); },
   core:()=>{ if(frags.size>=TOTAL){termPrint("CORE UNLOCKED.",1);setTimeout(unlockAccord,400);}
     else termPrint("ACCESS DENIED — "+frags.size+"/"+TOTAL+" fragments. the core stays sealed.",2); },
   clear:()=>{$('#termOut').innerHTML='';},

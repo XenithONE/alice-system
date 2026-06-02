@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CONSTELLATION // AlicE sYsTeM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Cormorant+Garamond:ital@1&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#04060b;--teal:#33e7c8;--violet:#7b4dff;--text:#dfe9ee;--muted:#7e8aa0;
+    --ui:"Space Grotesk",system-ui,sans-serif;--mono:ui-monospace,"Cascadia Code",monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--ui);overflow:hidden;touch-action:none;
+    user-select:none;-webkit-user-select:none}
+  #c{display:block;position:fixed;inset:0}
+  .vig{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 220px 70px rgba(0,0,0,.7)}
+  .grain{position:fixed;inset:0;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+  .top{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;justify-content:space-between;align-items:center;
+    padding:18px 22px;font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--muted)}
+  .top a{color:var(--muted);text-decoration:none;transition:.2s}
+  .top a:hover{color:var(--teal)}
+  .top .lvl{color:var(--teal)}
+  .hud{position:fixed;left:0;right:0;bottom:0;z-index:5;text-align:center;padding:22px;pointer-events:none}
+  .hud .msg{font-family:var(--mono);font-size:13px;letter-spacing:.16em;color:var(--teal);text-shadow:0 0 14px rgba(51,231,200,.5);min-height:20px;transition:opacity .4s}
+  .hud .sub{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px;letter-spacing:.1em}
+  .btn{pointer-events:auto;display:inline-block;margin-top:14px;font-family:var(--mono);font-size:12px;letter-spacing:.12em;
+    color:var(--text);border:1px solid rgba(150,190,205,.18);border-radius:8px;padding:9px 18px;cursor:pointer;background:rgba(12,16,26,.5);transition:.2s}
+  .btn:hover{border-color:var(--teal);color:var(--teal)}
+  #win{position:fixed;inset:0;z-index:10;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;
+    background:radial-gradient(circle,rgba(4,6,11,.7),#04060b 75%)}
+  #win.show{display:flex}
+  #win h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:clamp(34px,7vw,68px);
+    background:linear-gradient(110deg,#fff,var(--teal),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 50px rgba(51,231,200,.4)}
+  #win p{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.1em}
+  #win a{font-family:var(--mono);font-size:13px;letter-spacing:.16em;color:#04060b;background:linear-gradient(110deg,var(--teal),var(--violet));
+    padding:13px 28px;border-radius:8px;font-weight:700;text-decoration:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="vig"></div><div class="grain"></div>
+<div class="top">
+  <a href="../index.html">↩ RETURN</a>
+  <span>CONSTELLATION // SIGNAL ALIGNMENT</span>
+  <span class="lvl" id="lvl">LEVEL 1/3</span>
+</div>
+<div class="hud">
+  <div class="msg" id="msg">記憶せよ…</div>
+  <div class="sub" id="sub">星を順につないで、見た形を再現する</div>
+  <span class="btn" id="restart">⟲ RESTART LEVEL</span>
+</div>
+<div id="win">
+  <h1>SIGNAL ALIGNED</h1>
+  <p id="winp">三つの星座が、同期した。</p>
+  <a href="../index.html">↩ RETURN TO THE SIGNAL</a>
+</div>
+
+<script>
+(function(){
+  const cv=document.getElementById('c'),x=cv.getContext('2d');
+  const $=id=>document.getElementById(id);
+  let W,H,DPR;
+  function resize(){ DPR=Math.min(2,window.devicePixelRatio||1); W=innerWidth;H=innerHeight;
+    cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);
+    layout(); }
+  addEventListener('resize',resize);
+
+  // audio
+  let ac=null;function audio(){if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}return ac;}
+  function tone(f,d=0.2,type='sine',g=0.06){const a=audio();if(!a)return;const o=a.createOscillator(),gn=a.createGain();
+    o.type=type;o.frequency.value=f;o.connect(gn);gn.connect(a.destination);const t=a.currentTime;
+    gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(g,t+0.01);gn.gain.exponentialRampToValueAtTime(0.0001,t+d);o.start(t);o.stop(t+d);}
+
+  // constellations (normalized 0..1), ordered path of nodes
+  const LEVELS=[
+    [[.30,.40],[.45,.30],[.58,.42],[.50,.58]],
+    [[.28,.55],[.38,.35],[.52,.30],[.62,.45],[.55,.62]],
+    [[.25,.48],[.36,.32],[.48,.40],[.58,.28],[.66,.46],[.52,.58]],
+  ];
+
+  let level=0, nodes=[], decoys=[], target=[], progress=0, phase='flash', flashT=0, errorT=0, bgStars=[];
+  let pulse=0;
+
+  function buildBg(){ const N=Math.min(160,(W*H)/9000|0); bgStars=Array.from({length:N},()=>({
+    x:Math.random(),y:Math.random(),r:Math.random()*1.2+.2,p:Math.random()*6.28,sp:Math.random()*.5+.2})); }
+
+  function layout(){ // recompute pixel positions from normalized, keep state
+    const pad=Math.min(W,H)*0.12;
+    const fx=p=>pad+p[0]*(W-2*pad), fy=p=>pad+p[1]*(H-2*pad);
+    nodes=target.map(p=>({x:fx(p),y:fy(p)}));
+    decoys=decoys.map(d=>({nx:d.nx,ny:d.ny,r:d.r,x:pad+d.nx*(W-2*pad),y:pad+d.ny*(H-2*pad)}));
+  }
+  function startLevel(){
+    target=LEVELS[level];
+    // decoys
+    const nd=18+level*4; decoys=Array.from({length:nd},()=>{const r=Math.random()*1.6+.6;return {nx:Math.random(),ny:Math.random(),r};});
+    progress=0; phase='flash'; flashT=performance.now(); errorT=0;
+    layout(); buildBg();
+    $('lvl').textContent='LEVEL '+(level+1)+'/3';
+    $('msg').textContent='記憶せよ…'; $('msg').style.opacity=1;
+    $('sub').textContent='光る星座を覚えて、同じ順に星をつなげ';
+    // chime
+    tone(420,0.25,'sine',0.04);
+  }
+
+  function nearestNode(px,py){ let bi=-1,bd=1e9;
+    nodes.forEach((n,i)=>{const d=Math.hypot(n.x-px,n.y-py);if(d<bd){bd=d;bi=i;}});
+    return (bd<Math.max(28,Math.min(W,H)*0.05))?bi:-1; }
+
+  function onTap(px,py){
+    audio();
+    if(phase!=='input')return;
+    const i=nearestNode(px,py);
+    if(i===progress){ progress++; tone(380+progress*70,0.18,'triangle',0.05);
+      if(progress>=nodes.length){ // level complete
+        phase='done'; tone(660,0.3,'sine',0.06); setTimeout(()=>tone(880,0.4,'sine',0.05),120);
+        $('msg').textContent='✦ 整列 ✦';
+        setTimeout(()=>{ level++; if(level>=LEVELS.length){ winGame(); } else startLevel(); }, 1100);
+      }
+    } else { // wrong
+      errorT=performance.now(); progress=0; tone(120,0.25,'sawtooth',0.05);
+      $('msg').textContent='信号がずれた。最初から。';
+      setTimeout(()=>{ if(phase==='input')$('msg').textContent='星をつなげ'; },1100);
+    }
+  }
+  cv.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect();onTap(e.clientX-r.left,e.clientY-r.top);});
+
+  function winGame(){ try{localStorage.setItem('alice_bonus_constellation','1');}catch(e){}
+    $('win').classList.add('show');
+    [0,1,2,3,4].forEach(i=>setTimeout(()=>tone(440*Math.pow(1.2,i),0.5,'sine',0.05),i*150)); }
+
+  $('restart').addEventListener('click',()=>{ if(phase!=='done'){ progress=0; phase='flash'; flashT=performance.now();
+    $('msg').textContent='記憶せよ…'; } });
+
+  function draw(t){
+    pulse+=0.04;
+    x.clearRect(0,0,W,H);
+    // bg stars
+    for(const s of bgStars){ const tw=.3+Math.abs(Math.sin(s.p+pulse*s.sp))*.5;
+      x.globalAlpha=tw*.5; x.fillStyle='#9fd8ff'; x.beginPath();x.arc(s.x*W,s.y*H,s.r,0,6.28);x.fill(); }
+    x.globalAlpha=1;
+    // decoy stars
+    for(const d of decoys){ x.globalAlpha=.5;x.fillStyle='#6f86a8';x.beginPath();x.arc(d.x,d.y,d.r,0,6.28);x.fill(); }
+    x.globalAlpha=1;
+    // flash phase: show target lines + nodes
+    const now=performance.now();
+    if(phase==='flash'){ const el=now-flashT;
+      const a = el<1600 ? 1 : Math.max(0,1-(el-1600)/500);
+      drawConstellation(nodes.length, a, true);
+      if(el>2100){ phase='input'; $('msg').textContent='星をつなげ'; $('msg').style.opacity=1; }
+    } else {
+      // draw accepted progress
+      drawConstellation(progress, 1, false);
+    }
+    // node glows (always faint so they're findable as stars)
+    nodes.forEach((n,i)=>{ const lit = (phase==='flash') || i<progress;
+      x.globalAlpha = lit?1:.6;
+      x.fillStyle = i<progress?'#7dffae':'#33e7c8';
+      x.shadowColor='#33e7c8'; x.shadowBlur=lit?14:5;
+      x.beginPath();x.arc(n.x,n.y,lit?4:2.4,0,6.28);x.fill(); x.shadowBlur=0; });
+    x.globalAlpha=1;
+    // error flash
+    if(errorT){ const e=(now-errorT)/300; if(e<1){ x.fillStyle='rgba(255,92,157,'+(0.25*(1-e))+')'; x.fillRect(0,0,W,H);} else errorT=0; }
+    requestAnimationFrame(draw);
+  }
+  function drawConstellation(upto,alpha,full){
+    if(upto<2 && !full) { return; }
+    x.save(); x.globalAlpha=alpha; x.strokeStyle='rgba(51,231,200,'+(full?.7:.9)+')'; x.lineWidth=1.4;
+    x.shadowColor='#33e7c8'; x.shadowBlur=8;
+    x.beginPath();
+    const n = full?nodes.length:upto;
+    for(let i=0;i<n-1;i++){ x.moveTo(nodes[i].x,nodes[i].y); x.lineTo(nodes[i+1].x,nodes[i+1].y); }
+    x.stroke(); x.shadowBlur=0; x.restore();
+  }
+
+  resize(); startLevel(); requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
