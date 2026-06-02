@@ -4,7 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AlicE sYsTeM</title>
-<meta name="description" content="AlicE sYsTeM — AIで生成したゲームと映像。その表層の、さらに奥へ。">
+<meta name="description" content="AlicE sYsTeM — AIで生成したゲームと映像。静かな表層の、さらに奥へ。隠された信号を辿れ。">
+<meta name="theme-color" content="#04060b">
+<link rel="canonical" href="https://xenithone.github.io/alice-system/">
+<!-- favicons -->
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<!-- social / open graph -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AlicE sYsTeM">
+<meta property="og:title" content="AlicE sYsTeM // AI GAMES & VIDEOS">
+<meta property="og:description" content="AIが生成したゲームと映像。静かな表層は、探索する者だけに深淵を開く。">
+<meta property="og:url" content="https://xenithone.github.io/alice-system/">
+<meta property="og:image" content="https://xenithone.github.io/alice-system/assets/og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="AlicE sYsTeM // AI GAMES & VIDEOS">
+<meta name="twitter:description" content="AIが生成したゲームと映像。静かな表層は、探索する者だけに深淵を開く。">
+<meta name="twitter:image" content="https://xenithone.github.io/alice-system/assets/og.jpg">
 <link rel="preload" as="image" href="assets/hero2.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -175,6 +193,13 @@
   .cursor.hot{width:48px;height:48px;background:rgba(51,231,200,.08)}
   @media(hover:none){.cursor,.cursor-dot{display:none}}
   body.cur *{cursor:none}
+  /* accessibility */
+  a:focus-visible,input:focus-visible,.logo:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:4px}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+    html{scroll-behavior:auto}
+    .hero-art{animation:none;transform:none}
+  }
 </style>
 </head>
 <body>
@@ -245,7 +270,7 @@
 <!-- fragment HUD -->
 <div id="frags"><span>EIDOLON</span><span id="orbs"></span><span id="fragn">0/6</span></div>
 <!-- AlicE line -->
-<div id="alice"></div>
+<div id="alice" role="status" aria-live="polite"></div>
 
 <!-- terminal -->
 <div id="term"><div class="win">
@@ -371,13 +396,14 @@ function renderAll(){
 ============================================================ */
 function starfield(){
   const cv=$('#stars'),x=cv.getContext('2d');let w,h,st,mx=0,my=0,t=0;
+  const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
   function rs(){w=cv.width=innerWidth;h=cv.height=innerHeight;const N=Math.min(150,innerWidth/10|0);
     st=Array.from({length:N},()=>({x:Math.random()*w,y:Math.random()*h,z:Math.random()+.2,r:Math.random()*1.3+.2,p:Math.random()*6.28}));}
   addEventListener('pointermove',e=>{mx=e.clientX/innerWidth-.5;my=e.clientY/innerHeight-.5;},{passive:true});
   function d(){t++;x.clearRect(0,0,w,h);for(const s of st){s.y+=s.z*.12;if(s.y>h){s.y=0;s.x=Math.random()*w;}
     const px=s.x-mx*30*s.z,py=s.y-my*30*s.z,tw=.4+Math.abs(Math.sin(s.p+t*.02))*.5;
     x.globalAlpha=tw*(.3+s.z*.4);x.fillStyle=s.p>3?'#9fd8ff':'#7dffea';x.beginPath();x.arc(px,py,s.r,0,6.28);x.fill();}
-    x.globalAlpha=1;requestAnimationFrame(d);}
+    x.globalAlpha=1;if(!RM)requestAnimationFrame(d);}
   rs();d();addEventListener('resize',rs);
 }
 
