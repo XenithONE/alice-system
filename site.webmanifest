@@ -1,0 +1,15 @@
+{
+  "name": "AlicE sYsTeM",
+  "short_name": "AlicE",
+  "description": "AIで生成したゲームと映像。静かな表層の、さらに奥へ。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#04060b",
+  "theme_color": "#04060b",
+  "icons": [
+    { "src": "assets/favicon-64.png", "sizes": "64x64", "type": "image/png" },
+    { "src": "assets/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "assets/emblem.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

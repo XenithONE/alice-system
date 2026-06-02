@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIGNAL LOST // AlicE sYsTeM</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" sizes="64x64" href="/alice-system/assets/favicon-64.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital@1&family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{min-height:100vh;background:#04060b;color:#dfe9ee;font-family:"Space Grotesk",system-ui,sans-serif;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:22px;padding:24px;overflow:hidden;position:relative}
+  canvas{position:fixed;inset:0;z-index:0}
+  .vig{position:fixed;inset:0;pointer-events:none;box-shadow:inset 0 0 220px 70px rgba(0,0,0,.7)}
+  .c{position:relative;z-index:2}
+  .code{font-family:ui-monospace,monospace;font-size:13px;letter-spacing:.4em;color:#33e7c8;text-shadow:0 0 14px rgba(51,231,200,.5)}
+  h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:clamp(40px,9vw,90px);
+    background:linear-gradient(110deg,#fff,#33e7c8,#7b4dff);-webkit-background-clip:text;background-clip:text;color:transparent;margin:10px 0}
+  p{color:#7e8aa0;font-family:ui-monospace,monospace;font-size:13px;letter-spacing:.1em;max-width:480px}
+  a{display:inline-block;margin-top:18px;font-family:ui-monospace,monospace;font-size:13px;letter-spacing:.16em;color:#04060b;
+    background:linear-gradient(110deg,#33e7c8,#7b4dff);padding:13px 28px;border-radius:8px;font-weight:700;text-decoration:none;transition:.2s}
+  a:hover{filter:brightness(1.12);box-shadow:0 0 22px rgba(51,231,200,.45)}
+</style>
+</head>
+<body>
+<canvas id="s"></canvas><div class="vig"></div>
+<div class="c">
+  <div class="code">ERROR // 404</div>
+  <h1>SIGNAL LOST</h1>
+  <p>この座標に信号は無い。<br>あなたは、地図に無い場所へ迷い込んだ。</p>
+  <a href="/alice-system/">↩ RETURN TO THE SIGNAL</a>
+</div>
+<script>
+  const cv=document.getElementById('s'),x=cv.getContext('2d');let w,h,st;
+  function rs(){w=cv.width=innerWidth;h=cv.height=innerHeight;st=Array.from({length:Math.min(160,w/9|0)},()=>({x:Math.random()*w,y:Math.random()*h,z:Math.random()+.2,r:Math.random()*1.3+.2}));}
+  rs();addEventListener('resize',rs);
+  (function d(){x.clearRect(0,0,w,h);for(const s of st){s.y+=s.z*.15;if(s.y>h){s.y=0;s.x=Math.random()*w;}x.globalAlpha=.3+s.z*.4;x.fillStyle='#7dffea';x.beginPath();x.arc(s.x,s.y,s.r,0,6.28);x.fill();}x.globalAlpha=1;requestAnimationFrame(d);})();
+</script>
+</body>
+</html>

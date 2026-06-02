@@ -8,8 +8,14 @@
 <meta name="theme-color" content="#04060b">
 <link rel="canonical" href="https://xenithone.github.io/alice-system/">
 <!-- favicons -->
+<meta name="robots" content="index,follow">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebSite","name":"AlicE sYsTeM","alternateName":"AlicE","url":"https://xenithone.github.io/alice-system/","description":"AIで生成したゲームと映像のポートフォリオ。静かな表層は、探索する者に深淵を開く。","inLanguage":"ja","image":"https://xenithone.github.io/alice-system/assets/og.jpg"}
+</script>
 <!-- social / open graph -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="AlicE sYsTeM">
@@ -198,6 +204,9 @@
   body.cur *{cursor:none}
   /* accessibility */
   a:focus-visible,input:focus-visible,.logo:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:4px}
+  .skip{position:fixed;top:-60px;left:12px;z-index:1000;background:var(--teal);color:#04060b;padding:10px 16px;border-radius:8px;
+    font-family:var(--mono);font-size:12px;font-weight:600;text-decoration:none;transition:top .2s}
+  .skip:focus{top:12px}
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
     html{scroll-behavior:auto}
@@ -206,8 +215,9 @@
 </style>
 </head>
 <body>
-<canvas id="stars"></canvas>
-<div class="grain"></div><div class="vig"></div>
+<a class="skip" href="#works">本編へスキップ</a>
+<canvas id="stars" aria-hidden="true"></canvas>
+<div class="grain" aria-hidden="true"></div><div class="vig" aria-hidden="true"></div>
 
 <nav id="nav"><div class="wrap">
   <div class="logo" id="logo"><b>AlicE</b> sYsTeM</div>
@@ -219,8 +229,8 @@
 
 <header id="top">
   <div class="hero-art"></div>
-  <video class="hero-vid" autoplay muted loop playsinline preload="auto" poster="assets/hero2.jpg">
-    <source src="assets/hero2.mp4" type="video/mp4">
+  <video class="hero-vid" muted loop playsinline preload="none" poster="assets/hero2.jpg" aria-hidden="true">
+    <source data-src="assets/hero2.mp4" type="video/mp4">
   </video>
   <div class="hero-grad"></div>
   <div class="side-index"><span class="on">01 — SURFACE</span><span>02 — ARCHIVE</span><span>03 — ??? </span></div>
@@ -295,7 +305,7 @@
 <!-- ending -->
 <div id="ending">
   <canvas id="endCv"></canvas>
-  <video class="end-emblem" autoplay muted loop playsinline poster="assets/emblem.png">
+  <video class="end-emblem" autoplay muted loop playsinline poster="assets/emblem.png" aria-hidden="true">
     <source src="assets/emblem.mp4" type="video/mp4">
   </video>
   <div class="x" id="endX">RETURN</div>
@@ -673,6 +683,13 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
 (function(){
   const A=(t,h)=>{ try{ alice(t,h||3800); }catch(e){} };
   const beep=(f,d,ty,g)=>{ try{ tone(f,d,ty,g); }catch(e){} };
+
+  /* ---- hero video: load only on capable viewports (perf + reduced-motion/data) ---- */
+  (function(){ const hv=document.querySelector('.hero-vid'); if(!hv)return;
+    const ok = innerWidth>=760 && !matchMedia('(prefers-reduced-motion: reduce)').matches && !matchMedia('(prefers-reduced-data: reduce)').matches;
+    if(ok){ const src=hv.querySelector('source'); if(src&&src.dataset.src){src.src=src.dataset.src;} try{hv.load();const p=hv.play();if(p&&p.catch)p.catch(()=>{});}catch(e){} }
+    else { hv.remove(); }
+  })();
 
   /* ---- more words to speak to AlicE ---- */
   try{ Object.assign(REPLIES,{
