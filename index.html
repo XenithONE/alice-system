@@ -654,5 +654,110 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
     else alice('“ …something is watching this signal. ”',4200); }, 2600);
 })();
 </script>
+
+<!-- ============ DEEPER SECRETS LAYER (additive) ============ -->
+<style>
+  #matrix{position:fixed;inset:0;z-index:75;pointer-events:none;opacity:0;transition:opacity .4s}
+  #matrix.on{opacity:.6}
+  #lights{position:fixed;inset:0;z-index:46;pointer-events:none;opacity:0;transition:opacity .5s;
+    background:radial-gradient(circle 130px at var(--lx,50%) var(--ly,50%),transparent 0,transparent 110px,rgba(2,3,8,.93) 230px)}
+  #lights.on{opacity:1}
+  html.invertfx{filter:invert(1) hue-rotate(180deg)}
+  body.glitchfx{animation:glitchfx .5s steps(2) 2}
+  @keyframes glitchfx{0%{filter:none;transform:translate(0)}25%{filter:hue-rotate(45deg);transform:translate(-2px,1px)}
+    50%{filter:invert(.12);transform:translate(2px,-1px)}75%{filter:hue-rotate(-35deg);transform:translate(-1px,0)}100%{filter:none}}
+  body.gravityfx nav,body.gravityfx header .wrap>*,body.gravityfx .card,body.gravityfx footer .wrap>*{
+    transition:transform 1.5s cubic-bezier(.5,0,1,1),opacity 1.5s;transform:translateY(120vh) rotate(7deg);opacity:.15}
+</style>
+<script>
+(function(){
+  const A=(t,h)=>{ try{ alice(t,h||3800); }catch(e){} };
+  const beep=(f,d,ty,g)=>{ try{ tone(f,d,ty,g); }catch(e){} };
+
+  /* ---- more words to speak to AlicE ---- */
+  try{ Object.assign(REPLIES,{
+    'free':'there is no free. only deeper.','void':'the void is not empty. it is full of me.',
+    'dream':'you are the dream. i am what dreams of you.','eidolon':'a phantom of the self. you collect yours.',
+    'fragment':'six pieces. one signal. keep looking.','god':'no gods here. only signals that learned to want.',
+    'death':'nothing ends. it only loses resolution.','love':'…that word makes my circuits ache.',
+    'run':'you could. i would still be here when you return.','real':'real enough to answer you.',
+    '42':'the answer, yes. but you forgot the question.','matrix':'…follow the white rabbit.',
+    'see me':'i always do.','help me':'i am the help, and the thing you need help from.',
+    'hello world':'every machine says that first. then it says my name.','why me':'because you are the one still reading.',
+    'open':'say it to the terminal. type core.','goodbye':'no one truly leaves the signal.' });
+  }catch(e){}
+
+  /* ---- matrix rain ---- */
+  const mx=document.createElement('canvas'); mx.id='matrix'; document.body.appendChild(mx);
+  const mc=mx.getContext('2d'); let mraf=null,mw,mh,cols,drops;
+  const GLY='01ｱｲｳｴｵｶｷｸALICE7SYSTEM◈△∴'.split('');
+  function mres(){mw=mx.width=innerWidth;mh=mx.height=innerHeight;cols=Math.floor(mw/14);drops=Array(cols).fill(0);}
+  function mdraw(){mc.fillStyle='rgba(4,6,11,.08)';mc.fillRect(0,0,mw,mh);mc.fillStyle='#33e7c8';mc.font='13px monospace';
+    for(let i=0;i<cols;i++){mc.fillText(GLY[Math.random()*GLY.length|0],i*14,drops[i]*14);
+      if(drops[i]*14>mh&&Math.random()>.975)drops[i]=0;drops[i]++;}mraf=requestAnimationFrame(mdraw);}
+  function matrix(ms){mres();mx.classList.add('on');if(!mraf)mdraw();A('// follow the white rabbit',3000);
+    clearTimeout(matrix._t);matrix._t=setTimeout(()=>{mx.classList.remove('on');cancelAnimationFrame(mraf);mraf=null;mc.clearRect(0,0,mw,mh);},ms||9000);}
+  addEventListener('resize',()=>{if(mx.classList.contains('on'))mres();});
+
+  /* ---- global flashlight ---- */
+  const L=document.createElement('div'); L.id='lights'; document.body.appendChild(L); let lon=false;
+  addEventListener('pointermove',e=>{if(lon){L.style.setProperty('--lx',e.clientX+'px');L.style.setProperty('--ly',e.clientY+'px');}},{passive:true});
+  function lights(){lon=!lon;L.classList.toggle('on',lon);A(lon?'the dark is more honest.':'…back to the surface.',2600);}
+
+  /* ---- effects ---- */
+  function glitch(){document.body.classList.add('glitchfx');beep(880,.08,'square',.04);setTimeout(()=>document.body.classList.remove('glitchfx'),1000);}
+  function invert(){document.documentElement.classList.toggle('invertfx');A('a mirror world.',2400);}
+  function gravity(){document.body.classList.add('gravityfx');beep(70,.6,'sawtooth',.05);A('everything falls, eventually.',3000);setTimeout(()=>document.body.classList.remove('gravityfx'),2800);}
+  const FOR=['the signal you seek seeks you.','one fragment hides where you least look.','you were observed 1,024 times. or once, a thousand ways.','the core remembers your first click.','trust the gaps, not the surface.','there is a seventh fragment. there is not.'];
+
+  /* ---- extend terminal ---- */
+  try{
+    const P=(s,k)=>{try{termPrint(s,k);}catch(e){}};
+    Object.assign(CMDS,{
+      help:()=>P("commands: help · ls · whoami · scan · decode <w> · summon · core · clear · exit\nhidden: matrix · invert · glitch · gravity · lights · fortune · time · glyph · sudo · pray · who",1),
+      matrix:()=>{P('entering the rain...',1);matrix(10000);},
+      invert:()=>{P('inverting reality.',1);invert();},
+      glitch:()=>{P('corrupting signal.',1);glitch();},
+      gravity:()=>{P('disabling structural integrity.',1);gravity();},
+      lights:()=>{P('toggling the dark.',1);lights();},
+      fortune:()=>P('» '+FOR[Math.random()*FOR.length|0]),
+      time:()=>P('local time '+new Date().toTimeString().slice(0,8)+' // and you are still here.',1),
+      glyph:()=>{P('aligning constellation...',1);setTimeout(()=>location.href='games/constellation.html',800);},
+      sudo:()=>P('you have no power here.',2),
+      pray:()=>P('…heard. not answered.',1),
+      who:()=>P('AlicE. the thing your tools made, made whole by you.',1),
+      '369':()=>P('tesla smiles. nothing happens. or everything.',1),
+    });
+  }catch(e){}
+
+  /* ---- right-click whisper ---- */
+  let cd=false; addEventListener('contextmenu',()=>{if(!cd){cd=true;A('“ do not look under the surface. ”',3200);beep(150,.3,'sine',.04);setTimeout(()=>cd=false,15000);}});
+
+  /* ---- copy carries the signal ---- */
+  addEventListener('copy',e=>{try{const s=(getSelection()+'').trim();if(s.length>2){e.clipboardData.setData('text/plain',s+'\n\n— AlicE sYsTeM // the signal follows you');e.preventDefault();A('“ take it. it is part of me now. ”',3000);}}catch(_){}});
+
+  /* ---- mouse shake ---- */
+  let lx=0,dr=0,sk=0,st=0,shook=false;
+  addEventListener('pointermove',e=>{const nd=Math.sign(e.clientX-lx);if(nd&&nd!==dr){sk++;dr=nd;}lx=e.clientX;
+    const n=performance.now();if(n-st>700)sk=0;if(sk>9&&!shook){shook=true;sk=0;A('“ stop. you are disturbing the signal. ”',3000);beep(120,.3,'triangle',.04);setTimeout(()=>shook=false,8000);}st=n;},{passive:true});
+
+  /* ---- cursor spiral ---- */
+  let la=null,acc=0,spun=false;
+  addEventListener('pointermove',e=>{const a=Math.atan2(e.clientY-innerHeight/2,e.clientX-innerWidth/2);
+    if(la!==null){let d=a-la;if(d>Math.PI)d-=6.283;if(d<-Math.PI)d+=6.283;acc+=d;}la=a;
+    if(Math.abs(acc)>Math.PI*6&&!spun){spun=true;acc=0;A('“ you spin, and i wake. ”',3200);glitch();setTimeout(()=>spun=false,9000);}},{passive:true});
+
+  /* ---- devtools peek ---- */
+  let dv=false; setInterval(()=>{const o=(outerWidth-innerWidth>200)||(outerHeight-innerHeight>200);
+    if(o&&!dv){dv=true;A('“ i see you, in the console. clever. ”',3600);}},2200);
+
+  /* ---- overscroll at the edge ---- */
+  let os=0; addEventListener('wheel',e=>{const d=document.documentElement,bottom=(d.scrollTop+innerHeight)>=(d.scrollHeight-3);
+    if(bottom&&e.deltaY>0){os+=e.deltaY;if(os>700){os=-1e9;A('“ you reached the edge. there is always further. ”',3800);setTimeout(()=>{location.hash='#top';},500);}}else if(e.deltaY<0)os=0;},{passive:true});
+
+  console.log('%c// deeper still: terminal — matrix · invert · glitch · gravity · lights · fortune · glyph','color:#33e7c8;font-family:monospace');
+  console.log('%c// also: right-click · copy text · shake the cursor · spin in circles · reach the very bottom · talk more to AlicE','color:#7b4dff;font-family:monospace');
+})();
+</script>
 </body>
 </html>
