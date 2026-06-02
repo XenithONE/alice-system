@@ -216,6 +216,12 @@
 </head>
 <body>
 <a class="skip" href="#works">本編へスキップ</a>
+<div id="boot" aria-hidden="true">
+  <div class="bw">AlicE sYsTeM</div>
+  <div class="bbar"><i></i></div>
+  <div class="bl">INITIALIZING SIGNAL…</div>
+</div>
+<div id="prog" aria-hidden="true"></div>
 <canvas id="stars" aria-hidden="true"></canvas>
 <div class="grain" aria-hidden="true"></div><div class="vig" aria-hidden="true"></div>
 
@@ -225,6 +231,7 @@
     <a href="#works">WORK</a><a href="#games">GAMES</a><a href="#videos">VIDEOS</a><a href="#void">ARCHIVE</a>
   </div>
   <div class="sig">SIGNAL <span class="dot" id="sigdot"></span> <span id="sigtxt">ONLINE</span></div>
+  <button class="menu-btn" id="menuBtn" aria-label="メニュー">☰</button>
 </div></nav>
 
 <header id="top">
@@ -774,6 +781,119 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
 
   console.log('%c// deeper still: terminal — matrix · invert · glitch · gravity · lights · fortune · glyph','color:#33e7c8;font-family:monospace');
   console.log('%c// also: right-click · copy text · shake the cursor · spin in circles · reach the very bottom · talk more to AlicE','color:#7b4dff;font-family:monospace');
+})();
+</script>
+
+<!-- ============ POLISH LAYER: boot · progress · discovery log · cipher · transitions · drawer · parallax ============ -->
+<style>
+  #boot{position:fixed;inset:0;z-index:200;background:#04060b;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+    pointer-events:none;animation:bootout .7s 2s forwards}
+  #boot .bw{font-family:var(--mono);font-size:clamp(22px,5vw,40px);letter-spacing:.12em;color:#eaf4f2;text-shadow:0 0 22px rgba(51,231,200,.45)}
+  #boot .bbar{width:min(240px,60vw);height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
+  #boot .bbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--teal),var(--violet));box-shadow:0 0 10px var(--teal);animation:bload 1.9s ease forwards}
+  #boot .bl{font-family:var(--mono);font-size:11px;letter-spacing:.24em;color:var(--teal)}
+  @keyframes bload{to{width:100%}} @keyframes bootout{to{opacity:0;visibility:hidden}}
+  #prog{position:fixed;top:0;left:0;height:2px;width:0;z-index:52;background:linear-gradient(90deg,var(--teal),var(--violet));box-shadow:0 0 8px var(--teal)}
+  .menu-btn{display:none;background:none;border:0;color:var(--text);font-size:20px;cursor:pointer;line-height:1}
+  @media(max-width:720px){.menu-btn{display:block}}
+  #drawer{position:fixed;inset:0;z-index:95;background:rgba(4,6,11,.97);backdrop-filter:blur(12px);display:none;flex-direction:column;align-items:center;justify-content:center;gap:26px}
+  #drawer.show{display:flex}
+  #drawer a{font-family:var(--ui);font-size:24px;letter-spacing:.08em;color:var(--text)}
+  #drawer a:active{color:var(--teal)}
+  #drawer .x{position:absolute;top:22px;right:26px;font-size:26px;color:var(--muted);cursor:pointer;font-family:var(--mono)}
+  #discBtn{position:fixed;left:18px;bottom:18px;z-index:48;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);
+    background:rgba(4,6,11,.6);backdrop-filter:blur(8px);color:var(--teal);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s}
+  #discBtn:hover{border-color:var(--teal);box-shadow:0 0 16px -4px var(--teal)}
+  #disc{position:fixed;inset:0;z-index:88;display:none;align-items:center;justify-content:center;background:rgba(2,3,8,.6);backdrop-filter:blur(4px)}
+  #disc.show{display:flex}
+  #disc .win{width:min(540px,92vw);max-height:82vh;overflow:auto;background:rgba(4,7,12,.96);border:1px solid rgba(51,231,200,.22);border-radius:16px;padding:26px}
+  #disc h3{font-family:var(--serif);font-style:italic;font-size:28px}
+  #disc .meta{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:6px 0 18px;letter-spacing:.05em}
+  #disc ul{list-style:none}
+  #disc li{font-family:var(--mono);font-size:12.5px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05);display:flex;gap:12px}
+  #disc li .k{color:var(--teal)} #disc li.locked{color:#38435a} #disc li.locked .k{color:#38435a}
+  #disc .x{position:absolute;cursor:pointer}
+  #disc .close{float:right;color:var(--muted);cursor:pointer;font-family:var(--mono);font-size:13px}
+  #trans{position:fixed;inset:0;z-index:120;background:#04060b;opacity:0;visibility:hidden;transition:opacity .42s}
+  #trans.show{opacity:1;visibility:visible}
+  #trans::after{content:"◈";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--teal);font-size:30px;opacity:.0;transition:opacity .4s .1s}
+  #trans.show::after{opacity:1}
+</style>
+<script>
+(function(){
+  const $=s=>document.querySelector(s);
+  /* boot */
+  const boot=$('#boot'); if(boot){ setTimeout(()=>boot.remove(),2900); addEventListener('pointerdown',()=>boot&&boot.remove(),{once:true}); }
+  /* progress */
+  const prog=$('#prog'); addEventListener('scroll',()=>{const d=document.documentElement;prog.style.width=(d.scrollTop/((d.scrollHeight-d.clientHeight)||1)*100)+'%';},{passive:true});
+  /* mobile drawer */
+  const dr=document.createElement('div'); dr.id='drawer';
+  dr.innerHTML='<span class="x">✕</span><a href="#works">WORK</a><a href="#games">GAMES</a><a href="#videos">VIDEOS</a><a href="#void">ARCHIVE</a>';
+  document.body.appendChild(dr);
+  const mb=$('#menuBtn'); if(mb) mb.addEventListener('click',()=>dr.classList.add('show'));
+  dr.addEventListener('click',e=>{ if(e.target.tagName==='A'||e.target.classList.contains('x')) dr.classList.remove('show'); });
+
+  /* ---------- DISCOVERY LOG ---------- */
+  const DKEY='alice_disc';
+  const DISC=[
+    ['anomaly','終端の点に潜む綻び'],['terminal','銘の中に開いた扉'],['lantern','虚空に運ばれた光'],
+    ['rift','くぐり抜けた裂け目'],['voice','口にした、その名'],['idle','耐えた静寂'],
+    ['constellation','整列した星々'],['matrix','降り注ぐ符号の雨'],['invert','鏡の世界'],
+    ['glitch','破断する信号'],['gravity','崩れ落ちる構造'],['lights','正直になった闇'],
+    ['fortune','運命の囁き'],['ctx','表層の下に隠れしもの'],['copy','持ち去られた信号'],
+    ['cipher','解読された秘匿通信'],
+  ];
+  const FRAGIDS=['anomaly','terminal','lantern','rift','voice','idle'];
+  function getD(){try{return new Set(JSON.parse(localStorage.getItem(DKEY)||'[]'));}catch(e){return new Set();}}
+  function sync(){const s=getD();
+    try{JSON.parse(localStorage.getItem('alice_eidolon')||'[]').forEach(x=>s.add(x));}catch(e){}
+    if(localStorage.getItem('alice_bonus_constellation'))s.add('constellation');
+    localStorage.setItem(DKEY,JSON.stringify([...s]));return s;}
+  function markD(id){const s=getD();if(s.has(id))return;s.add(id);localStorage.setItem(DKEY,JSON.stringify([...s]));
+    try{tone(560,0.16,'sine',0.04);}catch(e){} render();}
+  window.__markD=markD;
+  const panel=document.createElement('div'); panel.id='disc';
+  panel.innerHTML='<div class="win"><span class="close">✕ CLOSE</span><h3>Archive of Discoveries</h3><div class="meta" id="dMeta"></div><ul id="dList"></ul></div>';
+  document.body.appendChild(panel);
+  const dbtn=document.createElement('button'); dbtn.id='discBtn'; dbtn.textContent='◇'; dbtn.title='発見ログ ( ? )'; dbtn.setAttribute('aria-label','発見ログ'); document.body.appendChild(dbtn);
+  function render(){ const s=sync(); const found=DISC.filter(d=>s.has(d[0])).length;
+    const fr=FRAGIDS.filter(x=>s.has(x)).length;
+    const m=$('#dMeta'); if(m) m.textContent='SIGNAL FRAGMENTS '+fr+'/6  ·  DISCOVERIES '+found+'/'+DISC.length+'  ·  VISITS '+(localStorage.getItem('alice_visits')||'1');
+    const l=$('#dList'); if(l) l.innerHTML=DISC.map(d=>{const ok=s.has(d[0]);
+      return '<li class="'+(ok?'':'locked')+'"><span class="k">'+(ok?'◈':'▓')+'</span>'+(ok?d[1]:'▓▓▓▓ ▓▓▓ ▓▓▓▓▓')+'</li>';}).join('');
+  }
+  function openD(){render();panel.classList.add('show');}
+  dbtn.addEventListener('click',openD);
+  panel.addEventListener('click',e=>{ if(e.target.classList.contains('close')||e.target===panel) panel.classList.remove('show'); });
+  addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return; if(e.key==='?') openD(); });
+  render();
+
+  /* mark bonus discoveries by wrapping existing terminal commands */
+  try{ const wrap=(k,id)=>{ if(CMDS&&CMDS[k]){ const o=CMDS[k]; CMDS[k]=(a)=>{markD(id);return o(a);}; } };
+    wrap('matrix','matrix');wrap('invert','invert');wrap('glitch','glitch');wrap('gravity','gravity');wrap('lights','lights');wrap('fortune','fortune');
+    /* cipher puzzle */
+    if(CMDS){ CMDS.cipher=()=>{ try{termPrint('intercepted transmission // cipher: ATBASH',1);termPrint('  LYHVIEVI');termPrint("  solve it:  decode <word>");}catch(e){} };
+      const od=CMDS.decode; CMDS.decode=(a)=>{ const w=(a||'').toLowerCase().trim();
+        if(w==='observer'){ try{termPrint('decoded: “you were the observer all along.”',1);}catch(e){} markD('cipher'); }
+        else if(od) od(a); }; }
+  }catch(e){}
+  addEventListener('contextmenu',()=>markD('ctx'));
+  addEventListener('copy',()=>markD('copy'));
+
+  /* ---------- PAGE TRANSITION for internal links ---------- */
+  function go(href){ let t=$('#trans'); if(!t){t=document.createElement('div');t.id='trans';document.body.appendChild(t);}
+    requestAnimationFrame(()=>t.classList.add('show')); setTimeout(()=>{location.href=href;},430); }
+  document.addEventListener('click',e=>{ const a=e.target.closest&&e.target.closest('a'); if(!a)return;
+    const h=a.getAttribute('href')||''; if((/^sy\.html/.test(h)||/^games\//.test(h))&&a.getAttribute('target')!=='_blank'){ e.preventDefault(); go(h); } },true);
+
+  /* ---------- hero parallax ---------- */
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches){
+    const k=$('#kicker'),hh=document.querySelector('h1.hero'),ld=$('#lead');
+    addEventListener('scroll',()=>{ const y=scrollY; if(y>innerHeight)return; const els=[[k,.5],[hh,.28],[ld,.6]];
+      els.forEach(([el,m])=>{ if(el){ el.style.transform='translateY('+(y*m*0.25)+'px)'; el.style.opacity=String(Math.max(0,1-y/(innerHeight*0.75))); } }); },{passive:true});
+  }
+
+  console.log('%c// archive: press ? to open your Discoveries log','color:#33e7c8;font-family:monospace');
 })();
 </script>
 </body>
