@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Redesign Concepts — AlicE sYsTeM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Cormorant+Garamond:ital,wght@1,600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{--p2:#33e7c8;--p1:#7b4dff;--line:rgba(160,200,210,.12)}
+  body{background:#070810;color:#e6f0f2;font-family:"Space Grotesk",system-ui,sans-serif;line-height:1.7;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px}
+  header{padding:70px 0 30px;text-align:center;border-bottom:1px solid var(--line)}
+  header .kick{font-size:12px;letter-spacing:.3em;color:var(--p2);text-transform:uppercase}
+  header h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-weight:600;font-size:clamp(34px,6vw,60px);margin-top:8px}
+  header p{color:#8a96ac;font-size:15px;max-width:620px;margin:14px auto 0}
+  .concept{padding:60px 0;border-bottom:1px solid var(--line)}
+  .meta{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+  .num{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:46px;color:var(--p2);line-height:1}
+  .meta h2{font-size:clamp(22px,3.5vw,32px);font-weight:700}
+  .meta .tag{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:#8a96ac;
+    border:1px solid var(--line);padding:5px 11px;border-radius:99px;align-self:center}
+  .desc{color:#9aa6bc;font-size:15px;max-width:760px;margin-bottom:22px}
+  .shot{display:block;width:100%;border-radius:14px;border:1px solid var(--line);
+    box-shadow:0 30px 70px -30px #000;transition:.3s}
+  .shot:hover{transform:translateY(-4px);box-shadow:0 40px 90px -30px rgba(51,231,200,.25);border-color:rgba(51,231,200,.4)}
+  footer{padding:60px 0 80px;text-align:center;color:#8a96ac;font-size:15px}
+  footer b{color:var(--p2)}
+  .pill{display:inline-block;margin-top:12px;font-size:13px;color:#cfe;border:1px solid var(--line);padding:8px 16px;border-radius:99px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="kick">AlicE sYsTeM // Redesign Proposals</div>
+    <h1>どの方向で “プロ級” に作り直す？</h1>
+    <p>AIで生成した4つのデザイン方向のカンプです。気に入った番号を教えてください。選ばれた方向を、本物の動くサイトとして実装します。</p>
+  </div>
+</header>
+
+<section class="concept">
+  <div class="wrap">
+    <div class="meta"><span class="num">01</span><h2>Luxury Editorial</h2><span class="tag">明るい・高級・余白</span></div>
+    <p class="desc">オフホワイト基調、巨大で上品なセリフ見出し、贅沢な余白。Vogue×テックの編集的な高級感。落ち着いて知的、ギャラリーのような佇まい。</p>
+    <img class="shot" src="assets/concepts/c1.jpg" alt="Concept 1 Luxury Editorial" loading="lazy">
+  </div>
+</section>
+
+<section class="concept">
+  <div class="wrap">
+    <div class="meta"><span class="num">02</span><h2>Refined Dark Cinematic</h2><span class="tag">漆黒・宇宙・規律的</span></div>
+    <p class="desc">今の宇宙テーマを“やり過ぎず”に磨いた大人のダーク。息を呑むキービジュアル1枚＋控えめなティール。ネガティブスペースで魅せる、洗練された映画的トーン。</p>
+    <img class="shot" src="assets/concepts/c2.jpg" alt="Concept 2 Refined Dark" loading="lazy">
+  </div>
+</section>
+
+<section class="concept">
+  <div class="wrap">
+    <div class="meta"><span class="num">03</span><h2>Bold Kinetic / Brutalist</h2><span class="tag">巨大タイポ・鮮烈・攻め</span></div>
+    <p class="desc">画面を埋める超巨大タイポ、アシッドな差し色、非対称グリッド。生々しくモダンでエネルギッシュ。スイス×ストリート、最先端で“攻めてる”印象。</p>
+    <img class="shot" src="assets/concepts/c3.jpg" alt="Concept 3 Bold Brutalist" loading="lazy">
+  </div>
+</section>
+
+<section class="concept">
+  <div class="wrap">
+    <div class="meta"><span class="num">04</span><h2>Futuristic Glass HUD</h2><span class="tag">SF・ガラス・ネオン</span></div>
+    <p class="desc">ガラスモーフィズムのパネル、ネオンのシアン×バイオレット、精密なマイクロUI。製品ローンチ級の磨き上げ。近未来的でクール、テック感マシマシ。</p>
+    <img class="shot" src="assets/concepts/c4.jpg" alt="Concept 4 Futuristic Glass" loading="lazy">
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    気に入った番号（<b>01〜04</b>）を教えてください。組み合わせ（例：02をベースに03の見出し）もOK。<br>
+    <span class="pill">選ばれた案を、本物の動くサイトとして実装します</span>
+  </div>
+</footer>
+</body>
+</html>
