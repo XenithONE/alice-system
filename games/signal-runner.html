@@ -132,7 +132,7 @@
     update(dt);draw(t/1000);requestAnimationFrame(loop);
   }
   function update(dt){
-    const focus=keys.has(' '),speed=focus?380:540,friction=Math.pow(.0008,dt);
+    const focus=keys.has(' '),speed=focus?280:400,friction=Math.pow(.0008,dt);
     gameTime+=dt;
     if(gimmickPhase===0&&gameTime>15){gimmickPhase=1;$('msg').textContent='SIGNAL WALLS DETECTED';}
     if(gimmickPhase===1&&gameTime>30){gimmickPhase=2;$('msg').textContent='GHOST NODES ONLINE';}
