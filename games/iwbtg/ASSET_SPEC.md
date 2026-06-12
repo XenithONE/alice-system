@@ -1,97 +1,89 @@
-# ASSET_SPEC — アート仕様 ＆ 発注リスト（🎨 アート班 / 友人・Codex 向け）
+# ASSET_SPEC
 
-このファイル通りに画像を作って **`assets/sprites/`** に入れてください。
-仕様を固定しておけば、エンジン班を待たずにどんどん量産できます。
+`games/iwbtg/` 用の絵の仕様と発注リストです。  
+作った画像は基本的に `assets/sprites/` に入れてください。音素材は `assets/audio/` に入れます。
 
----
+## 共通仕様
 
-## 🧱 共通仕様（全アセット共通）
+- 形式: PNG
+- 背景: 透明
+- 画風: レトロなピクセルアート
+- 基準サイズ: 32 x 32 px
+- アンチエイリアスなし
+- パレット: 暗い背景に、teal / violet / red のアクセント
+- 既存ゲーム、既存キャラクター、既存素材の流用は禁止
 
-- **基準グリッド: 32 × 32 px**（タイル・キャラの基本単位）
-  - キャラが大きい場合は 32×48 などでもOK。ただし**そのファイルの実寸をこの表に必ず明記**して統一する
-- **形式: PNG / 透過背景 必須 / ピクセルくっきり**
-  - アンチエイリアス無し（ニアレストネイバー）。輪郭をぼかさない
-- **画風: レトロ・ピクセルアート**
-  - 限定パレット（8〜16色程度）／暗めネオン／サイト世界観に合わせる
-- **オリジナルのみ**：任天堂等の既存キャラの流用は **NG**（公開サイトのため）。Codex生成なら全部オリジナルになるので問題なし
-- キャラは**足元をグリッド下端に**揃える。余白は透過
+推奨カラー:
 
-### 🎨 パレット（統一の目安）
 | 用途 | 色 |
 |---|---|
-| 背景・暗部 | `#04060b`（ほぼ黒） |
-| 明部・主線 | `#eaf4f2` |
-| アクセント1 | teal `#33e7c8` |
-| アクセント2 | violet `#7b4dff` |
-| 危険物（警告色） | red `#ff3b5c` |
+| 背景・影 | `#04060b` |
+| 明部 | `#eaf4f2` |
+| アクセント1 | `#33e7c8` |
+| アクセント2 | `#7b4dff` |
+| 危険物 | `#ff3b5c` |
 
----
+## 命名ルール
 
-## 🏷 命名規則
+```text
+種類_名前[_状態].png
+```
 
-`種別_名前[_状態].png`
+例:
 
-例: `player_run.png` / `tile_ground.png` / `hazard_spike.png` / `boss_01_idle.png`
+- `player_idle.png`
+- `player_run.png`
+- `tile_ground.png`
+- `hazard_spike.png`
+- `boss_01_idle.png`
 
-## 🎞 スプライトシート（アニメするもの）
+## スプライトシート
 
-- 1動作 = **横1列**に等間隔でフレームを並べる（左→右）
-- 1フレーム = 基準サイズ（例 32×32）。全フレーム同じサイズ
-- コマ数の目安: `idle=2` / `run=6` / `jump=2` / `dead=4`
+- 横一列にフレームを並べる
+- 1フレームのサイズは原則 32 x 32 px
+- 例: 6フレームの走りアニメは 192 x 32 px
+- 全フレームのサイズを揃える
 
----
+## 優先度A: MVP必須
 
-## 📋 発注リスト（優先度順）
+| ファイル名 | 内容 | サイズ / フレーム | Codex用プロンプト例 |
+|---|---|---:|---|
+| `player_idle.png` | 主人公の待機 | 64 x 32 / 2 | original tiny neon runner hero, idle animation, 2-frame horizontal sprite sheet, transparent background, 32x32 per frame, crisp retro pixel art, limited palette |
+| `player_run.png` | 主人公の走り | 192 x 32 / 6 | original tiny neon runner hero, running cycle, 6-frame horizontal sprite sheet, transparent background, 32x32 per frame, crisp retro pixel art |
+| `player_jump.png` | 主人公のジャンプ | 64 x 32 / 2 | original tiny neon runner hero, jump and fall poses, 2-frame horizontal sprite sheet, transparent background, crisp retro pixel art |
+| `player_dead.png` | 主人公の死亡 | 128 x 32 / 4 | original tiny neon runner hero bursting into red particles, death animation, 4-frame horizontal sprite sheet, transparent background |
+| `tile_ground.png` | 地面タイル | 32 x 32 / 1 | seamless dark metal ground block, teal edge highlights, 32x32, transparent not needed if tile fills canvas, crisp retro pixel art |
+| `tile_wall.png` | 壁タイル | 32 x 32 / 1 | seamless dark wall block, violet shadow, 32x32, crisp retro pixel art |
+| `hazard_spike.png` | 即死トゲ | 32 x 32 / 1 | red warning spike trap pointing up, 32x32, transparent background, crisp retro pixel art |
+| `savepoint.png` | セーブポイント | 128 x 32 / 4 | glowing teal save crystal, sparkle animation, 4-frame horizontal sprite sheet, transparent background |
+| `bg_stage1.png` | ステージ1背景 | 960 x 540 / 1 | dark signal void background, subtle teal and violet nebula, low contrast, pixel art style, no characters |
 
-> Codexへの渡し方: 各行の「プロンプト例」をベースに生成 → 透過・等倍ピクセルで書き出し → `assets/sprites/` に正しいファイル名で保存。
+## 優先度B: ステージを面白くする
 
-### ▶ 最優先 ＝ MVP（これだけで遊べる）
+| ファイル名 | 内容 | サイズ / フレーム | メモ |
+|---|---|---:|---|
+| `hazard_saw.png` | 回転ノコギリ | 128 x 32 / 4 | 横一列の回転アニメ |
+| `hazard_block_fall.png` | 落下ブロック | 32 x 32 / 1 | 上から落ちる即死ブロック |
+| `hazard_bullet.png` | 弾 | 16 x 16 / 1 | 小さい発光弾 |
+| `enemy_01.png` | ザコ敵 | 128 x 32 / 4 | 歩行アニメ |
+| `spring.png` | ジャンプ台 | 64 x 32 / 2 | 通常 / 縮み |
+| `door_goal.png` | ゴール扉 | 32 x 64 / 1 | クリア地点 |
 
-| ファイル名 | 内容 | 実寸 / コマ | Codexプロンプト例 |
-|---|---|---|---|
-| `player_idle.png` | 主人公・待機 | 32×32 / 2 | pixel art, small original hero idle, transparent background, 32x32, retro limited palette, crisp pixels, no anti-aliasing, 2-frame sprite sheet horizontal |
-| `player_run.png` | 主人公・走り | 32×32 / 6 | …running cycle, 6-frame sprite sheet horizontal |
-| `player_jump.png` | 主人公・ジャンプ | 32×32 / 2 | …jump pose (up / fall), 2 frames |
-| `player_dead.png` | 主人公・死亡（赤く爆散） | 32×32 / 4 | …bursting into red particles death animation, 4 frames |
-| `tile_ground.png` | 地面タイル（**継ぎ目なし**） | 32×32 / 1 | seamless tileable ground block, dark metal, retro pixel, 32x32 |
-| `tile_wall.png` | 壁タイル（継ぎ目なし） | 32×32 / 1 | seamless tileable wall block |
-| `hazard_spike.png` | トゲ（即死） | 32×32 / 1 | red warning spikes pointing up, danger, pixel art, transparent bg, 32x32 |
-| `savepoint.png` | セーブポイント（きらめく） | 32×32 / 4 | glowing teal save crystal with sparkle, 4-frame animation |
-| `bg_stage1.png` | ステージ1背景 | 960×540 / 1 | dark nebula parallax background, subtle teal/violet, low contrast |
+## 優先度C: 後回しでよい
 
-### ▶ 次 ＝ ステージを面白くする
+| ファイル名 | 内容 | サイズ / フレーム |
+|---|---|---:|
+| `boss_01_idle.png` | ボス待機 | 256 x 64 / 4 |
+| `boss_01_attack.png` | ボス攻撃 | 384 x 64 / 6 |
+| `boss_01_dead.png` | ボス死亡 | 384 x 64 / 6 |
+| `title_logo.png` | タイトルロゴ | 横長 |
+| `fx_explosion.png` | 爆発エフェクト | 192 x 32 / 6 |
+| `fx_hit.png` | ヒットエフェクト | 96 x 32 / 3 |
 
-| ファイル名 | 内容 | 実寸 / コマ | メモ |
-|---|---|---|---|
-| `hazard_saw.png` | 回転ノコギリ | 32×32 / 4 | spinning saw blade |
-| `hazard_block_fall.png` | 落下ブロック | 32×32 / 1 | 上から降ってくる即死ブロック |
-| `hazard_bullet.png` | 弾 | 16×16 / 1 | small glowing projectile |
-| `enemy_01.png` | ザコ敵 | 32×32 / 4 | 歩行アニメ |
-| `spring.png` | ジャンプ台 | 32×32 / 2 | 通常 / 縮み |
-| `door_goal.png` | ゴール扉 | 32×48 / 1 | クリア地点 |
+## 納品チェック
 
-### ▶ ボス・演出（後回しでOK）
-
-| ファイル名 | 内容 | 実寸 / コマ | メモ |
-|---|---|---|---|
-| `boss_01_idle.png` / `_attack.png` / `_dead.png` | ボス | 64×64〜 / 各複数 | original neon monster boss |
-| `title_logo.png` | タイトルロゴ | 横長 | neon title "I WANNA BE THE SIGNAL" |
-| `fx_explosion.png` | 爆発エフェクト | 32×32 / 6 | |
-| `fx_hit.png` | 被弾エフェクト | 32×32 / 3 | |
-
----
-
-## 📦 納品のしかた（アート班）
-
-1. 上の**ファイル名どおり**に PNG を `assets/sprites/` に置く
-2. 公開:
-   ```bash
-   git pull
-   git add assets/sprites/<ファイル名>.png
-   git commit -m "art: add <ファイル名>"
-   git push
-   ```
-3. README.md の TODO にチェックを入れる
-4. サイズ・コマ数を変えた場合は、この表の該当行を更新して push（コード班が読み込み側を合わせる）
-
-> 困ったら README.md の「役割分担」を見るか、エンジン班に連絡。
+- [ ] 指定ファイル名になっている
+- [ ] `assets/sprites/` に置いた
+- [ ] 透明背景になっている
+- [ ] サイズとフレーム数が表と一致している
+- [ ] 既存作品のキャラクターや素材を使っていない
