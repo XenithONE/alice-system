@@ -37,7 +37,7 @@
 <div class="top">
   <a href="../index.html">&larr; RETURN</a>
   <span>LOCKER HUNT // SCHOOL HALLWAY</span>
-  <span><b id="version">v1.1.0</b> // <b id="state">READY</b></span>
+  <span><b id="version">v1.2.0</b> // <b id="state">READY</b></span>
 </div>
 <div class="hud">
   <div class="panel stats"><span>TRIES <b id="tries">0</b></span><span>FOUND <b id="found">0</b></span><span>LOCKER <b id="selected">1</b>/10</span></div>
@@ -47,7 +47,7 @@
 <div class="overlay" id="overlay">
   <div class="card">
     <h1>Locker Hunt</h1>
-    <div class="version" id="titleVersion">v1.1.0</div>
+    <div class="version" id="titleVersion">v1.2.0</div>
     <p>A school hallway. Ten lockers. Open them one by one and find the tiny man hiding inside. Choose wrong, and the hallway becomes a disaster.</p>
     <div class="actions">
       <button class="primary" id="start">START SEARCH</button>
@@ -57,11 +57,15 @@
 </div>
 <script>
 (()=>{
-  const GAME_VERSION='v1.1.0';
+  const GAME_VERSION='v1.2.0';
   const cv=document.getElementById('game'),ctx=cv.getContext('2d');
   const $=id=>document.getElementById(id);
   let W=0,H=0,DPR=1,last=0,running=false,selected=0,target=0,tries=0,found=0,shake=0,faceTimer=1.5,face=0,scroll=0;
   const open=Array(10).fill(false),splats=[],keys=new Set();
+  const bgImg=new Image(),openLockerImg=new Image();
+  bgImg.src='../assets/locker-hunt/hallway-base.png';
+  openLockerImg.src='../assets/locker-hunt/locker-open.png';
+  const BG={w:1680,h:945},LOCKER={x:648,y:312,w:96,h:350,step:101};
   const rand=n=>Math.floor(Math.random()*n),css=name=>getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   $('version').textContent=GAME_VERSION;$('titleVersion').textContent=GAME_VERSION;
 
@@ -73,7 +77,7 @@
   $('start').addEventListener('click',start);
 
   function start(){
-    running=true;last=0;selected=0;target=rand(10);tries=0;found=0;shake=0;face=0;faceTimer=1.2;scroll=0;open.fill(false);splats.length=0;
+    running=true;last=0;selected=0;target=rand(10);tries=0;found=0;shake=0;face=0;faceTimer=1.2;scroll=desiredPan();open.fill(false);splats.length=0;
     $('overlay').classList.add('hidden');$('state').textContent='SEARCHING';$('msg').textContent='LOCKERS WAITING';$('sub').textContent='Choose carefully. The tiny man moves after every find.';sync();requestAnimationFrame(loop);
   }
   function sync(){$('tries').textContent=tries;$('found').textContent=found;$('selected').textContent=selected+1}
@@ -82,7 +86,7 @@
     if(keys.has('arrowleft')||keys.has('a')){selected=Math.max(0,selected-1);keys.delete('arrowleft');keys.delete('a');sync()}
     if(keys.has('arrowright')||keys.has('d')){selected=Math.min(9,selected+1);keys.delete('arrowright');keys.delete('d');sync()}
     if(keys.has(' ')||keys.has('enter')){keys.delete(' ');keys.delete('enter');openLocker();if(!running)return}
-    shake=Math.max(0,shake-dt*8);faceTimer-=dt;if(faceTimer<=0){face=1.8+Math.random()*1.4;faceTimer=3+Math.random()*3.8}$('state').textContent=face>0?'WATCHED':'SEARCHING';face=Math.max(0,face-dt);scroll+=(selected*150-scroll)*Math.min(1,dt*5);
+    shake=Math.max(0,shake-dt*8);faceTimer-=dt;if(faceTimer<=0){face=1.8+Math.random()*1.4;faceTimer=3+Math.random()*3.8}$('state').textContent=face>0?'WATCHED':'SEARCHING';face=Math.max(0,face-dt);scroll+=(desiredPan()-scroll)*Math.min(1,dt*5);
     for(const s of splats){s.y+=s.vy*dt;s.x+=s.vx*dt;s.vy+=420*dt;s.life-=dt}
   }
   function openLocker(){
@@ -101,16 +105,19 @@
     draw(performance.now()/1000);setTimeout(()=>showEnd('Game Over','The wrong locker erupts. The school hallway is no longer usable.','RETRY'),480);
   }
   function showEnd(title,text,button){$('overlay').classList.remove('hidden');$('overlay').querySelector('h1').textContent=title;$('overlay').querySelector('p').textContent=text;$('start').textContent=button}
-  function lockerW(){return Math.max(92,Math.min(130,W*.13))}
-  function lockerGap(){return 22}
-  function lockerY(){return Math.max(150,H*.35)}
-  function lockerX(i){const w=lockerW(),gap=lockerGap(),start=W*.18;return start+i*(w+gap)-scroll}
-  function lockerAt(x,y){const ly=lockerY(),w=lockerW(),h=Math.min(260,H*.42);for(let i=0;i<10;i++){const lx=lockerX(i);if(x>=lx&&x<=lx+w&&y>=ly&&y<=ly+h)return i}return -1}
+  function desiredPan(){const s=Math.max(W/BG.w,H/BG.h),visible=W/s,maxPan=Math.max(0,BG.w-visible),center=LOCKER.x+selected*LOCKER.step+LOCKER.w/2;return Math.max(0,Math.min(maxPan,center-visible*.38))}
+  function fitBg(){const s=Math.max(W/BG.w,H/BG.h),dw=BG.w*s,dh=BG.h*s,maxPan=Math.max(0,BG.w-W/s);scroll=Math.max(0,Math.min(maxPan,scroll));return {s,x:-scroll*s,y:(H-dh)/2,w:dw,h:dh}}
+  function lockerW(){return LOCKER.w*fitBg().s}
+  function lockerH(){return LOCKER.h*fitBg().s}
+  function lockerY(){const f=fitBg();return f.y+LOCKER.y*f.s}
+  function lockerX(i){const f=fitBg();return f.x+(LOCKER.x+i*LOCKER.step)*f.s}
+  function lockerAt(x,y){const ly=lockerY(),w=lockerW(),h=lockerH();for(let i=0;i<10;i++){const lx=lockerX(i);if(x>=lx&&x<=lx+w&&y>=ly&&y<=ly+h)return i}return -1}
   function draw(time){
     const sx=(Math.random()-.5)*shake*14,sy=(Math.random()-.5)*shake*10;ctx.save();ctx.translate(sx,sy);ctx.clearRect(-30,-30,W+60,H+60);
     drawHall(time);drawFace(time);drawLockers(time);drawStudent(time);drawSplats();drawVersion();ctx.restore();
   }
   function drawHall(time){
+    if(bgImg.complete&&bgImg.naturalWidth){const f=fitBg();ctx.drawImage(bgImg,f.x,f.y,f.w,f.h);return}
     const floor=H*.76,ceil=76,vanishX=W*.52;
     const wall=ctx.createLinearGradient(0,0,0,floor);wall.addColorStop(0,'#d7e0e3');wall.addColorStop(.42,'#aebbc1');wall.addColorStop(1,'#7d8b94');ctx.fillStyle=wall;ctx.fillRect(-40,-40,W+80,floor+60);
     ctx.fillStyle='#eef2f1';ctx.fillRect(0,0,W,ceil);ctx.fillStyle='#9aa7ad';ctx.fillRect(0,ceil,W,6);
@@ -129,11 +136,24 @@
     if(face<=0)return;const a=Math.min(.9,face),x=W-150+Math.sin(time*2)*8,y=118;ctx.save();ctx.globalAlpha=a;ctx.fillStyle='rgba(255,218,188,.86)';ctx.beginPath();ctx.ellipse(x,y,82,110,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#14100e';ctx.beginPath();ctx.arc(x-28,y-18,10,0,Math.PI*2);ctx.arc(x+28,y-18,10,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#29110f';ctx.lineWidth=6;ctx.beginPath();ctx.arc(x,y+26,26,0,Math.PI);ctx.stroke();ctx.restore()
   }
   function drawLockers(time){
-    const y=lockerY(),w=lockerW(),h=Math.min(260,H*.42);
-    for(let i=0;i<10;i++){const x=lockerX(i);if(x<-w-40||x>W+60)continue;const sel=i===selected;ctx.save();ctx.translate(x,y);ctx.fillStyle=sel?'#355776':'#2f455d';ctx.fillRect(0,0,w,h);ctx.strokeStyle=sel?css('--cyan'):'rgba(255,255,255,.24)';ctx.lineWidth=sel?3:1;ctx.strokeRect(0,0,w,h);ctx.fillStyle='rgba(255,255,255,.12)';for(let k=0;k<4;k++)ctx.fillRect(18,26+k*18,w-36,3);ctx.fillStyle='#d8e5e8';ctx.fillRect(w-24,h*.52,8,22);ctx.fillStyle='rgba(255,255,255,.75)';ctx.font='700 18px ui-monospace,monospace';ctx.fillText(String(i+1).padStart(2,'0'),16,h-18);if(open[i])drawOpenLocker(w,h,i===target);ctx.restore()}
+    const y=lockerY(),w=lockerW(),h=lockerH();
+    for(let i=0;i<10;i++){
+      const x=lockerX(i);if(x<-w-80||x>W+80)continue;const sel=i===selected;
+      ctx.save();
+      if(open[i]){
+        const ow=w*1.95,oh=h*1.08,ox=x-w*.38,oy=y-h*.04;
+        if(openLockerImg.complete&&openLockerImg.naturalWidth)ctx.drawImage(openLockerImg,ox,oy,ow,oh);
+        else{ctx.translate(x,y);drawOpenLocker(w,h,i===target)}
+        if(i===target)drawTinyMan(x+w*.45,y+h*.58,w);
+      }
+      ctx.strokeStyle=sel?css('--cyan'):'rgba(255,255,255,.08)';ctx.lineWidth=sel?4:1;ctx.strokeRect(x-3,y-3,w+6,h+6);
+      ctx.fillStyle=sel?'rgba(53,241,211,.9)':'rgba(255,255,255,.55)';ctx.font=`700 ${Math.max(12,w*.18)}px ui-monospace,monospace`;ctx.fillText(String(i+1).padStart(2,'0'),x+w*.1,y+h-14);
+      ctx.restore();
+    }
   }
   function drawOpenLocker(w,h,hasMan){ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,8,w-16,h-16);ctx.fillStyle='#1e3046';ctx.beginPath();ctx.moveTo(w*.58,8);ctx.lineTo(w+36,22);ctx.lineTo(w+26,h-16);ctx.lineTo(w*.58,h-8);ctx.closePath();ctx.fill();if(hasMan){ctx.fillStyle='#f4c9a2';ctx.beginPath();ctx.arc(w*.48,h*.58,13,0,Math.PI*2);ctx.fill();ctx.fillStyle='#24202a';ctx.fillRect(w*.39,h*.61,22,30);ctx.fillStyle='#fff';ctx.fillRect(w*.43,h*.55,4,4);ctx.fillRect(w*.51,h*.55,4,4);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(w*.4,h*.7);ctx.lineTo(w*.28,h*.78);ctx.moveTo(w*.56,h*.7);ctx.lineTo(w*.72,h*.63);ctx.stroke()}}
-  function drawStudent(time){const x=Math.min(W*.42,lockerX(selected)+lockerW()*.48),y=lockerY()+Math.min(260,H*.42)+22;ctx.save();ctx.translate(x,y);ctx.fillStyle='#f5c7aa';ctx.beginPath();ctx.arc(0,-74,15,0,Math.PI*2);ctx.fill();ctx.fillStyle='#283956';ctx.fillRect(-13,-58,26,42);ctx.fillStyle='#49d8c7';ctx.fillRect(-13,-58,26,8);ctx.strokeStyle='#f5c7aa';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-13,-47);ctx.lineTo(-28,-28);ctx.moveTo(13,-47);ctx.lineTo(28,-31);ctx.stroke();ctx.strokeStyle='#dce6ef';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(-7,-16);ctx.lineTo(-16,10+Math.sin(time*7)*3);ctx.moveTo(7,-16);ctx.lineTo(17,10-Math.sin(time*7)*3);ctx.stroke();ctx.fillStyle='#1b1d2d';ctx.beginPath();ctx.arc(-6,-80,13,Math.PI*.7,Math.PI*1.9);ctx.arc(8,-80,12,Math.PI*1.1,Math.PI*2.2);ctx.fill();ctx.restore()}
+  function drawTinyMan(x,y,w){ctx.save();ctx.translate(x,y);const s=w/96;ctx.scale(s,s);ctx.fillStyle='#f4c9a2';ctx.beginPath();ctx.arc(0,0,13,0,Math.PI*2);ctx.fill();ctx.fillStyle='#24202a';ctx.fillRect(-9,12,22,30);ctx.fillStyle='#fff';ctx.fillRect(-5,-3,4,4);ctx.fillRect(4,-3,4,4);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-8,22);ctx.lineTo(-22,32);ctx.moveTo(12,22);ctx.lineTo(30,14);ctx.stroke();ctx.restore()}
+  function drawStudent(time){const x=lockerX(selected)+lockerW()*.48,y=lockerY()+lockerH()+22;ctx.save();ctx.translate(x,y);ctx.fillStyle='#f5c7aa';ctx.beginPath();ctx.arc(0,-74,15,0,Math.PI*2);ctx.fill();ctx.fillStyle='#283956';ctx.fillRect(-13,-58,26,42);ctx.fillStyle='#49d8c7';ctx.fillRect(-13,-58,26,8);ctx.strokeStyle='#f5c7aa';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-13,-47);ctx.lineTo(-28,-28);ctx.moveTo(13,-47);ctx.lineTo(28,-31);ctx.stroke();ctx.strokeStyle='#dce6ef';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(-7,-16);ctx.lineTo(-16,10+Math.sin(time*7)*3);ctx.moveTo(7,-16);ctx.lineTo(17,10-Math.sin(time*7)*3);ctx.stroke();ctx.fillStyle='#1b1d2d';ctx.beginPath();ctx.arc(-6,-80,13,Math.PI*.7,Math.PI*1.9);ctx.arc(8,-80,12,Math.PI*1.1,Math.PI*2.2);ctx.fill();ctx.restore()}
   function drawSplats(){for(const s of splats){if(s.life<=0)continue;ctx.globalAlpha=Math.max(0,Math.min(1,s.life));ctx.fillStyle=css('--bad');ctx.beginPath();ctx.arc(s.x,s.y,5+Math.random()*5,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}}
   function drawVersion(){ctx.save();ctx.font='12px ui-monospace,monospace';ctx.fillStyle='rgba(255,255,255,.35)';ctx.textAlign='right';ctx.fillText(GAME_VERSION,W-18,H-18);ctx.restore()}
   let ac=null;function beep(f,d,type,g){try{ac=ac||new (AudioContext||webkitAudioContext)();const o=ac.createOscillator(),gn=ac.createGain();o.type=type;o.frequency.value=f;o.connect(gn);gn.connect(ac.destination);const now=ac.currentTime;gn.gain.setValueAtTime(0,now);gn.gain.linearRampToValueAtTime(g,now+.01);gn.gain.exponentialRampToValueAtTime(.0001,now+d);o.start(now);o.stop(now+d)}catch(e){}}
