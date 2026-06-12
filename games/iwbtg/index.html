@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>I WANNA BE THE SIGNAL — AlicE sYsTeM</title>
+<meta name="description" content="即死トラップ2Dアクション（MVPビルド・共同開発中）">
+<style>
+  :root{--bg:#04060b;--ink:#eaf4f2;--teal:#33e7c8;--violet:#7b4dff;--mono:'Courier New',monospace}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--mono);min-height:100svh;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:18px}
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;justify-content:center}
+  header a{color:rgba(234,244,242,.55);text-decoration:none;font-size:12px;letter-spacing:.12em}
+  header a:hover{color:var(--teal)}
+  h1{font-size:16px;letter-spacing:.18em;text-shadow:0 0 18px rgba(51,231,200,.4)}
+  .tag{font-size:10.5px;letter-spacing:.1em;color:var(--violet)}
+  canvas{display:block;width:min(96vw,960px);aspect-ratio:960/544;image-rendering:pixelated;
+    background:var(--bg);border:1px solid rgba(51,231,200,.25);border-radius:6px;
+    box-shadow:0 0 44px -12px rgba(51,231,200,.45)}
+  footer{font-size:11px;letter-spacing:.1em;color:rgba(234,244,242,.45);text-align:center}
+  footer b{color:rgba(51,231,200,.8);font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <a href="../../index.html">◂ AlicE sYsTeM</a>
+  <h1>I WANNA BE THE SIGNAL</h1>
+  <span class="tag">MVP BUILD // 共同開発中</span>
+</header>
+<canvas id="game" width="960" height="544"></canvas>
+<footer><b>← →</b> 移動 ・ <b>Z / SPACE</b> ジャンプ(2段) ・ <b>R</b> リトライ ・ <b>M</b> ミュート</footer>
+<script src="levels/level1.js"></script>
+<script src="engine.js"></script>
+</body>
+</html>

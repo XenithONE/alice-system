@@ -11,12 +11,15 @@ https://xenithone.github.io/alice-system/games/iwbtg/
 
 ```text
 games/iwbtg/
-├─ README.md      ← 全体像・役割分担・ルール・MVP・TODO
-├─ ASSET_SPEC.md  ← 絵の仕様＆発注リスト（優先度順・Codex用プロンプト例つき）
-├─ assets/        ← 友人が画像を入れる場所（sprites / audio）
+├─ index.html     ← ゲーム起動ページ（エンジン担当）
+├─ engine.js      ← ゲームロジック（エンジン担当）
+├─ levels/        ← ステージデータ。1ファイル = 1ステージ（レベル担当）
+│  └─ level1.js
+├─ assets/        ← アート素材（アート担当）
 │  ├─ sprites/
 │  └─ audio/
-└─ levels/        ← レベルデータ置き場
+├─ README.md      ← このファイル（全体像・分担・ルール・TODO）
+└─ ASSET_SPEC.md  ← 絵の仕様と発注リスト
 ```
 
 ## 役割分担
@@ -27,6 +30,9 @@ games/iwbtg/
 - 画像は `assets/sprites/` に入れる
 - 音素材を追加する場合は `assets/audio/` に入れる
 - ファイル名、サイズ、優先順位は [ASSET_SPEC.md](ASSET_SPEC.md) に従う
+- **置くだけで自動反映**: engine.js は `assets/sprites/` のPNGを自動で読み、
+  見つかれば仮図形からスプライトに切り替える（コード変更不要）。
+  ゲーム画面右上の表示が `SPRITES: PLACEHOLDER` → `SPRITES: LIVE` になれば成功
 
 ### エンジン担当
 
@@ -36,8 +42,15 @@ games/iwbtg/
 
 ### レベル担当
 
-- `levels/level1.json` のようにステージデータを作る
-- 1ステージ1ファイルにして、編集範囲がぶつかりにくい形にする
+- `levels/level1.js` のようにステージデータを作る（1ステージ1ファイル）
+- 中身はASCIIマップ。1文字 = 1タイル(32px)で、行を書き換えるだけでステージが変わる:
+
+```text
+#  = 地形ブロック     ^ = トゲ（即死）
+S  = セーブポイント   G = ゴール扉
+P  = スタート地点     . = 何もない空間
+```
+
 - 最初は短くてよいので、遊べる導線を優先する
 
 ## 共同作業ルール
@@ -56,6 +69,10 @@ games/iwbtg/
 2. ジャンプ、できれば2段ジャンプできる
 3. トゲや罠に当たると即死してセーブポイントから復活する
 4. ステージ1のゴールに着くとクリアになる
+
+→ **エンジン側のMVPは仮図形で実装済み・動作確認済み。すでに遊べます:**
+https://xenithone.github.io/alice-system/games/iwbtg/
+（操作: ←→ 移動 / Z・SPACE ジャンプ2段 / R リトライ / M ミュート）
 
 MVPに必要な最小アセット:
 
@@ -90,10 +107,12 @@ https://xenithone.github.io/alice-system/games/iwbtg/
 - [x] 共同作業用フォルダを作る
 - [x] READMEを整える
 - [x] ASSET_SPECを整える
+- [x] `index.html` を作る
+- [x] `engine.js` を作る
+- [x] `levels/level1.js` を作る
+- [x] 仮図形だけでMVPを動かす（移動・2段ジャンプ・トゲ即死・セーブ復活・ゴール動作確認済み）
 - [ ] MVP用アセットを `assets/sprites/` に追加する
-- [ ] `index.html` を作る
-- [ ] `engine.js` を作る
-- [ ] `levels/level1.json` を作る
-- [ ] 仮図形だけでMVPを動かす
-- [ ] アート素材を読み込む
+- [ ] 音素材を `assets/audio/` に追加する（今は仮のビープ音）
+- [ ] アート素材を読み込んで見た目を確認する
+- [ ] `levels/level2.js` 以降を追加する（engine側の複数ステージ対応も）
 - [ ] トップページの Games に登録する
