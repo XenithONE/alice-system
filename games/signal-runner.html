@@ -72,9 +72,10 @@
   const $=id=>document.getElementById(id);
   let W=0,H=0,DPR=1,last=0,spawn=0,shardSpawn=0,running=false;
   let score=0,charge=0,best=Number(localStorage.getItem('alice_signal_runner_best')||0);
+  let gameTime=0,gimmickPhase=0,wallSpawn=2.5,staticFlash=0,staticTimer=6;
   const keys=new Set(),pointer={active:false,x:0,y:0};
   const player={x:0,y:0,vx:0,vy:0,r:13,shield:0};
-  const hazards=[],shards=[],stars=[];
+  const hazards=[],shards=[],stars=[],walls=[];
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   $('best').textContent=best;
 
@@ -103,7 +104,8 @@
 
   function start(){
     running=true;last=0;spawn=.35;shardSpawn=.35;score=0;charge=0;
-    hazards.length=0;shards.length=0;player.x=W*.5;player.y=H*.68;player.vx=0;player.vy=0;player.shield=2.2;
+    gameTime=0;gimmickPhase=0;wallSpawn=2.5;staticFlash=0;staticTimer=6;
+    hazards.length=0;shards.length=0;walls.length=0;player.x=W*.5;player.y=H*.68;player.vx=0;player.vy=0;player.shield=2.2;
     $('overlay').classList.add('hidden');$('state').textContent='RUNNING';$('msg').textContent='SIGNAL OPEN';
     $('sub').textContent='Collect golden fragments until charge reaches 100%.';
     $('score').textContent='0';$('charge').textContent='0%';
@@ -130,7 +132,11 @@
     update(dt);draw(t/1000);requestAnimationFrame(loop);
   }
   function update(dt){
-    const focus=keys.has(' '),speed=focus?520:720,friction=Math.pow(.0008,dt);
+    const focus=keys.has(' '),speed=focus?380:540,friction=Math.pow(.0008,dt);
+    gameTime+=dt;
+    if(gimmickPhase===0&&gameTime>15){gimmickPhase=1;$('msg').textContent='SIGNAL WALLS DETECTED';}
+    if(gimmickPhase===1&&gameTime>30){gimmickPhase=2;$('msg').textContent='GHOST NODES ONLINE';}
+    if(gimmickPhase===2&&gameTime>50){gimmickPhase=3;$('msg').textContent='INTERFERENCE ACTIVE';}
     let ax=0,ay=0;
     if(keys.has('arrowleft')||keys.has('a'))ax-=1;if(keys.has('arrowright')||keys.has('d'))ax+=1;
     if(keys.has('arrowup')||keys.has('w'))ay-=1;if(keys.has('arrowdown')||keys.has('s'))ay+=1;
@@ -143,7 +149,21 @@
     spawn-=dt;shardSpawn-=dt;
     if(spawn<=0){spawn=Math.max(.2,.78-charge*.004);makeHazard()}
     if(shardSpawn<=0){shardSpawn=.48+Math.random()*.5;makeShard()}
-    for(const h of hazards){h.y+=h.vy*dt;h.x+=Math.sin(h.y*.012+h.phase)*h.sway*dt;h.rot+=h.spin*dt}
+    if(gameTime>15){wallSpawn-=dt;if(wallSpawn<=0){wallSpawn=3.5+Math.random()*2;makeWall()}}
+    if(gameTime>50){staticTimer-=dt;if(staticTimer<=0){staticFlash=0.4;staticTimer=5+Math.random()*4;pulse(120,.15,'square',.022);}if(staticFlash>0)staticFlash=Math.max(0,staticFlash-dt*4);}
+    for(const h of hazards){
+      h.y+=h.vy*dt;h.rot+=h.spin*dt;
+      if(h.homing){const dx=player.x-h.x;h.x+=Math.sign(dx)*Math.min(Math.abs(dx),55*dt);}
+      else{h.x+=Math.sin(h.y*.012+h.phase)*h.sway*dt;}
+    }
+    for(const w of walls){w.y+=w.vy*dt;}
+    for(let i=walls.length-1;i>=0;i--){
+      const w=walls[i];if(w.y>H+80){walls.splice(i,1);continue;}
+      if(player.shield<=0){
+        const inY=player.y+player.r>w.y&&player.y-player.r<w.y+w.h;
+        if(inY&&!(player.x>w.gapX-w.gapW/2&&player.x<w.gapX+w.gapW/2)){boom();return;}
+      }
+    }
     for(const s of shards){s.y+=s.vy*dt;s.p+=dt}
     for(let i=hazards.length-1;i>=0;i--){
       const h=hazards[i];
@@ -162,10 +182,14 @@
     score+=Math.max(0,Math.floor(dt*18));$('score').textContent=score;$('charge').textContent=Math.floor(charge)+'%';
   }
   function makeHazard(){
-    const r=12+Math.random()*22;
-    hazards.push({x:40+Math.random()*(W-80),y:-50,r,vy:140+Math.random()*180+charge*2.2,sway:24+Math.random()*80,phase:Math.random()*6.28,rot:0,spin:(Math.random()-.5)*4});
+    const r=12+Math.random()*22,homing=gameTime>30&&Math.random()<.3;
+    hazards.push({x:40+Math.random()*(W-80),y:-50,r,vy:140+Math.random()*180+charge*2.2,sway:homing?0:24+Math.random()*80,phase:Math.random()*6.28,rot:0,spin:(Math.random()-.5)*4,homing});
   }
   function makeShard(){shards.push({x:35+Math.random()*(W-70),y:-30,r:8+Math.random()*5,vy:110+Math.random()*100,p:Math.random()*6.28})}
+  function makeWall(){
+    const gapW=Math.max(140,170-charge*.4),gapX=gapW/2+20+Math.random()*(W-gapW-40);
+    walls.push({y:-30,vy:130+Math.random()*80+charge*1.5,gapX,gapW,h:22});
+  }
   function boom(){pulse(96,.25,'sawtooth',.05);end(false)}
   let ac=null;
   function pulse(f,d,type,g){
@@ -180,8 +204,23 @@
     const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#07101b');g.addColorStop(.52,'#05070d');g.addColorStop(1,'#0a0710');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
     ctx.save();ctx.globalAlpha=.55;for(const st of stars){st.y+=st.z*.34;if(st.y>H)st.y=0;ctx.fillStyle=`rgba(210,246,255,${st.a})`;ctx.fillRect(st.x,st.y,st.z*1.8,st.z*1.8)}ctx.restore();
     ctx.save();ctx.strokeStyle='rgba(47,247,210,.08)';ctx.lineWidth=1;const gap=44;for(let y=(time*24)%gap;y<H;y+=gap){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y+Math.sin(y*.018+time)*10);ctx.stroke()}ctx.restore();
+    for(const w of walls){
+      ctx.save();ctx.shadowBlur=18;ctx.shadowColor='rgba(255,79,135,.65)';ctx.fillStyle='rgba(255,79,135,.5)';
+      const gL=w.gapX-w.gapW/2,gR=w.gapX+w.gapW/2;
+      if(gL>0)ctx.fillRect(0,w.y,gL,w.h);if(gR<W)ctx.fillRect(gR,w.y,W-gR,w.h);
+      ctx.strokeStyle='rgba(47,247,210,.85)';ctx.lineWidth=2;ctx.shadowColor='rgba(47,247,210,.8)';ctx.shadowBlur=10;
+      ctx.beginPath();ctx.moveTo(gL,w.y-4);ctx.lineTo(gL,w.y+w.h+4);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(gR,w.y-4);ctx.lineTo(gR,w.y+w.h+4);ctx.stroke();
+      ctx.restore();
+    }
     for(const s of shards){ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.p*2);ctx.shadowBlur=22;ctx.shadowColor='rgba(255,209,102,.8)';ctx.fillStyle='rgba(255,209,102,.95)';poly(4,s.r);ctx.restore()}
-    for(const h of hazards){ctx.save();ctx.translate(h.x,h.y);ctx.rotate(h.rot);ctx.shadowBlur=24;ctx.shadowColor='rgba(255,79,135,.8)';ctx.strokeStyle='rgba(255,79,135,.9)';ctx.lineWidth=3;poly(3,h.r,true);ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;poly(3,h.r*.55,true);ctx.restore()}
+    for(const h of hazards){
+      ctx.save();ctx.translate(h.x,h.y);ctx.rotate(h.rot);
+      if(h.homing){ctx.shadowBlur=24;ctx.shadowColor='rgba(255,180,50,.9)';ctx.strokeStyle='rgba(255,180,50,.9)';ctx.lineWidth=3;poly(5,h.r,true);ctx.strokeStyle='rgba(255,255,255,.2)';ctx.lineWidth=1;poly(5,h.r*.55,true);}
+      else{ctx.shadowBlur=24;ctx.shadowColor='rgba(255,79,135,.8)';ctx.strokeStyle='rgba(255,79,135,.9)';ctx.lineWidth=3;poly(3,h.r,true);ctx.strokeStyle='rgba(255,255,255,.18)';ctx.lineWidth=1;poly(3,h.r*.55,true);}
+      ctx.restore();
+    }
+    if(staticFlash>0){ctx.save();ctx.globalAlpha=staticFlash*.35;ctx.fillStyle='rgba(255,255,255,1)';ctx.fillRect(0,0,W,H);ctx.globalAlpha=staticFlash*.18;for(let sy=0;sy<H;sy+=4){if(Math.random()<.5){ctx.fillStyle=Math.random()>.5?'rgba(47,247,210,.9)':'rgba(255,79,135,.9)';ctx.fillRect(0,sy,W,2);}}ctx.restore();}
     ctx.save();ctx.translate(player.x,player.y);ctx.shadowBlur=28;ctx.shadowColor='rgba(47,247,210,.95)';ctx.fillStyle='rgba(47,247,210,.94)';ctx.beginPath();ctx.arc(0,0,player.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=player.shield>0?'rgba(255,209,102,.9)':'rgba(255,255,255,.74)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,player.r+5+Math.sin(time*8)*2,0,Math.PI*2);ctx.stroke();ctx.restore();
     ctx.save();ctx.globalAlpha=.18;ctx.strokeStyle='rgba(107,166,255,.8)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(player.x,player.y+18);ctx.lineTo(player.x-player.vx*.08,player.y-player.vy*.08+38);ctx.stroke();ctx.restore();
   }
