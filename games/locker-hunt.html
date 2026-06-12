@@ -5,22 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>LOCKER HUNT // AlicE sYsTeM</title>
 <style>
-  :root{--bg:#0b1020;--ink:#f2f7fb;--muted:#91a0ad;--line:rgba(255,255,255,.16);--pink:#ff5aa5;--cyan:#35f1d3;--gold:#ffd166;--bad:#74412b;--ui:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"Cascadia Code",monospace}
+  :root{--bg:#111827;--ink:#f4f7fb;--muted:#8f9cad;--line:rgba(255,255,255,.16);--pink:#ff5aa5;--cyan:#35f1d3;--gold:#ffd166;--bad:#704129;--ui:system-ui,-apple-system,"Segoe UI",sans-serif;--mono:ui-monospace,"Cascadia Code",monospace}
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--ui);user-select:none;-webkit-user-select:none;touch-action:none}
-  canvas{position:fixed;inset:0;display:block;background:#0b1020}
+  canvas{position:fixed;inset:0;display:block;background:#111827}
   .top{position:fixed;z-index:4;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;font:12px/1.2 var(--mono);letter-spacing:.12em;color:var(--muted);pointer-events:none}
   .top a{pointer-events:auto;color:var(--muted);text-decoration:none}.top a:hover{color:var(--cyan)}
+  .top b{font-weight:700;color:var(--ink)}
   .hud{position:fixed;z-index:4;left:0;right:0;bottom:0;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:12px;padding:16px 18px;font-family:var(--mono);pointer-events:none}
-  .panel{border:1px solid var(--line);border-radius:8px;background:rgba(6,10,20,.66);backdrop-filter:blur(10px);padding:11px 13px;box-shadow:0 16px 36px rgba(0,0,0,.28)}
+  .panel{border:1px solid var(--line);border-radius:8px;background:rgba(8,13,24,.66);backdrop-filter:blur(10px);padding:11px 13px;box-shadow:0 16px 36px rgba(0,0,0,.28)}
   .stats{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:12px}.stats b{color:var(--ink)}
   .message{text-align:center;min-width:min(520px,94vw)}
   .message .main{font-size:13px;color:var(--cyan);letter-spacing:.14em;text-shadow:0 0 16px rgba(53,241,211,.44)}
   .message .sub{margin-top:6px;font-size:11px;color:var(--muted);letter-spacing:.06em}
   .keys{justify-self:end;text-align:right;color:var(--muted);font-size:11px;letter-spacing:.08em}
-  .overlay{position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:22px;background:radial-gradient(circle at 50% 42%,rgba(255,90,165,.13),rgba(11,16,32,.86) 44%,rgba(11,16,32,.97));transition:opacity .25s}
+  .overlay{position:fixed;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;padding:22px;background:radial-gradient(circle at 50% 42%,rgba(255,90,165,.13),rgba(17,24,39,.86) 44%,rgba(17,24,39,.97));transition:opacity .25s}
   .card{width:min(660px,100%);text-align:center}
   h1{font-size:clamp(42px,9vw,86px);line-height:.9;letter-spacing:.01em;text-transform:uppercase;background:linear-gradient(105deg,#fff,var(--gold),var(--pink),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 42px rgba(255,90,165,.28)}
+  .version{margin-top:10px;font:12px var(--mono);letter-spacing:.18em;color:var(--gold)}
   .card p{margin:18px auto 0;max-width:550px;color:#b7c4d0;font-size:14px;line-height:1.8;letter-spacing:.04em}
   .actions{margin-top:24px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
   button,.link{pointer-events:auto;border:1px solid var(--line);border-radius:8px;background:rgba(12,18,34,.74);color:var(--ink);font:12px var(--mono);letter-spacing:.12em;padding:12px 18px;text-decoration:none;cursor:pointer}
@@ -35,7 +37,7 @@
 <div class="top">
   <a href="../index.html">&larr; RETURN</a>
   <span>LOCKER HUNT // SCHOOL HALLWAY</span>
-  <span id="state">READY</span>
+  <span><b id="version">v1.1.0</b> // <b id="state">READY</b></span>
 </div>
 <div class="hud">
   <div class="panel stats"><span>TRIES <b id="tries">0</b></span><span>FOUND <b id="found">0</b></span><span>LOCKER <b id="selected">1</b>/10</span></div>
@@ -45,7 +47,8 @@
 <div class="overlay" id="overlay">
   <div class="card">
     <h1>Locker Hunt</h1>
-    <p>学校の廊下に10台のロッカー。ひとつずつ開けて、どこかに隠れているちいさいおじさんを探す。外れのロッカーには、絶対に開けたくないものが入っている。</p>
+    <div class="version" id="titleVersion">v1.1.0</div>
+    <p>A school hallway. Ten lockers. Open them one by one and find the tiny man hiding inside. Choose wrong, and the hallway becomes a disaster.</p>
     <div class="actions">
       <button class="primary" id="start">START SEARCH</button>
       <a class="link" href="../index.html">RETURN</a>
@@ -54,18 +57,21 @@
 </div>
 <script>
 (()=>{
+  const GAME_VERSION='v1.1.0';
   const cv=document.getElementById('game'),ctx=cv.getContext('2d');
   const $=id=>document.getElementById(id);
   let W=0,H=0,DPR=1,last=0,running=false,selected=0,target=0,tries=0,found=0,shake=0,faceTimer=1.5,face=0,scroll=0;
-  const open = Array(10).fill(false), splats=[];
-  const keys=new Set();
-  const rand=n=>Math.floor(Math.random()*n);
+  const open=Array(10).fill(false),splats=[],keys=new Set();
+  const rand=n=>Math.floor(Math.random()*n),css=name=>getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  $('version').textContent=GAME_VERSION;$('titleVersion').textContent=GAME_VERSION;
+
   function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);draw(0)}
   addEventListener('resize',resize);resize();
-  addEventListener('keydown',e=>{keys.add(e.key.toLowerCase());if([' ','enter','arrowleft','arrowright'].includes(e.key.toLowerCase()))e.preventDefault();if(!running&&(e.key==='Enter'||e.key===' '))start();});
+  addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if([' ','enter','arrowleft','arrowright'].includes(k))e.preventDefault();if(!running&&(e.key==='Enter'||e.key===' '))start()});
   addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
   cv.addEventListener('pointerdown',e=>{if(!running){start();return}const info=lockerAt(e.clientX,e.clientY);if(info>=0){selected=info;sync();openLocker()}});
   $('start').addEventListener('click',start);
+
   function start(){
     running=true;last=0;selected=0;target=rand(10);tries=0;found=0;shake=0;face=0;faceTimer=1.2;scroll=0;open.fill(false);splats.length=0;
     $('overlay').classList.add('hidden');$('state').textContent='SEARCHING';$('msg').textContent='LOCKERS WAITING';$('sub').textContent='Choose carefully. The tiny man moves after every find.';sync();requestAnimationFrame(loop);
@@ -88,39 +94,48 @@
     }else{lose();return}
     sync();
   }
-  function win(){running=false;$('state').textContent='CLEAR';$('msg').textContent='ALL TINY SIGNALS FOUND';$('sub').textContent='The hallway pretends nothing happened.';showEnd('Clear','3回見つけた。ちいさいおじさんは最後に会釈して、壁のすき間へ消えた。','SEARCH AGAIN')}
+  function win(){running=false;$('state').textContent='CLEAR';$('msg').textContent='ALL TINY SIGNALS FOUND';$('sub').textContent='The hallway pretends nothing happened.';showEnd('Clear','You found him three times. He bows once, then slips into a crack in the wall.','SEARCH AGAIN')}
   function lose(){
     running=false;shake=1;for(let i=0;i<100;i++)splats.push({x:lockerX(selected)+55+Math.random()*50,y:lockerY()+120,vx:(Math.random()-.5)*560,vy:-Math.random()*460,life:2});
     $('state').textContent='GAME OVER';$('msg').textContent='THE WRONG LOCKER';$('sub').textContent='The hallway has chosen violence.';beep(92,.35,'sawtooth',.05);
-    draw(performance.now()/1000);setTimeout(()=>showEnd('Game Over','外れのロッカーから大量のうんちがあふれ出した。廊下はもう戻れない。','RETRY'),480);
+    draw(performance.now()/1000);setTimeout(()=>showEnd('Game Over','The wrong locker erupts. The school hallway is no longer usable.','RETRY'),480);
   }
   function showEnd(title,text,button){$('overlay').classList.remove('hidden');$('overlay').querySelector('h1').textContent=title;$('overlay').querySelector('p').textContent=text;$('start').textContent=button}
   function lockerW(){return Math.max(92,Math.min(130,W*.13))}
   function lockerGap(){return 22}
-  function lockerY(){return Math.max(130,H*.34)}
+  function lockerY(){return Math.max(150,H*.35)}
   function lockerX(i){const w=lockerW(),gap=lockerGap(),start=W*.18;return start+i*(w+gap)-scroll}
   function lockerAt(x,y){const ly=lockerY(),w=lockerW(),h=Math.min(260,H*.42);for(let i=0;i<10;i++){const lx=lockerX(i);if(x>=lx&&x<=lx+w&&y>=ly&&y<=ly+h)return i}return -1}
   function draw(time){
     const sx=(Math.random()-.5)*shake*14,sy=(Math.random()-.5)*shake*10;ctx.save();ctx.translate(sx,sy);ctx.clearRect(-30,-30,W+60,H+60);
-    const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#111a32');g.addColorStop(.6,'#0b1020');g.addColorStop(1,'#05070d');ctx.fillStyle=g;ctx.fillRect(-40,-40,W+80,H+80);
-    drawHall(time);drawFace(time);drawLockers(time);drawStudent(time);drawSplats();ctx.restore();
+    drawHall(time);drawFace(time);drawLockers(time);drawStudent(time);drawSplats();drawVersion();ctx.restore();
   }
   function drawHall(time){
-    const floor=H*.76;ctx.fillStyle='#172035';ctx.fillRect(0,floor,W,H-floor);ctx.strokeStyle='rgba(255,255,255,.08)';ctx.lineWidth=1;
-    for(let x=-80+(time*8%80);x<W+120;x+=80){ctx.beginPath();ctx.moveTo(x,floor);ctx.lineTo(x-150,H);ctx.stroke()}
-    for(let i=0;i<5;i++){const x=80+i*220-(scroll*.18%220),y=82,w=128,h=74;ctx.fillStyle='rgba(119,180,190,.14)';ctx.fillRect(x,y,w,h);ctx.strokeStyle='rgba(180,245,255,.28)';ctx.strokeRect(x,y,w,h);ctx.beginPath();ctx.moveTo(x+w/2,y);ctx.lineTo(x+w/2,y+h);ctx.moveTo(x,y+h/2);ctx.lineTo(x+w,y+h/2);ctx.stroke()}
-    ctx.fillStyle='rgba(255,255,255,.05)';for(let y=190;y<floor;y+=42){ctx.fillRect(0,y,W,2)}
+    const floor=H*.76,ceil=76,vanishX=W*.52;
+    const wall=ctx.createLinearGradient(0,0,0,floor);wall.addColorStop(0,'#d7e0e3');wall.addColorStop(.42,'#aebbc1');wall.addColorStop(1,'#7d8b94');ctx.fillStyle=wall;ctx.fillRect(-40,-40,W+80,floor+60);
+    ctx.fillStyle='#eef2f1';ctx.fillRect(0,0,W,ceil);ctx.fillStyle='#9aa7ad';ctx.fillRect(0,ceil,W,6);
+    ctx.fillStyle='#273244';ctx.fillRect(0,floor,W,H-floor);ctx.strokeStyle='rgba(255,255,255,.16)';ctx.lineWidth=1;
+    for(let x=-120+(time*8%90);x<W+140;x+=90){ctx.beginPath();ctx.moveTo(x,floor);ctx.lineTo(vanishX,H+30);ctx.stroke()}
+    for(let y=floor+18;y<H;y+=36){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+    for(let i=0;i<6;i++){const x=60+i*210-(scroll*.16%210);drawWindow(x,96,126,72)}
+    for(let i=0;i<4;i++){const x=120+i*310-(scroll*.1%310);drawClassroomDoor(x,168)}
+    drawNoticeBoard(26-(scroll*.08%360),206);
+    for(let i=0;i<5;i++){const x=120+i*260-(scroll*.08%260);ctx.fillStyle='rgba(255,244,191,.72)';ctx.fillRect(x,24,92,16);ctx.fillStyle='rgba(255,244,191,.12)';ctx.beginPath();ctx.moveTo(x-40,ceil);ctx.lineTo(x+132,ceil);ctx.lineTo(x+92,210);ctx.lineTo(x,210);ctx.closePath();ctx.fill()}
   }
+  function drawWindow(x,y,w,h){ctx.fillStyle='rgba(148,210,218,.34)';ctx.fillRect(x,y,w,h);ctx.strokeStyle='rgba(35,66,78,.72)';ctx.lineWidth=3;ctx.strokeRect(x,y,w,h);ctx.beginPath();ctx.moveTo(x+w/2,y);ctx.lineTo(x+w/2,y+h);ctx.moveTo(x,y+h/2);ctx.lineTo(x+w,y+h/2);ctx.stroke()}
+  function drawClassroomDoor(x,y){ctx.fillStyle='#52656b';ctx.fillRect(x,y,72,186);ctx.strokeStyle='#2c3941';ctx.lineWidth=3;ctx.strokeRect(x,y,72,186);ctx.fillStyle='#a8d6df';ctx.fillRect(x+12,y+20,48,48);ctx.fillStyle='#f3f1d4';ctx.fillRect(x+14,y-24,44,18);ctx.fillStyle='#1d2830';ctx.font='700 11px ui-monospace,monospace';ctx.fillText('2-B',x+23,y-11);ctx.fillStyle='#f5d37b';ctx.beginPath();ctx.arc(x+58,y+98,4,0,Math.PI*2);ctx.fill()}
+  function drawNoticeBoard(x,y){ctx.fillStyle='#6e4f38';ctx.fillRect(x,y,134,86);ctx.fillStyle='#f3e5b5';for(let i=0;i<4;i++)ctx.fillRect(x+12+i*28,y+14+(i%2)*18,22,26);ctx.strokeStyle='#33251d';ctx.lineWidth=3;ctx.strokeRect(x,y,134,86)}
   function drawFace(time){
-    if(face<=0)return;const a=Math.min(.9,face);const x=W-150+Math.sin(time*2)*8,y=92;ctx.save();ctx.globalAlpha=a;ctx.fillStyle='rgba(255,218,188,.85)';ctx.beginPath();ctx.ellipse(x,y,82,110,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#14100e';ctx.beginPath();ctx.arc(x-28,y-18,10,0,Math.PI*2);ctx.arc(x+28,y-18,10,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#29110f';ctx.lineWidth=6;ctx.beginPath();ctx.arc(x,y+26,26,0,Math.PI);ctx.stroke();ctx.fillStyle='rgba(255,90,165,.28)';ctx.fillRect(x-106,y-118,210,236);ctx.restore()
+    if(face<=0)return;const a=Math.min(.9,face),x=W-150+Math.sin(time*2)*8,y=118;ctx.save();ctx.globalAlpha=a;ctx.fillStyle='rgba(255,218,188,.86)';ctx.beginPath();ctx.ellipse(x,y,82,110,0,0,Math.PI*2);ctx.fill();ctx.fillStyle='#14100e';ctx.beginPath();ctx.arc(x-28,y-18,10,0,Math.PI*2);ctx.arc(x+28,y-18,10,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#29110f';ctx.lineWidth=6;ctx.beginPath();ctx.arc(x,y+26,26,0,Math.PI);ctx.stroke();ctx.restore()
   }
   function drawLockers(time){
-    const y=lockerY(),w=lockerW(),h=Math.min(260,H*.42);for(let i=0;i<10;i++){const x=lockerX(i);if(x<-w-40||x>W+60)continue;const sel=i===selected;ctx.save();ctx.translate(x,y);ctx.fillStyle=sel?'#28415f':'#21314b';ctx.fillRect(0,0,w,h);ctx.strokeStyle=sel?varColor('--cyan'):'rgba(255,255,255,.18)';ctx.lineWidth=sel?3:1;ctx.strokeRect(0,0,w,h);ctx.fillStyle='rgba(255,255,255,.08)';for(let k=0;k<4;k++)ctx.fillRect(18,26+k*18,w-36,3);ctx.fillStyle='#d8e5e8';ctx.fillRect(w-24,h*.52,8,22);ctx.fillStyle='rgba(255,255,255,.75)';ctx.font='700 18px ui-monospace,monospace';ctx.fillText(String(i+1).padStart(2,'0'),16,h-18);if(open[i])drawOpenLocker(w,h,i===target);ctx.restore()}}
-  function drawOpenLocker(w,h,hasMan){ctx.fillStyle='rgba(0,0,0,.48)';ctx.fillRect(8,8,w-16,h-16);ctx.fillStyle='#162236';ctx.beginPath();ctx.moveTo(w*.58,8);ctx.lineTo(w+36,22);ctx.lineTo(w+26,h-16);ctx.lineTo(w*.58,h-8);ctx.closePath();ctx.fill();if(hasMan){ctx.fillStyle='#f4c9a2';ctx.beginPath();ctx.arc(w*.48,h*.58,13,0,Math.PI*2);ctx.fill();ctx.fillStyle='#24202a';ctx.fillRect(w*.39,h*.61,22,30);ctx.fillStyle='#fff';ctx.fillRect(w*.43,h*.55,4,4);ctx.fillRect(w*.51,h*.55,4,4);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(w*.4,h*.7);ctx.lineTo(w*.28,h*.78);ctx.moveTo(w*.56,h*.7);ctx.lineTo(w*.72,h*.63);ctx.stroke()}}
-  function drawStudent(time){
-    const x=Math.min(W*.42,lockerX(selected)+lockerW()*.48),y=lockerY()+Math.min(260,H*.42)+22;ctx.save();ctx.translate(x,y);ctx.fillStyle='#f5c7aa';ctx.beginPath();ctx.arc(0,-74,15,0,Math.PI*2);ctx.fill();ctx.fillStyle='#283956';ctx.fillRect(-13,-58,26,42);ctx.fillStyle='#49d8c7';ctx.fillRect(-13,-58,26,8);ctx.strokeStyle='#f5c7aa';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-13,-47);ctx.lineTo(-28,-28);ctx.moveTo(13,-47);ctx.lineTo(28,-31);ctx.stroke();ctx.strokeStyle='#dce6ef';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(-7,-16);ctx.lineTo(-16,10+Math.sin(time*7)*3);ctx.moveTo(7,-16);ctx.lineTo(17,10-Math.sin(time*7)*3);ctx.stroke();ctx.fillStyle='#1b1d2d';ctx.beginPath();ctx.arc(-6,-80,13,Math.PI*.7,Math.PI*1.9);ctx.arc(8,-80,12,Math.PI*1.1,Math.PI*2.2);ctx.fill();ctx.restore()}
-  function drawSplats(){for(const s of splats){if(s.life<=0)continue;ctx.globalAlpha=Math.max(0,Math.min(1,s.life));ctx.fillStyle=varColor('--bad');ctx.beginPath();ctx.arc(s.x,s.y,5+Math.random()*5,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}}
-  function varColor(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim()}
+    const y=lockerY(),w=lockerW(),h=Math.min(260,H*.42);
+    for(let i=0;i<10;i++){const x=lockerX(i);if(x<-w-40||x>W+60)continue;const sel=i===selected;ctx.save();ctx.translate(x,y);ctx.fillStyle=sel?'#355776':'#2f455d';ctx.fillRect(0,0,w,h);ctx.strokeStyle=sel?css('--cyan'):'rgba(255,255,255,.24)';ctx.lineWidth=sel?3:1;ctx.strokeRect(0,0,w,h);ctx.fillStyle='rgba(255,255,255,.12)';for(let k=0;k<4;k++)ctx.fillRect(18,26+k*18,w-36,3);ctx.fillStyle='#d8e5e8';ctx.fillRect(w-24,h*.52,8,22);ctx.fillStyle='rgba(255,255,255,.75)';ctx.font='700 18px ui-monospace,monospace';ctx.fillText(String(i+1).padStart(2,'0'),16,h-18);if(open[i])drawOpenLocker(w,h,i===target);ctx.restore()}
+  }
+  function drawOpenLocker(w,h,hasMan){ctx.fillStyle='rgba(0,0,0,.5)';ctx.fillRect(8,8,w-16,h-16);ctx.fillStyle='#1e3046';ctx.beginPath();ctx.moveTo(w*.58,8);ctx.lineTo(w+36,22);ctx.lineTo(w+26,h-16);ctx.lineTo(w*.58,h-8);ctx.closePath();ctx.fill();if(hasMan){ctx.fillStyle='#f4c9a2';ctx.beginPath();ctx.arc(w*.48,h*.58,13,0,Math.PI*2);ctx.fill();ctx.fillStyle='#24202a';ctx.fillRect(w*.39,h*.61,22,30);ctx.fillStyle='#fff';ctx.fillRect(w*.43,h*.55,4,4);ctx.fillRect(w*.51,h*.55,4,4);ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(w*.4,h*.7);ctx.lineTo(w*.28,h*.78);ctx.moveTo(w*.56,h*.7);ctx.lineTo(w*.72,h*.63);ctx.stroke()}}
+  function drawStudent(time){const x=Math.min(W*.42,lockerX(selected)+lockerW()*.48),y=lockerY()+Math.min(260,H*.42)+22;ctx.save();ctx.translate(x,y);ctx.fillStyle='#f5c7aa';ctx.beginPath();ctx.arc(0,-74,15,0,Math.PI*2);ctx.fill();ctx.fillStyle='#283956';ctx.fillRect(-13,-58,26,42);ctx.fillStyle='#49d8c7';ctx.fillRect(-13,-58,26,8);ctx.strokeStyle='#f5c7aa';ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(-13,-47);ctx.lineTo(-28,-28);ctx.moveTo(13,-47);ctx.lineTo(28,-31);ctx.stroke();ctx.strokeStyle='#dce6ef';ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(-7,-16);ctx.lineTo(-16,10+Math.sin(time*7)*3);ctx.moveTo(7,-16);ctx.lineTo(17,10-Math.sin(time*7)*3);ctx.stroke();ctx.fillStyle='#1b1d2d';ctx.beginPath();ctx.arc(-6,-80,13,Math.PI*.7,Math.PI*1.9);ctx.arc(8,-80,12,Math.PI*1.1,Math.PI*2.2);ctx.fill();ctx.restore()}
+  function drawSplats(){for(const s of splats){if(s.life<=0)continue;ctx.globalAlpha=Math.max(0,Math.min(1,s.life));ctx.fillStyle=css('--bad');ctx.beginPath();ctx.arc(s.x,s.y,5+Math.random()*5,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}}
+  function drawVersion(){ctx.save();ctx.font='12px ui-monospace,monospace';ctx.fillStyle='rgba(255,255,255,.35)';ctx.textAlign='right';ctx.fillText(GAME_VERSION,W-18,H-18);ctx.restore()}
   let ac=null;function beep(f,d,type,g){try{ac=ac||new (AudioContext||webkitAudioContext)();const o=ac.createOscillator(),gn=ac.createGain();o.type=type;o.frequency.value=f;o.connect(gn);gn.connect(ac.destination);const now=ac.currentTime;gn.gain.setValueAtTime(0,now);gn.gain.linearRampToValueAtTime(g,now+.01);gn.gain.exponentialRampToValueAtTime(.0001,now+d);o.start(now);o.stop(now+d)}catch(e){}}
 })();
 </script>
