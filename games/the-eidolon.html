@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>THE EIDOLON // AlicE sYsTeM</title>
+<meta name="description" content="Three.jsの一人称ホラー探索。暗い虚空を懐中電灯で進み、信号の断片を5個集めて脱出せよ。眼の怪物EIDOLONに光を当てるな——見つめ返してくる。">
+<meta name="theme-color" content="#03060b">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Cormorant+Garamond:ital@1&display=swap" rel="stylesheet">
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js"}}
+</script>
+<style>
+  :root{
+    --bg:#03060b;--ink:#e7f5f3;--muted:#8090a5;--line:rgba(172,218,226,.18);
+    --cyan:#33e7c8;--gold:#ffd166;--rose:#ff4f87;--blue:#7fb3ff;--violet:#9b7cff;
+    --ui:"Space Grotesk",system-ui,sans-serif;--mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--ui);overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+  #stage{position:fixed;inset:0;display:block;background:#03060b}
+  .grain{position:fixed;inset:0;pointer-events:none;opacity:.05;mix-blend-mode:overlay;z-index:2;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='130' height='130'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+  .veil{position:fixed;inset:0;pointer-events:none;z-index:2;background:
+    radial-gradient(circle at 50% 52%,transparent 0 26%,rgba(0,0,0,.30) 60%,rgba(0,0,0,.9) 100%)}
+  /* fear / proximity redshift vignette, alpha driven from JS */
+  #fearveil{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;transition:opacity .12s linear;background:
+    radial-gradient(circle at 50% 50%,transparent 0 18%,rgba(120,8,40,.30) 56%,rgba(150,0,30,.78) 100%)}
+  .top{position:fixed;top:0;left:0;right:0;z-index:6;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:var(--muted);pointer-events:none}
+  .top a,.top button{pointer-events:auto;color:var(--muted);background:rgba(3,6,11,.52);border:1px solid var(--line);border-radius:7px;padding:8px 12px;text-decoration:none;font-family:var(--mono);font-size:12px;letter-spacing:.12em;cursor:pointer;transition:.2s}
+  .top a:hover,.top button:hover{color:var(--cyan);border-color:var(--cyan)}
+  .top .title{color:rgba(231,245,243,.86)}
+  .objective{position:fixed;left:18px;top:72px;z-index:5;max-width:min(360px,calc(100vw - 36px));font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:var(--cyan);pointer-events:none;text-shadow:0 0 14px rgba(51,231,200,.35)}
+  .objective .sub{margin-top:5px;color:var(--muted);font-size:11px;letter-spacing:.08em}
+  .hud{position:fixed;z-index:5;inset:auto 0 0 0;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:14px;padding:20px 22px 22px;font-family:var(--mono);pointer-events:none}
+  .panel{border:1px solid var(--line);background:rgba(4,8,15,.58);backdrop-filter:blur(12px);border-radius:8px;padding:11px 13px;box-shadow:0 18px 40px rgba(0,0,0,.28)}
+  .readout{display:flex;gap:13px;flex-wrap:wrap;font-size:12px;color:var(--muted);letter-spacing:.1em}.readout b{color:var(--ink);font-weight:700}
+  .center{text-align:center;min-width:min(440px,94vw)}
+  .msg{color:var(--cyan);font-size:13px;letter-spacing:.15em;text-shadow:0 0 18px rgba(51,231,200,.45)}
+  .subline{margin-top:7px;color:var(--muted);font-size:11px;letter-spacing:.08em}
+  .keys{justify-self:end;color:var(--muted);font-size:11px;letter-spacing:.1em;text-align:right}
+  .meter{height:6px;min-width:140px;border:1px solid rgba(255,255,255,.13);border-radius:999px;overflow:hidden;background:rgba(255,255,255,.04);display:inline-block;vertical-align:middle;margin-left:7px}
+  .meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--violet) 60%,var(--rose));box-shadow:0 0 10px rgba(155,124,255,.6);transition:width .12s linear}
+  .overlay{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;padding:22px;background:radial-gradient(circle at 50% 40%,rgba(51,231,200,.10),rgba(3,6,11,.82) 43%,rgba(3,6,11,.99));transition:opacity .3s}
+  .overlay.hidden{opacity:0;pointer-events:none}
+  .card{width:min(660px,100%);text-align:center}
+  h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:clamp(48px,9vw,98px);line-height:.92;background:linear-gradient(105deg,#fff,var(--cyan),var(--violet),var(--rose));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 54px rgba(51,231,200,.32)}
+  .tagline{margin-top:9px;font-family:var(--mono);font-size:12px;letter-spacing:.42em;color:var(--gold)}
+  .card p{margin:18px auto 0;max-width:560px;color:#a7b8c7;font-size:14px;line-height:1.85;letter-spacing:.04em}
+  .actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:24px}
+  button.btn,a.link{pointer-events:auto;border:1px solid var(--line);border-radius:8px;background:rgba(8,13,23,.72);color:var(--ink);font-family:var(--mono);font-size:12px;letter-spacing:.12em;padding:13px 20px;cursor:pointer;text-decoration:none;transition:.2s}
+  button.btn.primary{color:#03110f;background:linear-gradient(110deg,var(--cyan),var(--violet));border-color:transparent;font-weight:800}
+  button.btn:hover,a.link:hover{border-color:var(--cyan);color:var(--cyan)}
+  button.btn.primary:hover{color:#03110f;filter:brightness(1.08)}
+  /* touch sticks */
+  .stick{position:fixed;z-index:7;width:120px;height:120px;border-radius:50%;border:1px solid var(--line);background:rgba(51,231,200,.05);display:none;pointer-events:none;transform:translate(-50%,-50%)}
+  .stick .knob{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(51,231,200,.18);border:1px solid rgba(51,231,200,.45);transform:translate(-50%,-50%)}
+  body.touch .stick.live{display:block}
+  #loadError{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:24px;background:#03060b;color:var(--ink);font-family:var(--mono);text-align:center;line-height:1.8}
+  #loadError.show{display:flex}
+  @media(max-width:760px){
+    .top{padding:12px 13px;font-size:10px}.top .title{display:none}.top a,.top button{font-size:10px;padding:7px 9px}
+    .objective{top:54px;left:13px;font-size:11px}
+    .hud{grid-template-columns:1fr;padding:12px 12px 16px}.center{order:-1;min-width:0}.keys{display:none}.panel{padding:9px 11px}
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div class="grain"></div><div class="veil"></div><div id="fearveil"></div>
+<div class="top">
+  <a href="../index.html">&larr; RETURN</a>
+  <span class="title">THE EIDOLON // THREE.JS HORROR</span>
+  <button id="muteBtn" type="button">SOUND ON</button>
+</div>
+<div class="objective">
+  <div id="objective">SIGNAL SHARD を 5 個集めろ</div>
+  <div class="sub" id="objectiveSub">光を抱き、闇を抜けろ</div>
+</div>
+<div class="hud">
+  <div class="panel readout">
+    <span>TIME <b id="time">00:00.0</b></span>
+    <span>BEST <b id="best">--:--.-</b></span>
+    <span>SHARDS <b id="shards">0/5</b></span>
+    <span>FEAR<span class="meter"><i id="fearbar" style="width:0%"></i></span></span>
+  </div>
+  <div class="panel center"><div class="msg" id="msg">PRESS START</div><div class="subline" id="sub">WASD/矢印で移動。マウスで視点。</div></div>
+  <div class="panel keys">MOVE: WASD / ARROWS<br>LOOK: MOUSE<br>PAUSE: ESC</div>
+</div>
+<div class="stick" id="lstick"><div class="knob"></div></div>
+<div class="stick" id="rstick"><div class="knob"></div></div>
+<div class="overlay" id="overlay">
+  <div class="card">
+    <h1>The Eidolon</h1>
+    <div class="tagline">EYE IN THE DARK</div>
+    <p>闇の虚空で 信号の断片を 5 個集めろ。光を抱き、ゲートを抜けて還れ。<br>EIDOLON に光を当てるな——見つめ返してくる。</p>
+    <div class="actions">
+      <button class="btn primary" id="startBtn" type="button">ENTER THE DARK</button>
+      <a class="link" href="../index.html">RETURN</a>
+    </div>
+  </div>
+</div>
+<div id="loadError">THREE.JS の読み込みに失敗しました。<br>ネットワーク接続または CDN へのアクセスを確認してください。</div>
+
+<script type="module">
+import * as THREE from "three";
+
+const canvas=document.getElementById('stage');
+const $=id=>document.getElementById(id);
+const ui={
+  overlay:$('overlay'),start:$('startBtn'),mute:$('muteBtn'),
+  time:$('time'),best:$('best'),shards:$('shards'),fearbar:$('fearbar'),
+  msg:$('msg'),sub:$('sub'),objective:$('objective'),objectiveSub:$('objectiveSub'),
+  fearveil:$('fearveil'),lstick:$('lstick'),rstick:$('rstick')
+};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const BEST_KEY='alice_the_eidolon_best';
+const isTouch=matchMedia('(hover:none)').matches || ('ontouchstart' in window);
+if(isTouch) document.body.classList.add('touch');
+const LOW = isTouch && Math.min(innerWidth,innerHeight) < 520;
+
+const FIELD=22;            // half-extent of the floor (world spans -22..22)
+const NEEDED=5;
+const PR=0.36;            // player collision radius
+const PLAYER_SPEED=4.2;
+const EYE_H=1.6;
+
+function fmtTime(ms){
+  if(ms==null||ms<=0||!isFinite(ms)) return '--:--.-';
+  const s=ms/1000, m=Math.floor(s/60), r=s-m*60;
+  return String(m).padStart(2,'0')+':'+ (r<10?'0':'') + r.toFixed(1);
+}
+
+const state={
+  mode:'menu',         // menu | playing | paused | won | lost
+  paused:false,
+  shards:0, needed:NEEDED,
+  fear:0,              // 0 calm .. 100 death
+  startT:0, elapsed:0,
+  best:Number(localStorage.getItem(BEST_KEY)||0),
+  muted:false,
+  eidNear:0,           // 0..1 proximity to the entity (audio + vignette)
+  invuln:0,            // post-escape contact grace
+  taughtFirst:false,   // scripted first-encounter done
+  lossKind:'caught'
+};
+ui.best.textContent=fmtTime(state.best);
+
+/* ---------------------------------------------------------- RENDER */
+const scene=new THREE.Scene();
+const FOG=LOW?0.135:0.115;
+scene.background=new THREE.Color(0x05060d);
+scene.fog=new THREE.FogExp2(0x05060d, FOG);
+
+const camera=new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 60);
+camera.rotation.order='YXZ';
+camera.position.set(0,EYE_H,0);
+scene.add(camera);
+
+const renderer=new THREE.WebGLRenderer({canvas,antialias:!LOW,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.05;
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=LOW?THREE.PCFShadowMap:THREE.PCFSoftShadowMap;
+
+scene.add(new THREE.AmbientLight(0x0c1626, 0.8));
+const hemi=new THREE.HemisphereLight(0x2a2050, 0x03040c, 0.7);
+scene.add(hemi);
+
+// flashlight: the only meaningful light, attached to the camera, casts shadows.
+// angled slightly downward so the cone pools on the floor ahead (classic flashlight look)
+const FLASH_I=120;
+const flash=new THREE.SpotLight(0xeaf6ff, FLASH_I, 18, Math.PI/6.4, 0.5, 1.15);
+flash.castShadow=true;
+flash.shadow.mapSize.set(LOW?512:1024, LOW?512:1024);
+flash.shadow.camera.near=0.5;
+flash.shadow.camera.far=18;
+flash.shadow.bias=-0.0004;
+flash.shadow.normalBias=0.02;
+flash.position.set(0,-0.05,0.15);
+flash.target.position.set(0,-0.42,-1);
+camera.add(flash);
+camera.add(flash.target);
+// a faint held-lantern glow so the immediate area isn't a hard cone edge
+const handGlow=new THREE.PointLight(0x9fe9dd, 2.4, 5.5, 1.5);
+handGlow.position.set(0,-0.1,0.2);
+camera.add(handGlow);
+
+/* ---------------------------------------------------------- MATERIALS */
+const M={
+  floor:new THREE.MeshStandardMaterial({color:0x07080e, roughness:1, metalness:0}),
+  pillar:new THREE.MeshStandardMaterial({color:0x0f1320, roughness:.95, metalness:.02}),
+  shard:new THREE.MeshStandardMaterial({color:0x0c4f46, emissive:0x33e7c8, emissiveIntensity:1.25, roughness:.4, metalness:.1}),
+  gate:new THREE.MeshStandardMaterial({color:0x223044, emissive:0x101a2a, emissiveIntensity:.4, roughness:.4, metalness:.3}),
+  gateInner:new THREE.MeshBasicMaterial({color:0x9b7cff, transparent:true, opacity:.0}),
+  body:new THREE.MeshStandardMaterial({color:0x07060d, roughness:1, metalness:0, emissive:0x05040a, emissiveIntensity:.3}),
+  eye:new THREE.MeshStandardMaterial({color:0x021410, emissive:0x33e7c8, emissiveIntensity:1.2, roughness:.3}),
+  pupil:new THREE.MeshBasicMaterial({color:0x040308}),
+  tent:new THREE.MeshStandardMaterial({color:0x09070f, roughness:1, metalness:0}),
+};
+
+/* ---------------------------------------------------------- FLOOR + grid */
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(FIELD*2, FIELD*2), M.floor);
+floor.rotation.x=-Math.PI/2;
+floor.receiveShadow=true;
+scene.add(floor);
+const grid=new THREE.GridHelper(FIELD*2, FIELD, 0x2a7d70, 0x163f48);
+grid.material.transparent=true; grid.material.opacity=.45; grid.position.y=0.01;
+scene.add(grid);
+
+/* ---------------------------------------------------------- MONOLITHS (occluders) */
+const PILLARS=[];                 // {minX,maxX,minZ,maxZ}
+const PILLAR_N = LOW?20:28;
+const SPAWN={x:-FIELD+4, z:-FIELD+4};
+(function buildPillars(){
+  const boxGeo=new THREE.BoxGeometry(1,1,1);
+  const inst=new THREE.InstancedMesh(boxGeo, M.pillar, PILLAR_N);
+  inst.castShadow=true; inst.receiveShadow=true;
+  const dummy=new THREE.Object3D();
+  let placed=0, tries=0;
+  while(placed<PILLAR_N && tries<2000){
+    tries++;
+    const x=rnd(-FIELD+3, FIELD-3), z=rnd(-FIELD+3, FIELD-3);
+    // keep clear of spawn so the player isn't boxed in
+    if(Math.hypot(x-SPAWN.x, z-SPAWN.z) < 6) continue;
+    const w=rnd(0.9,1.9), d=rnd(0.9,1.9), h=rnd(2.6,6.0);
+    const half=Math.max(w,d)/2 + 1.4;
+    let ok=true;
+    for(const p of PILLARS){
+      const px=(p.minX+p.maxX)/2, pz=(p.minZ+p.maxZ)/2;
+      if(Math.hypot(x-px, z-pz) < half){ ok=false; break; }
+    }
+    if(!ok) continue;
+    dummy.position.set(x, h/2, z);
+    dummy.scale.set(w, h, d);
+    dummy.rotation.set(0,0,0);
+    dummy.updateMatrix();
+    inst.setMatrixAt(placed, dummy.matrix);
+    PILLARS.push({minX:x-w/2, maxX:x+w/2, minZ:z-d/2, maxZ:z+d/2});
+    placed++;
+  }
+  inst.count=placed;
+  inst.instanceMatrix.needsUpdate=true;
+  inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  scene.add(inst);
+})();
+
+// circle (cx,cz,r) vs all pillar AABBs -> resolved [x,z], axis-split for sliding
+function collide(cx,cz,r){
+  // X then Z so we slide along faces
+  for(let pass=0;pass<2;pass++){
+    for(const p of PILLARS){
+      const nx=clamp(cx,p.minX,p.maxX), nz=clamp(cz,p.minZ,p.maxZ);
+      let dx=cx-nx, dz=cz-nz, d2=dx*dx+dz*dz;
+      if(d2 < r*r){
+        const d=Math.sqrt(d2)||1e-4, push=(r-d)/d;
+        cx+=dx*push; cz+=dz*push;
+      }
+    }
+  }
+  cx=clamp(cx,-FIELD+r,FIELD-r); cz=clamp(cz,-FIELD+r,FIELD-r);
+  return [cx,cz];
+}
+
+// 2D line-of-sight: segment (ax,az)->(bx,bz) clear of all pillar AABBs?
+function los(ax,az,bx,bz){
+  const dx=bx-ax, dz=bz-az;
+  for(const p of PILLARS){
+    let t0=0, t1=1, clipped=true;
+    // slab clip on X then Z
+    for(const ax2 of [0,1]){
+      const o = ax2? az: ax, dd = ax2? dz: dx, lo = ax2? p.minZ: p.minX, hi = ax2? p.maxZ: p.maxX;
+      if(Math.abs(dd)<1e-6){ if(o<lo||o>hi){ clipped=false; break; } }
+      else{
+        let ta=(lo-o)/dd, tb=(hi-o)/dd; if(ta>tb){const s=ta;ta=tb;tb=s;}
+        t0=Math.max(t0,ta); t1=Math.min(t1,tb);
+        if(t0>t1){ clipped=false; break; }
+      }
+    }
+    if(clipped && t1>=0 && t0<=1) return false; // segment crosses this pillar
+  }
+  return true;
+}
+
+/* ---------------------------------------------------------- SHARDS */
+const shardGeo=new THREE.OctahedronGeometry(0.3,0);
+const shards=[]; // {mesh,light,x,z,got,phase}
+(function placeShards(){
+  let n=0, tries=0;
+  while(n<NEEDED && tries<4000){
+    tries++;
+    const x=rnd(-FIELD+3, FIELD-3), z=rnd(-FIELD+3, FIELD-3);
+    if(Math.hypot(x-SPAWN.x,z-SPAWN.z) < 9) continue;       // not too close to spawn
+    let ok=true;
+    for(const s of shards){ if(Math.hypot(x-s.x,z-s.z)<9){ ok=false; break; } }
+    if(!ok) continue;
+    // not inside a pillar
+    let inside=false;
+    for(const p of PILLARS){ if(x>p.minX-.6&&x<p.maxX+.6&&z>p.minZ-.6&&z<p.maxZ+.6){ inside=true; break; } }
+    if(inside) continue;
+    const mesh=new THREE.Mesh(shardGeo, M.shard.clone());
+    mesh.position.set(x, 1.15, z);
+    scene.add(mesh);
+    let light=null;
+    if(!LOW){ light=new THREE.PointLight(0x33e7c8, 2.2, 5, 1.6); light.position.set(x,1.2,z); scene.add(light); }
+    shards.push({mesh,light,x,z,got:false,phase:rnd(0,6.28)});
+    n++;
+  }
+})();
+
+/* ---------------------------------------------------------- EXIT GATE */
+const gate=new THREE.Group();
+let gateX=0, gateZ=0;
+(function placeGate(){
+  // farthest shard-free spot from spawn
+  let best=-1;
+  for(let i=0;i<60;i++){
+    const x=rnd(-FIELD+2.5,FIELD-2.5), z=rnd(-FIELD+2.5,FIELD-2.5);
+    let inside=false;
+    for(const p of PILLARS){ if(x>p.minX-1&&x<p.maxX+1&&z>p.minZ-1&&z<p.maxZ+1){ inside=true; break; } }
+    if(inside) continue;
+    const d=Math.hypot(x-SPAWN.x,z-SPAWN.z);
+    if(d>best){ best=d; gateX=x; gateZ=z; }
+  }
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.5,0.16,16,64), M.gate);
+  const inner=new THREE.Mesh(new THREE.TorusGeometry(1.18,0.04,8,64), M.gateInner);
+  gate.add(ring, inner);
+  gate.position.set(gateX,1.6,gateZ);
+  scene.add(gate);
+})();
+gate.userData.active=false;
+let gateLight=new THREE.PointLight(0x9b7cff, 0, 8, 1.5);
+gateLight.position.set(gateX,1.6,gateZ);
+scene.add(gateLight);
+
+/* ---------------------------------------------------------- EIDOLON */
+const eid=new THREE.Group();
+const eidBody=new THREE.Mesh(new THREE.IcosahedronGeometry(0.85,0), M.body);
+eidBody.castShadow=true;
+eid.add(eidBody);
+const eyeWhite=new THREE.Mesh(new THREE.SphereGeometry(0.34,20,16), M.eye);
+eyeWhite.position.set(0,0.1,0.6);
+eid.add(eyeWhite);
+const pupil=new THREE.Mesh(new THREE.SphereGeometry(0.14,16,12), M.pupil);
+pupil.position.set(0,0.1,0.9);
+eid.add(pupil);
+const tents=[];
+for(let i=0;i<6;i++){
+  const t=new THREE.Mesh(new THREE.ConeGeometry(0.12,1.5,6), M.tent);
+  const a=i/6*Math.PI*2;
+  t.position.set(Math.cos(a)*0.55, -0.7, Math.sin(a)*0.55);
+  t.castShadow=true;
+  eid.add(t); tents.push({m:t,a});
+}
+scene.add(eid);
+const E={ x:FIELD-4, z:FIELD-4, mode:'wander', tx:0, tz:0, losTimer:0, calmTimer:0, demoTimer:0, speed:1.5 };
+eid.position.set(E.x,1.35,E.z);
+
+function eidPickWander(){
+  for(let i=0;i<20;i++){
+    const x=rnd(-FIELD+3,FIELD-3), z=rnd(-FIELD+3,FIELD-3);
+    if(los(E.x,E.z,x,z)){ E.tx=x; E.tz=z; return; }
+  }
+  E.tx=rnd(-FIELD+3,FIELD-3); E.tz=rnd(-FIELD+3,FIELD-3);
+}
+eidPickWander();
+
+// steer from (E) toward (gx,gz) avoiding pillars: returns unit heading [hx,hz]
+function eidHeading(gx,gz){
+  const base=Math.atan2(gz-E.z, gx-E.x);
+  const probe=2.6;
+  for(const off of [0, .5, -.5, 1.0, -1.0, 1.6, -1.6]){
+    const a=base+off;
+    const hx=Math.cos(a), hz=Math.sin(a);
+    if(los(E.x,E.z, E.x+hx*probe, E.z+hz*probe)) return [hx,hz];
+  }
+  return [Math.cos(base), Math.sin(base)];
+}
+
+/* ---------------------------------------------------------- PARTICLES (pickup bursts) */
+const particles=[];
+const pGeo=new THREE.SphereGeometry(0.045,6,5);
+function burst(x,y,z,color,count=18){
+  if(LOW) count=10;
+  const mat=new THREE.MeshBasicMaterial({color,transparent:true,opacity:.95});
+  for(let i=0;i<count;i++){
+    const m=new THREE.Mesh(pGeo,mat);
+    m.position.set(x,y,z);
+    const v=new THREE.Vector3(rnd(-1,1),rnd(-.4,1),rnd(-1,1)).normalize().multiplyScalar(rnd(2.5,6));
+    scene.add(m);
+    particles.push({m,v,life:rnd(.3,.7),max:.7});
+  }
+}
+
+/* ---------------------------------------------------------- AUDIO */
+let ac=null, master=null, drone=null, droneGain=null, beatT=0, whisperT=2.5;
+function audioInit(){
+  if(ac){ if(ac.state!=='running') ac.resume(); return; }
+  try{
+    ac=new (window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==='suspended') ac.resume();
+    master=ac.createGain(); master.gain.value=0.7; master.connect(ac.destination);
+    // persistent detuned drone
+    droneGain=ac.createGain(); droneGain.gain.value=0.0; droneGain.connect(master);
+    const o1=ac.createOscillator(), o2=ac.createOscillator();
+    o1.type='sine'; o1.frequency.value=54; o2.type='sine'; o2.frequency.value=57.3;
+    o1.connect(droneGain); o2.connect(droneGain); o1.start(); o2.start();
+    drone={o1,o2};
+  }catch(e){}
+}
+function pulse(freq,dur,type,gain){
+  if(state.muted||!ac) return;
+  const o=ac.createOscillator(), g=ac.createGain();
+  o.type=type; o.frequency.value=freq; o.connect(g); g.connect(master||ac.destination);
+  const now=ac.currentTime;
+  g.gain.setValueAtTime(0,now);
+  g.gain.linearRampToValueAtTime(gain,now+.01);
+  g.gain.exponentialRampToValueAtTime(.0001,now+dur);
+  o.start(now); o.stop(now+dur+.02);
+}
+let noiseBuf=null;
+function whisper(g=0.05){
+  if(state.muted||!ac) return;
+  if(!noiseBuf){
+    noiseBuf=ac.createBuffer(1, ac.sampleRate*0.5, ac.sampleRate);
+    const d=noiseBuf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1);
+  }
+  const src=ac.createBufferSource(); src.buffer=noiseBuf;
+  const bp=ac.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=rnd(900,2200); bp.Q.value=6;
+  const gn=ac.createGain(); const now=ac.currentTime;
+  gn.gain.setValueAtTime(0,now); gn.gain.linearRampToValueAtTime(g,now+.05); gn.gain.exponentialRampToValueAtTime(.0001,now+.45);
+  src.connect(bp); bp.connect(gn); gn.connect(master||ac.destination);
+  src.start(now); src.stop(now+0.5);
+}
+addEventListener('visibilitychange',()=>{ if(!document.hidden && ac && ac.state!=='running') ac.resume(); });
+
+/* ---------------------------------------------------------- INPUT */
+const look={yaw:-Math.PI*0.75, pitch:0};
+const keys={f:false,b:false,l:false,r:false};
+const keyMap={ArrowUp:'f',w:'f',W:'f',ArrowDown:'b',s:'b',S:'b',ArrowLeft:'l',a:'l',A:'l',ArrowRight:'r',d:'r',D:'r'};
+let dragging=false;
+
+addEventListener('keydown',e=>{
+  if(keyMap[e.key]){ keys[keyMap[e.key]]=true; e.preventDefault(); }
+  if(e.key===' '||e.key==='Enter'){ if(state.mode!=='playing') startGame(); e.preventDefault(); }
+});
+addEventListener('keyup',e=>{ if(keyMap[e.key]) keys[keyMap[e.key]]=false; });
+
+function clampPitch(){ look.pitch=clamp(look.pitch, -Math.PI/2+0.05, Math.PI/2-0.05); }
+addEventListener('mousemove',e=>{
+  if((document.pointerLockElement===canvas || dragging) && state.mode==='playing' && !state.paused){
+    look.yaw-=e.movementX*0.0022; look.pitch-=e.movementY*0.0022; clampPitch();
+  }
+});
+canvas.addEventListener('mousedown',()=>{ if(!isTouch && document.pointerLockElement!==canvas) dragging=true; });
+addEventListener('mouseup',()=>dragging=false);
+
+function lockNow(){ try{ canvas.requestPointerLock&&canvas.requestPointerLock(); }catch(e){} }
+document.addEventListener('pointerlockchange',()=>{
+  if(state.mode!=='playing') return;
+  const locked=document.pointerLockElement===canvas;
+  state.paused=!locked;
+  if(state.paused){ ui.msg.textContent='PAUSED'; ui.sub.textContent='クリックで再開 / click to resume'; }
+});
+canvas.addEventListener('click',()=>{
+  if(state.mode==='playing' && state.paused && !isTouch){ lockNow(); }
+});
+
+// touch sticks (floating): left half = move, right half = look
+const sticks={left:null,right:null};
+function showStick(side,x,y){ const el=side==='left'?ui.lstick:ui.rstick; el.style.left=x+'px'; el.style.top=y+'px'; el.classList.add('live'); el.querySelector('.knob').style.left='50%'; el.querySelector('.knob').style.top='50%'; }
+function moveKnob(side,dx,dy){ const el=side==='left'?ui.lstick:ui.rstick; const k=el.querySelector('.knob'); k.style.left=(50+dx/60*50)+'%'; k.style.top=(50+dy/60*50)+'%'; }
+function hideStick(side){ (side==='left'?ui.lstick:ui.rstick).classList.remove('live'); }
+if(isTouch){
+  addEventListener('pointerdown',e=>{
+    if(state.mode!=='playing'||state.paused) return;
+    const side = e.clientX < innerWidth/2 ? 'left' : 'right';
+    if(sticks[side]) return;
+    sticks[side]={id:e.pointerId, ox:e.clientX, oy:e.clientY, dx:0, dy:0};
+    showStick(side, e.clientX, e.clientY);
+  },{passive:false});
+  addEventListener('pointermove',e=>{
+    for(const side of ['left','right']){ const s=sticks[side]; if(s&&s.id===e.pointerId){
+      let dx=e.clientX-s.ox, dy=e.clientY-s.oy; const len=Math.hypot(dx,dy); if(len>60){ dx=dx/len*60; dy=dy/len*60; }
+      s.dx=dx; s.dy=dy; moveKnob(side,dx,dy);
+    }}
+  },{passive:false});
+  const up=e=>{ for(const side of ['left','right']){ const s=sticks[side]; if(s&&s.id===e.pointerId){ sticks[side]=null; hideStick(side); } } };
+  addEventListener('pointerup',up); addEventListener('pointercancel',up);
+}
+
+ui.start.addEventListener('click',startGame);
+ui.mute.addEventListener('click',()=>{ state.muted=!state.muted; ui.mute.textContent=state.muted?'SOUND OFF':'SOUND ON'; });
+
+/* ---------------------------------------------------------- GAME FLOW */
+function setMsg(main,sub,hold=1.6){ ui.msg.textContent=main; ui.sub.textContent=sub; state.msgT=hold; }
+
+function resetGame(){
+  // restore shards
+  for(const s of shards){ if(s.got){ scene.add(s.mesh); if(s.light) scene.add(s.light); s.got=false; } }
+  state.shards=0; state.fear=0; state.invuln=1.5; state.taughtFirst=false; state.eidNear=0;
+  state.mode='playing'; state.paused=false; state.elapsed=0; state.startT=performance.now();
+  look.yaw=-Math.PI*0.75; look.pitch=0;
+  camera.position.set(SPAWN.x, EYE_H, SPAWN.z);
+  E.x=FIELD-4; E.z=FIELD-4; E.mode='wander'; E.losTimer=0; E.calmTimer=0; E.demoTimer=0; eidPickWander();
+  gate.userData.active=false; M.gateInner.opacity=0; gateLight.intensity=0; M.gate.emissiveIntensity=.4;
+  syncUi(); setMsg('RIFT OPEN','光る断片を追え。眼に光を当てるな。',2.2);
+}
+function startGame(){
+  audioInit(); resetGame(); ui.overlay.classList.add('hidden');
+  if(!isTouch) lockNow();
+  pulse(320,.1,'triangle',.05); setTimeout(()=>pulse(540,.12,'sine',.04),100);
+}
+function endGame(victory){
+  if(state.mode!=='playing') return;
+  state.mode=victory?'won':'lost';
+  if(document.pointerLockElement===canvas && document.exitPointerLock) document.exitPointerLock();
+  const card=ui.overlay.querySelector('.card');
+  const h1=card.querySelector('h1'), p=card.querySelector('p'), tl=card.querySelector('.tagline');
+  if(victory){
+    state.best = (state.best===0)? state.elapsed : Math.min(state.best, state.elapsed);
+    localStorage.setItem(BEST_KEY, state.best);
+    localStorage.setItem('alice_bonus_the_eidolon','1');
+    grantLantern();
+    h1.textContent='Light Carried'; tl.textContent='THE EIDOLON ACCORD';
+    p.innerHTML='ゲートを抜けた。お前は光を闇へ運んだ。<br>AlicE sYsTeM が、断片『提灯』を記憶する。 — '+fmtTime(state.elapsed);
+    pulse(523,.2,'triangle',.06); setTimeout(()=>pulse(784,.26,'sine',.05),140);
+  }else{
+    if(state.lossKind==='fear'){ h1.textContent='Consumed'; tl.textContent='THE DARK WINS'; p.innerHTML='恐怖が満ちた。闇が、内側から灯りを消した。<br>The dark put out your light from the inside.'; }
+    else{ h1.textContent='Taken'; tl.textContent='EYE IN THE DARK'; p.innerHTML='視線を逸らすのが遅かった。<br>EIDOLON が虚空にお前を畳み込んだ。'; }
+    pulse(70,.6,'sawtooth',.06);
+  }
+  ui.start.textContent=victory?'ESCAPE AGAIN':'TRY AGAIN';
+  ui.fearveil.style.opacity=0;
+  ui.overlay.classList.remove('hidden');
+  syncUi();
+}
+function grantLantern(){
+  try{
+    const a=JSON.parse(localStorage.getItem('alice_eidolon')||'[]');
+    if(!a.includes('lantern')){ a.push('lantern'); localStorage.setItem('alice_eidolon', JSON.stringify(a)); }
+  }catch(e){ try{ localStorage.setItem('alice_eidolon','["lantern"]'); }catch(_){ } }
+}
+
+function syncUi(){
+  ui.time.textContent=fmtTime(state.elapsed);
+  ui.best.textContent=fmtTime(state.best);
+  ui.shards.textContent=state.shards+'/'+NEEDED;
+  ui.fearbar.style.width=clamp(state.fear,0,100)+'%';
+  if(state.shards>=NEEDED){ ui.objective.textContent='出口ゲートが起動した — 脱出せよ'; ui.objectiveSub.textContent='紫の輪の中心を抜けろ'; }
+  else{ ui.objective.textContent='SIGNAL SHARD を 5 個集めろ'; ui.objectiveSub.textContent='光を抱き、闇を抜けろ'; }
+}
+
+/* ---------------------------------------------------------- UPDATE */
+const camDir=new THREE.Vector3();
+const CONE_COS=Math.cos(Math.PI/7 + 0.05);
+
+function updatePlayer(dt){
+  // movement input (keys + left stick)
+  let ix=0, iz=0;
+  if(keys.f)iz+=1; if(keys.b)iz-=1; if(keys.r)ix+=1; if(keys.l)ix-=1;
+  if(sticks.left){ ix+=sticks.left.dx/60; iz+=-sticks.left.dy/60; }
+  // look from right stick
+  if(sticks.right){ look.yaw-=(sticks.right.dx/60)*2.6*dt; look.pitch-=(sticks.right.dy/60)*2.6*dt; clampPitch(); }
+
+  camera.rotation.set(look.pitch, look.yaw, 0);
+  const fwd=new THREE.Vector3(-Math.sin(look.yaw),0,-Math.cos(look.yaw));
+  const right=new THREE.Vector3(Math.cos(look.yaw),0,-Math.sin(look.yaw));
+  const dir=new THREE.Vector3().addScaledVector(fwd,iz).addScaledVector(right,ix);
+  if(dir.lengthSq()>1) dir.normalize();
+  const nx=camera.position.x + dir.x*PLAYER_SPEED*dt;
+  const nz=camera.position.z + dir.z*PLAYER_SPEED*dt;
+  const [cx,cz]=collide(nx,nz,PR);
+  camera.position.x=cx; camera.position.z=cz;
+  state.invuln=Math.max(0,state.invuln-dt);
+}
+
+function updateShards(dt,t){
+  let nearGlow=0;
+  for(const s of shards){
+    if(s.got) continue;
+    s.mesh.rotation.y+=dt*1.8; s.mesh.rotation.x+=dt*1.1;
+    s.mesh.position.y=1.15+Math.sin(t*2+s.phase)*0.12;
+    const d=Math.hypot(camera.position.x-s.x, camera.position.z-s.z);
+    if(d<5) nearGlow=Math.max(nearGlow, 1-d/5);
+    if(d<1.6){
+      s.got=true; state.shards++;
+      scene.remove(s.mesh); if(s.light) scene.remove(s.light);
+      burst(s.x,1.2,s.z,0x33e7c8);
+      pulse(540+state.shards*40,.09,'triangle',.045);
+      if(state.shards>=NEEDED){
+        gate.userData.active=true;
+        setMsg('GATE ONLINE','紫の輪の中心を抜けろ',2.4);
+        pulse(440,.16,'sine',.05); setTimeout(()=>pulse(660,.18,'sine',.045),130);
+      }else{
+        setMsg('SHARD CAPTURED', state.shards+' / '+NEEDED+' — 闇が濃くなる',1.3);
+      }
+      syncUi();
+    }
+  }
+  return nearGlow;
+}
+
+function detect(distXZ){
+  // (a) flashlight cone hits the eidolon
+  camera.getWorldDirection(camDir);
+  const toE=new THREE.Vector3(eid.position.x-camera.position.x, eid.position.y-camera.position.y, eid.position.z-camera.position.z);
+  const dist3=toE.length(); toE.normalize();
+  const lit = dist3<13 && camDir.dot(toE)>CONE_COS && los(camera.position.x,camera.position.z,eid.position.x,eid.position.z);
+  if(lit) return 'lit';
+  // (b) panic radius
+  if(distXZ<4) return 'near';
+  // (c) sustained close line of sight
+  const detRange=7+state.shards*0.6;
+  if(distXZ<detRange && los(camera.position.x,camera.position.z,eid.position.x,eid.position.z)) return 'los';
+  return null;
+}
+
+function updateEidolon(dt){
+  const px=camera.position.x, pz=camera.position.z;
+  const distXZ=Math.hypot(eid.position.x-px, eid.position.z-pz);
+  const det=detect(distXZ);
+
+  // detection -> aggro
+  if(det){
+    if(det==='los'){ E.losTimer+=dt; } else { E.losTimer=2; }
+    if(E.mode==='wander' && (det==='lit' || det==='near' || E.losTimer>1.5)){
+      if(!state.taughtFirst){
+        // scripted survivable first encounter
+        state.taughtFirst=true; E.mode='demo'; E.demoTimer=1.5;
+        setMsg('SEEN','見られた。視線を切れ。 / Break its gaze.',2.6);
+        eyeWhite.material.emissiveIntensity=2.6;
+        pulse(880,.18,'square',.05); whisper(.07);
+      }else{
+        E.mode='hunt'; eyeWhite.material.emissiveIntensity=2.6;
+        pulse(820,.16,'sawtooth',.05); whisper(.06);
+      }
+    }
+    E.calmTimer=0;
+  }else{
+    E.losTimer=Math.max(0,E.losTimer-dt*1.5);
+    E.calmTimer+=dt;
+  }
+
+  // demo lunge then forced lose-interest
+  if(E.mode==='demo'){
+    E.demoTimer-=dt;
+    const [hx,hz]=eidHeading(px,pz);
+    E.x+=hx*2.4*dt; E.z+=hz*2.4*dt;
+    if(E.demoTimer<=0){ E.mode='wander'; eidPickWander(); eyeWhite.material.emissiveIntensity=1.2; }
+  }else if(E.mode==='hunt'){
+    eyeWhite.material.emissiveIntensity=2.4+Math.sin(performance.now()*.02)*0.4;
+    const huntSpeed=2.6+state.shards*0.2; // tops out under player speed (4.2)
+    const [hx,hz]=eidHeading(px,pz);
+    E.x+=hx*huntSpeed*dt; E.z+=hz*huntSpeed*dt;
+    // de-aggro: no detection AND beyond detection range, sustained
+    const detRange=7+state.shards*0.6;
+    if(!det && distXZ>detRange+2 && E.calmTimer>2.0){ E.mode='wander'; eidPickWander(); eyeWhite.material.emissiveIntensity=1.2; }
+  }else{ // wander
+    eyeWhite.material.emissiveIntensity=1.0+Math.sin(performance.now()*.004)*0.25;
+    const wSpeed=1.4+state.shards*0.12;
+    const [hx,hz]=eidHeading(E.tx,E.tz);
+    E.x+=hx*wSpeed*dt; E.z+=hz*wSpeed*dt;
+    if(Math.hypot(E.x-E.tx,E.z-E.tz)<1.2) eidPickWander();
+  }
+
+  // keep entity out of pillars / bounds
+  const [ex,ez]=collide(E.x,E.z,0.7); E.x=ex; E.z=ez;
+  eid.position.set(E.x,1.35,E.z);
+  // face the player (eye + tentacle lean)
+  eid.rotation.y=Math.atan2(px-E.x, pz-E.z);
+
+  // proximity 0..1 for audio + vignette
+  state.eidNear=clamp(1 - distXZ/8, 0, 1);
+  if(E.mode==='hunt') state.eidNear=Math.max(state.eidNear, 0.45);
+
+  // contact = caught
+  if(distXZ<1.1 && state.invuln<=0 && E.mode!=='demo'){
+    state.lossKind='caught'; endGame(false);
+  }
+}
+
+function updateFear(dt, nearGlow){
+  let f=state.fear;
+  f += dt*2.0;                                   // the void erodes you
+  if(state.eidNear>0) f += dt*14*state.eidNear;  // proximity dread
+  if(E.mode==='hunt') f += dt*22;                // being hunted dominates
+  f -= dt*18*nearGlow;                           // shard light is a refuge
+  if(state.eidNear<0.05 && E.mode!=='hunt') f -= dt*9;  // safety recovers
+  f -= dt*2;                                     // baseline calm regen
+  state.fear=clamp(f,0,100);
+  if(state.fear>=100){ state.lossKind='fear'; endGame(false); }
+  // telegraph
+  ui.fearveil.style.opacity = (state.fear/100*0.7 + state.eidNear*0.25).toFixed(3);
+}
+
+function updateGate(dt){
+  if(!gate.userData.active) return;
+  M.gateInner.opacity=Math.min(0.9, M.gateInner.opacity+dt*0.8);
+  M.gate.emissiveIntensity=Math.min(2.2, M.gate.emissiveIntensity+dt*1.2);
+  M.gate.emissive.setHex(0x6b8cff);
+  gateLight.intensity=Math.min(4, gateLight.intensity+dt*3);
+  gate.rotation.y+=dt*0.6;
+  const d=Math.hypot(camera.position.x-gateX, camera.position.z-gateZ);
+  if(d<1.3) endGame(true);
+}
+
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const p=particles[i]; p.life-=dt;
+    p.m.position.addScaledVector(p.v,dt); p.v.multiplyScalar(Math.pow(.03,dt));
+    p.m.material.opacity=Math.max(0,p.life/p.max);
+    if(p.life<=0){ scene.remove(p.m); particles.splice(i,1); }
+  }
+}
+
+function updateAudio(dt){
+  if(!ac) return;
+  if(droneGain) droneGain.gain.value += ((0.012+state.eidNear*0.05) - droneGain.gain.value)*Math.min(1,dt*3);
+  // heartbeat
+  const bpm = 50 + state.fear*1.1 + state.eidNear*30;
+  beatT-=dt;
+  if(beatT<=0 && (state.fear>18 || state.eidNear>0.3) && !state.muted){
+    beatT=60/bpm;
+    pulse(52,.12,'sine',.05); setTimeout(()=>pulse(44,.14,'sine',.045),150);
+  }
+  // whispers, more frequent as it nears
+  whisperT-=dt;
+  if(whisperT<=0){ whisperT=rnd(3.5,7)-state.eidNear*3; if(state.eidNear>0.15) whisper(0.04+state.eidNear*0.05); }
+}
+
+function updateWorld(dt,t){
+  state.elapsed=performance.now()-state.startT;
+  updatePlayer(dt);
+  const nearGlow=updateShards(dt,t);
+  updateEidolon(dt);
+  updateFear(dt,nearGlow);
+  updateGate(dt);
+  updateParticles(dt);
+  updateAudio(dt);
+  // flashlight flicker (worse with fear)
+  const drop = Math.random() < (0.01 + state.fear/100*0.04) ? rnd(0.25,0.6) : 1;
+  flash.intensity = FLASH_I * (0.9+Math.random()*0.12) * drop;
+  handGlow.intensity = 2.4*drop;
+  // tentacle sway
+  for(const tt of tents){ tt.m.rotation.x=Math.sin(t*2+tt.a)*0.3; tt.m.rotation.z=Math.cos(t*1.6+tt.a)*0.25; }
+  // top-end screen shake
+  if(state.fear>70){ const a=(state.fear-70)/30*0.05; camera.position.x+=rnd(-a,a); camera.position.z+=rnd(-a,a); }
+  if(state.msgT>0){ state.msgT-=dt; if(state.msgT<=0){ ui.msg.textContent=state.shards>=NEEDED?'GATE ONLINE':'IN THE DARK'; ui.sub.textContent=state.shards>=NEEDED?'紫の輪の中心を抜けろ':'光る断片を集めろ。眼に光を当てるな。'; } }
+  syncUi();
+}
+
+/* ---------------------------------------------------------- RESIZE / CONTEXT */
+function resize(){
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  renderer.setSize(innerWidth,innerHeight);
+}
+addEventListener('resize',resize);
+renderer.domElement.addEventListener('webglcontextlost',e=>{ e.preventDefault(); state.mode='lost'; setMsg('WEBGL CONTEXT LOST','ページを再読み込みしてください。',99); });
+
+/* ---------------------------------------------------------- LOOP */
+let last=performance.now(), dbg=0;
+function frame(now){
+  requestAnimationFrame(frame);
+  const dt=Math.min(.033,(now-last)/1000||0); last=now;
+  const t=now/1000;
+  if(state.mode==='playing' && !state.paused){ updateWorld(dt,t); }
+  else {
+    // idle / menu drift
+    eid.rotation.y+=dt*0.2;
+    for(const tt of tents){ tt.m.rotation.x=Math.sin(t*1.5+tt.a)*0.25; }
+    flash.intensity=FLASH_I;
+  }
+  renderer.render(scene,camera);
+  if(dbg<2 && now>1500){ dbg++; if(dbg===2) console.log('%cdraw calls: '+renderer.info.render.calls, 'color:#8090a5;font-family:monospace'); }
+}
+window.__eidolon={state,E,shards,camera,look,frame,startGame,endGame,
+  gateActive:()=>gate.userData.active, gatePos:()=>[gateX,gateZ], detect:()=>detect(Math.hypot(eid.position.x-camera.position.x,eid.position.z-camera.position.z)),
+  setEid:(x,z)=>{E.x=x;E.z=z;eid.position.set(x,1.35,z);}, eidPos:()=>[eid.position.x,eid.position.z]}; // for deterministic tests
+requestAnimationFrame(frame);
+console.log('%cTHE EIDOLON','color:#33e7c8;font-size:20px;font-weight:bold');
+console.log('%cFirst-person signal. Don\'t shine your light on the eye.','color:#9b7cff;font-family:monospace');
+</script>
+<script nomodule>
+document.getElementById('loadError').classList.add('show');
+</script>
+</body>
+</html>

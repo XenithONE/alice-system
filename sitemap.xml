@@ -2,6 +2,8 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://xenithone.github.io/alice-system/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
   <url><loc>https://xenithone.github.io/alice-system/sy.html</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://xenithone.github.io/alice-system/games/the-eidolon.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>https://xenithone.github.io/alice-system/games/rift-courier.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://xenithone.github.io/alice-system/games/locker-hunt.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://xenithone.github.io/alice-system/games/signal-runner.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://xenithone.github.io/alice-system/games/constellation.html</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
