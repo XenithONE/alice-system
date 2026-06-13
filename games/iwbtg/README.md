@@ -33,6 +33,9 @@ games/iwbtg/
 - **置くだけで自動反映**: engine.js は `assets/sprites/` のPNGを自動で読み、
   見つかれば仮図形からスプライトに切り替える（コード変更不要）。
   ゲーム画面右上の表示が `SPRITES: PLACEHOLDER` → `SPRITES: LIVE` になれば成功
+- ⚠️ **現在は「プログラマーアート」の暫定スプライトが入っています**（全13枚・仕様準拠）。
+  アート班が同名のPNGを `assets/sprites/` に上書きすれば、そのまま本物の絵に差し替わります。
+  遠慮なく上書きしてください（コミットで競合しないよう、編集前後に `git pull`）。
 
 ### エンジン担当
 
@@ -116,8 +119,8 @@ https://xenithone.github.io/alice-system/games/iwbtg/
       トロールmsg・死亡カウンター・タイマー・グレース・デバッグモード）
 - [x] 全4ステージ（FIRST SIGNAL (REMIX) / THE LIE / IRON RAIN / CORE APPROACH）＋ステージ進行
 - [x] レベル検証スクリプト `levels/validate.mjs`
-- [ ] MVP用アセットを `assets/sprites/` に追加する（優先度A 8枚 → 置くだけで自動反映）
-- [ ] 追加スプライト: `hazard_saw` `hazard_bullet` `hazard_block_fall`（優先度B・仕様はASSET_SPEC）
+- [x] スプライト一式（全13枚・暫定プログラマーアート）を `assets/sprites/` に追加 → `SPRITES: LIVE`
+- [x] トップページ Games 欄にカバー画像付きで登録（`assets/iwbtg-cover.png`）
+- [ ] 【アート班】本番アートに差し替え（同名PNGを上書きするだけ。優先度A→B順がおすすめ）
 - [ ] 音素材を `assets/audio/` に追加する（今は仮のビープ音）
 - [ ] ステージ5以降 / ボス戦（エンジン拡張が必要になったらエンジン班へ）
-- [ ] トップページの Games に登録する（アート反映後）
