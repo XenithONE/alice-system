@@ -961,11 +961,12 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
   }
   @media (prefers-reduced-motion:reduce){
     #hero3d{opacity:1}
+    /* hero text must be visible instantly (the rise-animation fill is unreliable under RM) */
+    .kicker,h1.hero,.lead,.cta{opacity:1!important;transform:none!important;animation:none!important}
     .js-reveal{opacity:1!important;transform:none!important;transition:none!important}
     .tilt-inner,.card .thumb img{transform:none!important}
     .card .glare{display:none}
     .sec-head .ln{animation:none}
-    .cta{transform:none!important}
     .nav-links a::after{transition:none}
   }
 </style>
@@ -1079,7 +1080,40 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
 })();
 </script>
 
-<!-- ============ 3D HERO — Three.js particle galaxy + crystal shard + bloom ============ -->
+<!-- ============ COSMOS HUD (interactive flight) ============ -->
+<style>
+  /* hero becomes a pilotable surface: drag flies underneath; only interactive bits catch the pointer */
+  #hero3d{pointer-events:auto;cursor:grab}
+  #hero3d:active{cursor:grabbing}
+  .hero-art,.hero-grad,.scroll-hint{pointer-events:none}
+  header .wrap{pointer-events:none}
+  header .wrap a,header .wrap #dotSecret,header .wrap button{pointer-events:auto}
+  header.flying .kicker,header.flying .lead,header.flying .cta{opacity:0;pointer-events:none;transition:opacity .8s var(--ease-out)}
+
+  #cosmosHud{position:absolute;inset:0;z-index:4;pointer-events:none;font-family:var(--mono)}
+  #reticle{position:absolute;left:50%;top:50%;width:24px;height:24px;transform:translate(-50%,-50%);border:1px solid rgba(51,231,200,.45);border-radius:50%;opacity:.55}
+  #reticle::after{content:"";position:absolute;left:50%;top:50%;width:3px;height:3px;background:var(--teal);border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 8px var(--teal)}
+  #cosmosHint{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);white-space:nowrap;font-size:11px;letter-spacing:.13em;color:var(--muted);background:rgba(4,6,11,.5);backdrop-filter:blur(6px);border:1px solid var(--line);padding:8px 16px;border-radius:99px}
+  #cosmosHint b{color:var(--teal);font-weight:700;letter-spacing:.18em}
+  @media(max-width:560px){ #cosmosHint{font-size:9.5px;letter-spacing:.06em;padding:7px 12px;white-space:normal;max-width:90vw;text-align:center} }
+  #stationTag{position:fixed;left:0;top:0;transform:translate(-50%,-50%);font-size:12px;letter-spacing:.1em;color:#eafff9;background:rgba(4,6,11,.72);border:1px solid rgba(51,231,200,.45);padding:5px 12px;border-radius:8px;white-space:nowrap;text-shadow:0 0 8px rgba(51,231,200,.5);opacity:0;transition:opacity .2s;z-index:6}
+  #stationTag.show{opacity:1}
+  #stationCard{position:absolute;right:34px;top:50%;transform:translateY(-50%) translateX(22px);width:min(360px,86vw);background:rgba(6,9,14,.82);backdrop-filter:blur(16px);border:1px solid rgba(51,231,200,.25);border-radius:18px;padding:24px;pointer-events:auto;opacity:0;visibility:hidden;transition:opacity .45s var(--ease-out),transform .45s var(--ease-out),visibility .45s;box-shadow:0 40px 90px -30px #000,0 0 70px -34px rgba(51,231,200,.5)}
+  #stationCard.show{opacity:1;visibility:visible;transform:translateY(-50%) translateX(0)}
+  #stationCard .sc-x{position:absolute;top:13px;right:14px;background:none;border:0;color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.1em;cursor:pointer}
+  #stationCard .sc-x:hover{color:var(--teal)}
+  #stationCard .sc-tag{font-size:10px;letter-spacing:.22em;color:var(--teal);margin-bottom:10px}
+  #stationCard h3{font-family:var(--ui);font-weight:600;font-size:22px;margin-bottom:10px;letter-spacing:-.01em;line-height:1.15}
+  #stationCard p{color:var(--muted);font-size:13px;line-height:1.7;margin-bottom:14px}
+  #scTags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+  #scTags span{font-size:10px;color:var(--muted);border:1px solid var(--line);padding:3px 8px;border-radius:5px}
+  .sc-enter{display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.16em;font-weight:700;color:#04060b;background:linear-gradient(110deg,var(--teal),var(--violet));padding:13px 26px;border-radius:10px;pointer-events:auto;transition:.3s;cursor:pointer}
+  .sc-enter:hover{gap:14px;box-shadow:0 0 28px -6px var(--teal)}
+  #thrustBtn{position:absolute;right:22px;bottom:96px;width:82px;height:82px;border-radius:50%;background:rgba(51,231,200,.1);border:1px solid rgba(51,231,200,.5);color:var(--teal);font-family:var(--mono);font-size:11px;letter-spacing:.1em;line-height:1.35;pointer-events:auto;backdrop-filter:blur(6px);-webkit-user-select:none;user-select:none;touch-action:none}
+  #thrustBtn:active{background:rgba(51,231,200,.22)}
+  @media(max-width:560px){ #stationCard{right:50%;left:auto;top:auto;bottom:118px;transform:translateX(50%) translateY(22px)} #stationCard.show{transform:translateX(50%) translateY(0)} }
+</style>
+<!-- ============ 3D HERO — Three.js interactive cosmos (pilotable) ============ -->
 <script type="module">
 import * as THREE from 'three';
 
@@ -1094,8 +1128,8 @@ import * as THREE from 'three';
   function webglOK(){ try{ const c=document.createElement('canvas');
     return !!(window.WebGLRenderingContext && (c.getContext('webgl2')||c.getContext('webgl'))); }catch(e){ return false; } }
 
-  // ---- capability gate: <480 / no-webgl / reduced-motion → keep static hero2.jpg ----
-  if(RM || W0 < 480 || !webglOK()){ canvas.style.display='none'; return; }
+  // ---- capability gate: tiny / no-webgl / reduced-motion → keep static hero2.jpg ----
+  if(RM || W0 < 360 || !webglOK()){ canvas.style.display='none'; return; }
 
   const LOW = W0 < 760 || TOUCH;
   const COUNT = LOW ? 5000 : 16000;
@@ -1113,13 +1147,24 @@ import * as THREE from 'three';
   renderer.toneMappingExposure = 1.05;
 
   const scene = new THREE.Scene();
-  const cam = new THREE.PerspectiveCamera(50, W/H, 0.1, 100);
-  cam.position.set(0, 0, 15);
+  scene.fog = new THREE.FogExp2(0x04060b, 0.004);
+  const cam = new THREE.PerspectiveCamera(55, W/H, 0.1, 400);
+  cam.position.set(0, 0, 34);
 
+  // galaxy/environment lives in its own slowly-spinning, tilted group at the origin
   const group = new THREE.Group();
-  const baseTiltX = -0.5;          // look down onto the galactic disc
-  group.rotation.x = baseTiltX;
+  group.rotation.x = -0.5;          // look onto the galactic disc
   scene.add(group);
+
+  // deep parallax starfield — sells the sense of motion while flying
+  (function(){
+    const SN = LOW?1400:3200; const sp=new Float32Array(SN*3), sc=new Float32Array(SN*3); const cc=new THREE.Color();
+    for(let i=0;i<SN;i++){ const th=Math.random()*6.283, ph=Math.acos(2*Math.random()-1), rad=55+Math.random()*200;
+      sp[i*3]=rad*Math.sin(ph)*Math.cos(th); sp[i*3+1]=rad*Math.sin(ph)*Math.sin(th); sp[i*3+2]=rad*Math.cos(ph);
+      cc.setHSL(0.5+Math.random()*0.13, 0.55, 0.5+Math.random()*0.4); sc[i*3]=cc.r; sc[i*3+1]=cc.g; sc[i*3+2]=cc.b; }
+    const sg=new THREE.BufferGeometry(); sg.setAttribute('position',new THREE.BufferAttribute(sp,3)); sg.setAttribute('color',new THREE.BufferAttribute(sc,3));
+    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({size:0.8,sizeAttenuation:true,vertexColors:true,transparent:true,opacity:.9,depthWrite:false,blending:THREE.AdditiveBlending})));
+  })();
 
   const TEAL = new THREE.Color(0x33e7c8);
   const VIOLET = new THREE.Color(0x7b4dff);
@@ -1206,7 +1251,7 @@ import * as THREE from 'three';
         vec3 col=body*0.5+uTeal*f*2.4;
         gl_FragColor=vec4(col, 0.30+f*0.9); }`
   });
-  const shard=new THREE.Mesh(sGeo,sMat); shard.scale.set(0.62,1.6,0.62); shard.renderOrder=2; group.add(shard);
+  const shard=new THREE.Mesh(sGeo,sMat); shard.scale.set(1.1,2.8,1.1); shard.renderOrder=2; group.add(shard);
 
   // inner energy core (additive, pulsing)
   const core=new THREE.Mesh(new THREE.IcosahedronGeometry(0.2,0),
@@ -1229,50 +1274,166 @@ import * as THREE from 'three';
     composer.addPass(new OutputPass());
   }
 
-  // ---- cursor parallax + camera dolly ----
-  const mouse={x:0,y:0}, target={x:0,y:0};
-  if(!TOUCH){ addEventListener('pointermove',e=>{ target.x=e.clientX/innerWidth-0.5; target.y=e.clientY/innerHeight-0.5; },{passive:true}); }
+  // ================= INTERACTIVE FLIGHT — pilot the void =================
+  const SPEED=46, DAMP=0.90, BOUND=72;
+  const euler=new THREE.Euler(0,0,0,'YXZ');
+  const camPos=new THREE.Vector3(0,5,56), camVel=new THREE.Vector3();
+  let yaw=0, pitch=0;
+  function applyCam(){ euler.set(pitch,yaw,0); cam.quaternion.setFromEuler(euler); cam.position.copy(camPos); }
+  function syncAngles(){ euler.setFromQuaternion(cam.quaternion,'YXZ'); yaw=euler.y; pitch=euler.x; }
 
-  // ---- visibility / lifecycle ----
+  // ---- floating game stations, built from the rendered cards (CONFIG stays the source) ----
+  function readCards(sel){ return [...document.querySelectorAll(sel+' .card')].map(card=>{ const img=card.querySelector('.thumb img');
+    return { title:((card.querySelector('h3')||{}).textContent||'SIGNAL').trim(), desc:((card.querySelector('p')||{}).textContent||'').trim(),
+      url:card.getAttribute('href')||'', target:card.getAttribute('target')||'', thumb: img?img.src:null,
+      tags:[...card.querySelectorAll('.card-b span')].map(s=>s.textContent.trim()).slice(0,4) }; }); }
+  const cardData=[...readCards('#games-grid'), ...readCards('#videos-grid')].filter(c=>c.title);
+  const stations=[], pickables=[], texLoader=new THREE.TextureLoader();
+  const N=Math.max(1,cardData.length);
+  cardData.forEach((d,i)=>{
+    const y=1-(i/N)*2 - 1/N; const radAt=Math.sqrt(Math.max(0.04,1-y*y)); const th=i*2.39996323; const R=15+((i*3)%5)-2;
+    const pos=new THREE.Vector3(Math.cos(th)*radAt*R, y*R*0.62, Math.sin(th)*radAt*R - 2);
+    const st=new THREE.Group(); st.position.copy(pos); scene.add(st);
+    const panelMat=new THREE.MeshBasicMaterial({color:0x0b0f17, transparent:true, opacity:.96, side:THREE.DoubleSide, depthWrite:false, fog:false});
+    const panel=new THREE.Mesh(new THREE.PlaneGeometry(4.2,2.6), panelMat); st.add(panel);
+    if(d.thumb) texLoader.load(d.thumb, tex=>{ tex.colorSpace=THREE.SRGBColorSpace; panelMat.color.set(0xffffff); panelMat.map=tex; panelMat.needsUpdate=true; }, undefined, ()=>{});
+    const frame=new THREE.Mesh(new THREE.PlaneGeometry(4.6,3.0), new THREE.MeshBasicMaterial({color:0x33e7c8, transparent:true, opacity:.12, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+    frame.position.z=-0.03; st.add(frame);
+    const cr=new THREE.Mesh(sGeo, sMat.clone()); cr.scale.set(0.34,0.82,0.34); cr.position.set(0,2.05,0.2); st.add(cr);
+    panel.userData.station=st; frame.userData.station=st;
+    st.userData={meta:d, frame, cr, baseY:pos.y, seed:i*1.7, hover:0};
+    stations.push(st); pickables.push(panel, frame);
+  });
+
+  // ---- raycast ----
+  const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+  function pick(cx,cy){ const r=canvas.getBoundingClientRect(); ndc.x=((cx-r.left)/r.width)*2-1; ndc.y=-((cy-r.top)/r.height)*2+1;
+    ray.setFromCamera(ndc,cam); const hit=ray.intersectObjects(pickables,false); return hit.length?hit[0].object.userData.station:null; }
+
+  // ---- HUD ----
+  const hud=document.createElement('div'); hud.id='cosmosHud';
+  hud.innerHTML='<div id="reticle"></div><div id="cosmosHint"></div><div id="stationTag"></div>'+
+    '<div id="stationCard"><button class="sc-x" aria-label="back to flight">✕ FLIGHT</button>'+
+    '<div class="sc-tag" id="scTag"></div><h3 id="scTitle"></h3><p id="scDesc"></p><div id="scTags"></div>'+
+    '<a id="scEnter" class="sc-enter">ENTER ◈</a></div>'+
+    (TOUCH?'<button id="thrustBtn" aria-label="thrust">▲<br>FLY</button>':'');
+  header.appendChild(hud);
+  const elHint=hud.querySelector('#cosmosHint'), elTag=hud.querySelector('#stationTag'), elCard=hud.querySelector('#stationCard'),
+        scTitle=hud.querySelector('#scTitle'), scDesc=hud.querySelector('#scDesc'), scEnter=hud.querySelector('#scEnter'),
+        scTags=hud.querySelector('#scTags'), scTag=hud.querySelector('#scTag');
+  elHint.innerHTML = TOUCH ? '✦ DRAG to look · TAP a signal to travel · SCROLL ↓ archive'
+    : '✦ DRAG to look · <b>W A S D</b> to fly · CLICK a signal to travel · SCROLL ↓ archive';
+  hud.querySelector('.sc-x').addEventListener('click',()=>cancelFocus());
+
+  // ---- focus / travel ----
+  let hovered=null, focused=null, focusing=null;
+  const _o=new THREE.Object3D(); _o.up.set(0,1,0);
+  function focusStation(st){ focused=st;
+    const sp=st.position, dir=new THREE.Vector3().subVectors(camPos,sp); if(dir.lengthSq()<0.01) dir.set(0,0,1); dir.normalize();
+    const tp=new THREE.Vector3().copy(sp).addScaledVector(dir, 8.5);
+    _o.position.copy(tp); _o.lookAt(sp);
+    focusing={pos:tp, quat:_o.quaternion.clone()};
+    const m=st.userData.meta; scTitle.textContent=m.title; scDesc.textContent=m.desc||'';
+    scTag.textContent=(/youtu|vimeo|videos/.test(m.url))?'VIDEO':'GAME';
+    scTags.innerHTML=(m.tags||[]).map(t=>'<span>'+t+'</span>').join('');
+    if(m.url){ scEnter.style.display=''; scEnter.href=m.url;
+      const ext=/^https?:/.test(m.url); if(m.target||ext){ scEnter.target='_blank'; scEnter.rel='noopener'; } else { scEnter.removeAttribute('target'); scEnter.removeAttribute('rel'); }
+    } else scEnter.style.display='none';
+  }
+  function cancelFocus(){ if(focusing) syncAngles(); focusing=null; focused=null; elCard.classList.remove('show'); }
+  function flyKick(){ if(!header.classList.contains('flying')) header.classList.add('flying'); }
+
+  // ---- pointer: drag = look, quick tap = travel/defocus, hover = highlight ----
+  let dragging=false, lastX=0, lastY=0, downX=0, downY=0, downT=0;
+  canvas.addEventListener('pointerdown',e=>{ if(focusing||focused) cancelFocus(); dragging=true; lastX=downX=e.clientX; lastY=downY=e.clientY; downT=performance.now();
+    try{canvas.setPointerCapture(e.pointerId);}catch(_){} });
+  addEventListener('pointermove',e=>{
+    if(dragging){ const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+      if(Math.abs(dx)+Math.abs(dy)>2) flyKick();
+      yaw-=dx*0.0026; pitch=THREE.MathUtils.clamp(pitch-dy*0.0026,-1.2,1.2);
+    } else if(!focused){ hovered=pick(e.clientX,e.clientY); canvas.style.cursor=hovered?'pointer':'grab'; }
+  },{passive:true});
+  addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false;
+    const moved=Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY);
+    if(moved<8 && performance.now()-downT<500){ const st=pick(e.clientX,e.clientY); if(st) focusStation(st); else cancelFocus(); }
+  });
+
+  // ---- keys: WASD fly + shift boost (no arrows → Konami untouched) ----
+  const keys=Object.create(null);
+  addEventListener('keydown',e=>{ const t=e.target; if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;
+    const term=document.getElementById('term'); if(term&&term.classList.contains('show'))return;
+    const k=e.key.toLowerCase();
+    if(k==='escape'){ cancelFocus(); return; }
+    if(k==='w'||k==='a'||k==='s'||k==='d'||k==='shift'){ keys[k]=true; if(k!=='shift'){ if(focusing||focused) cancelFocus(); flyKick(); } }
+  });
+  addEventListener('keyup',e=>{ keys[e.key.toLowerCase()]=false; });
+
+  // ---- mobile thrust ----
+  let thrusting=false; const tb=hud.querySelector('#thrustBtn');
+  if(tb){ const on=e=>{e.preventDefault(); thrusting=true; if(focusing||focused) cancelFocus(); flyKick();}; const off=()=>thrusting=false;
+    tb.addEventListener('pointerdown',on); tb.addEventListener('pointerup',off); tb.addEventListener('pointerleave',off); tb.addEventListener('pointercancel',off); }
+
+  // intro: gentle cinematic glide to the home vantage
+  _o.position.set(0,0,34); _o.lookAt(0,0,0); focusing={pos:new THREE.Vector3(0,0,34), quat:_o.quaternion.clone()};
+  applyCam();
+
+  // ---- loop ----
+  const _fwd=new THREE.Vector3(), _right=new THREE.Vector3(), _acc=new THREE.Vector3(), _pv=new THREE.Vector3();
   const clock=new THREE.Clock(); let uT=0, rafId=null, onScreen=true, pageVisible=true;
   function frame(){
     rafId=requestAnimationFrame(frame);
     const dt=Math.min(clock.getDelta(),0.05); uT+=dt;
     gMat.uniforms.uTime.value=uT;
-    mouse.x+=(target.x-mouse.x)*0.05; mouse.y+=(target.y-mouse.y)*0.05;
-    group.rotation.y = uT*0.015 + mouse.x*0.25;
-    group.rotation.x = baseTiltX - mouse.y*0.15;
-    shard.rotation.y += dt*0.25;
-    shard.rotation.x = 0.12*Math.sin(uT*0.4);
-    shard.position.y = 0.15*Math.sin(uT*0.6);
-    const pulse=1+0.18*Math.sin(uT*2.0);
-    core.scale.setScalar(pulse); core.material.opacity=0.55+0.35*Math.sin(uT*2.0);
-    cam.position.x += (mouse.x*1.2 - cam.position.x)*0.04;
-    cam.position.y += (-mouse.y*0.8 - cam.position.y)*0.04;
-    cam.lookAt(0,0,0);
+    group.rotation.y += dt*0.01;
+    shard.rotation.y += dt*0.18; core.scale.setScalar(1+0.18*Math.sin(uT*2)); core.material.opacity=0.55+0.35*Math.sin(uT*2);
+
+    if(focusing){
+      camPos.lerp(focusing.pos, 0.07); cam.position.copy(camPos); cam.quaternion.slerp(focusing.quat, 0.07);
+      if(camPos.distanceTo(focusing.pos)<0.35){ syncAngles(); const wasFocused=!!focused; focusing=null; if(wasFocused) elCard.classList.add('show'); }
+    } else {
+      _fwd.set(0,0,-1).applyQuaternion(cam.quaternion); _right.set(1,0,0).applyQuaternion(cam.quaternion); _acc.set(0,0,0);
+      const s=(keys['shift']?2.0:1.0)*SPEED;
+      if(keys['w']||thrusting) _acc.addScaledVector(_fwd,s);
+      if(keys['s']) _acc.addScaledVector(_fwd,-s);
+      if(keys['d']) _acc.addScaledVector(_right,s);
+      if(keys['a']) _acc.addScaledVector(_right,-s);
+      camVel.addScaledVector(_acc,dt); camVel.multiplyScalar(DAMP); camPos.addScaledVector(camVel,dt);
+      const d=camPos.length(); if(d>BOUND){ camPos.multiplyScalar(BOUND/d); camVel.multiplyScalar(0.4); }
+      applyCam();
+    }
+
+    for(const st of stations){
+      st.quaternion.copy(cam.quaternion);
+      st.position.y = st.userData.baseY + Math.sin(uT*0.6+st.userData.seed)*0.5;
+      st.userData.cr.rotation.y += dt*0.6;
+      const want=(st===hovered||st===focused)?1:0; st.userData.hover += (want-st.userData.hover)*0.15;
+      const h=st.userData.hover; st.scale.setScalar(1+h*0.13); st.userData.frame.material.opacity=0.12+h*0.55;
+    }
+    if(hovered && !focused){ _pv.copy(hovered.position).project(cam);
+      if(_pv.z<1){ const r=canvas.getBoundingClientRect(); elTag.style.left=(r.left+(_pv.x*0.5+0.5)*r.width)+'px';
+        elTag.style.top=(r.top+(-_pv.y*0.5+0.5)*r.height-78)+'px'; elTag.textContent=hovered.userData.meta.title; elTag.classList.add('show'); }
+      else elTag.classList.remove('show');
+    } else elTag.classList.remove('show');
+
     if(composer) composer.render(); else renderer.render(scene,cam);
   }
-  function start(){ if(rafId==null && onScreen && pageVisible){ clock.getDelta(); frame(); } }
-  function stop(){ if(rafId!=null){ cancelAnimationFrame(rafId); rafId=null; } }
-
-  const io=new IntersectionObserver(es=>{ onScreen=es[0].isIntersecting; onScreen?start():stop(); },{threshold:0});
+  function startLoop(){ if(rafId==null && onScreen && pageVisible){ clock.getDelta(); rafId=requestAnimationFrame(frame); } }
+  function stopLoop(){ if(rafId!=null){ cancelAnimationFrame(rafId); rafId=null; } }
+  const io=new IntersectionObserver(es=>{ onScreen=es[0].isIntersecting; onScreen?startLoop():stopLoop(); },{threshold:0});
   io.observe(header);
-  document.addEventListener('visibilitychange',()=>{ pageVisible=!document.hidden; pageVisible?start():stop(); });
-
-  // ---- resize ----
+  document.addEventListener('visibilitychange',()=>{ pageVisible=!document.hidden; pageVisible?startLoop():stopLoop(); });
   const ro=new ResizeObserver(()=>{ const r=header.getBoundingClientRect(); W=r.width; H=r.height;
     cam.aspect=W/H; cam.updateProjectionMatrix(); renderer.setSize(W,H,false);
     gMat.uniforms.uPixelRatio.value=renderer.getPixelRatio(); if(composer) composer.setSize(W,H); });
   ro.observe(header);
+  canvas.addEventListener('webglcontextlost',e=>{ e.preventDefault(); stopLoop(); });
 
-  // ---- context loss safety (static jpg remains underneath) ----
-  canvas.addEventListener('webglcontextlost',e=>{ e.preventDefault(); stop(); });
-
-  // ---- go: render one frame, fade in ----
-  start();
+  startLoop();
   requestAnimationFrame(()=>canvas.classList.add('ready'));
-  if(location.hash==='#debug') window.__hero3d={scene,renderer,group,gMat,sMat};
-})();
+  if(location.hash==='#debug') window.__hero3d={scene,cam,renderer,stations,camPos, frame, focusStation,
+    get focused(){return focused}, get focusing(){return !!focusing}, cardShown:()=>elCard.classList.contains('show'),
+    cardTitle:()=>scTitle.textContent};
+})().catch(e=>{ console.error('HERO3D init failed:', e&&e.stack||e); });
 </script>
 </body>
 </html>
