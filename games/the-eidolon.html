@@ -723,7 +723,7 @@ function updateParticles(dt){
 
 function updateAudio(dt){
   if(!ac) return;
-  if(droneGain) droneGain.gain.value += ((0.012+state.eidNear*0.05) - droneGain.gain.value)*Math.min(1,dt*3);
+  if(droneGain){ const target = state.muted ? 0 : (0.012+state.eidNear*0.05); droneGain.gain.value += (target - droneGain.gain.value)*Math.min(1,dt*3); }
   // heartbeat
   const bpm = 50 + state.fear*1.1 + state.eidNear*30;
   beatT-=dt;

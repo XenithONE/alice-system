@@ -473,7 +473,7 @@ function updateWorld(dt,t){
 let ac=null;
 function audio(){
   if(ac)return ac;
-  try{ac=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}
+  try{ac=new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();}catch(e){}
   return ac;
 }
 function pulse(freq,dur,type,gain){
@@ -540,7 +540,7 @@ function frame(now){
   last=now;
   const t=now/1000;
   if(state.mode==='playing'&&!state.paused)updateWorld(dt,t);
-  else{
+  else if(state.mode!=='playing'){
     playerGroup.rotation.y=Math.sin(t*.8)*.12;
     playerGroup.rotation.z=Math.sin(t*.65)*.08;
     for(const r of rings){

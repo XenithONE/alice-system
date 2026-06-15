@@ -56,6 +56,7 @@ function tone(f, d = 0.08, type = 'square', g = 0.04) {
   if (mute) return;
   try {
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
     const o = actx.createOscillator(), gn = actx.createGain();
     o.type = type; o.frequency.value = f; o.connect(gn); gn.connect(actx.destination);
     const t = actx.currentTime;

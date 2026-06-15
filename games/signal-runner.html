@@ -194,7 +194,8 @@
   let ac=null;
   function pulse(f,d,type,g){
     try{
-      ac=ac||new (AudioContext||webkitAudioContext)();
+      ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+      if(ac.state==='suspended')ac.resume();
       const o=ac.createOscillator(),gn=ac.createGain();o.type=type;o.frequency.value=f;o.connect(gn);gn.connect(ac.destination);
       const now=ac.currentTime;gn.gain.setValueAtTime(0,now);gn.gain.linearRampToValueAtTime(g,now+.01);gn.gain.exponentialRampToValueAtTime(.0001,now+d);o.start(now);o.stop(now+d);
     }catch(e){}
