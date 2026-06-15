@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Cormorant+Garamond:ital@1&display=swap" rel="stylesheet">
 <script type="importmap">
-{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js"}}
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"}}
 </script>
 <style>
   :root{
@@ -53,6 +53,14 @@
   button.btn.primary:hover{color:#03110f;filter:brightness(1.08)}
   #loadError{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:24px;background:#03060b;color:var(--ink);font-family:var(--mono);text-align:center;line-height:1.8}
   #loadError.show{display:flex}
+  #reticle{position:fixed;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border:1px solid rgba(51,231,200,.32);border-radius:50%;z-index:4;pointer-events:none;box-shadow:0 0 18px rgba(51,231,200,.22);opacity:0;transition:opacity .35s,border-color .25s}
+  #reticle.show{opacity:.55}
+  #reticle::before,#reticle::after{content:'';position:absolute;background:rgba(123,77,255,.5)}
+  #reticle::before{left:50%;top:6px;bottom:6px;width:1px;margin-left:-.5px}
+  #reticle::after{top:50%;left:6px;right:6px;height:1px;margin-top:-.5px}
+  #reticle.gate{border-color:rgba(123,77,255,.78);animation:pulseGate 1s ease-in-out infinite}
+  @keyframes pulseGate{50%{transform:scale(1.08);opacity:.9}}
+  @media(prefers-reduced-motion:reduce){#reticle.gate{animation:none}}
   @media(max-width:760px){
     .top{padding:12px 13px;font-size:10px}.top .title{display:none}.top a,.top button{font-size:10px;padding:7px 9px}
     .objective{top:56px;left:13px;font-size:11px}
@@ -77,6 +85,7 @@
     <span>SCORE <b id="score">0</b></span>
     <span>BEST <b id="best">0</b></span>
     <span>KEYS <b id="keys">0/7</b></span>
+    <span>CHAIN <b id="chain">x0</b></span>
   </div>
   <div class="panel center"><div class="msg" id="msg">PRESS START</div><div class="subline" id="sub">WASD / ARROWS で飛行。タッチはドラッグ。</div></div>
   <div class="panel keys">MOVE: WASD / ARROWS<br>TOUCH: DRAG<br>PAUSE: P</div>
@@ -92,31 +101,43 @@
     </div>
   </div>
 </div>
+<div id="reticle"></div>
 <div id="loadError">THREE.JS の読み込みに失敗しました。<br>ネットワーク接続または CDN へのアクセスを確認してください。</div>
 
 <script type="module">
 import * as THREE from "three";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 
 const canvas=document.getElementById('stage');
 const $=id=>document.getElementById(id);
 const ui={
   overlay:$('overlay'),start:$('startBtn'),mute:$('muteBtn'),score:$('score'),best:$('best'),keys:$('keys'),
+  chain:$('chain'),reticle:$('reticle'),
   msg:$('msg'),sub:$('sub'),objective:$('objective'),objectiveSub:$('objectiveSub')
 };
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const fmt=n=>Math.floor(n).toLocaleString('en-US');
 const BEST_KEY='alice_rift_courier_best';
+const MUTE_KEY='alice_rift_courier_mute';
+// Heavy FX (bloom, screen shake, FOV kick, warp streaks) respect motion preference.
+const reduceMotion=(()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}})();
+let fxOn=!reduceMotion;
 
 const state={
   mode:'menu',paused:false,score:0,best:Number(localStorage.getItem(BEST_KEY)||0),
   keys:0,needed:7,hull:3,distance:0,speed:22,gateSpawned:false,gatePassed:false,
+  combo:0,comboT:0,maxCombo:0,
+  shakeT:0,shakeMag:0,nearMissT:0,
   player:{x:0,y:0,vx:0,vy:0,invuln:0,roll:0},
   input:{left:false,right:false,up:false,down:false,pointer:false,px:0,py:0},
   timers:{hazard:.8,key:.5,beam:3.5,message:0},
-  sound:true,muted:false
+  sound:true,muted:localStorage.getItem(MUTE_KEY)==='1'
 };
 ui.best.textContent=fmt(state.best);
+ui.mute.textContent=state.muted?'SOUND OFF':'SOUND ON';
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x03060b);
@@ -173,6 +194,24 @@ shield.rotation.x=Math.PI/2;
 playerGroup.add(shield);
 scene.add(playerGroup);
 
+// --- Bloom postprocessing (additive; disabled under prefers-reduced-motion) ---
+const BLOOM_LAYER=1;
+core.layers.enable(BLOOM_LAYER);
+shield.layers.enable(BLOOM_LAYER);
+let composer=null,bloomPass=null;
+try{
+  composer=new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene,camera));
+  bloomPass=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),0.75,0.38,0.55);
+  composer.addPass(bloomPass);
+  composer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  composer.setSize(innerWidth,innerHeight);
+}catch(err){
+  composer=null;bloomPass=null;fxOn=false;
+  console.warn('Bloom composer unavailable, falling back to direct render.',err);
+}
+if(!composer)fxOn=false;
+
 const tunnel=new THREE.Group();
 scene.add(tunnel);
 const ringGeo=new THREE.TorusGeometry(6.2,.025,6,96);
@@ -203,6 +242,22 @@ starGeo.setAttribute('position',new THREE.BufferAttribute(starPos,3));
 const stars=new THREE.Points(starGeo,new THREE.PointsMaterial({color:0xbdefff,size:.08,transparent:true,opacity:.78}));
 scene.add(stars);
 
+// --- Warp-streak particles (additive; scale with speed). Hidden under reduced-motion. ---
+const streakN=220;
+const streakPos=new Float32Array(streakN*3);
+const streakVel=new Float32Array(streakN);
+for(let i=0;i<streakN;i++){
+  streakPos[i*3]=rnd(-12,12);
+  streakPos[i*3+1]=rnd(-8,8);
+  streakPos[i*3+2]=rnd(-120,12);
+  streakVel[i]=rnd(.5,1.5);
+}
+const streakGeo=new THREE.BufferGeometry();
+streakGeo.setAttribute('position',new THREE.BufferAttribute(streakPos,3));
+const streaks=new THREE.Points(streakGeo,new THREE.PointsMaterial({color:0x9b7cff,size:.12,transparent:true,opacity:.0,blending:THREE.AdditiveBlending,depthWrite:false}));
+streaks.visible=!reduceMotion;
+scene.add(streaks);
+
 const hazardGeo=new THREE.IcosahedronGeometry(.72,1);
 const keyGeo=new THREE.OctahedronGeometry(.55,0);
 const beamGeo=new THREE.BoxGeometry(6.2,.35,.35);
@@ -215,6 +270,7 @@ function makeEntity(kind){
   if(kind==='key'){
     mesh=new THREE.Mesh(keyGeo,materials.key);
     mesh.position.set(rnd(-4.2,4.2),rnd(-2.2,2.35),-86);
+    mesh.layers.enable(BLOOM_LAYER);
     radius=.7;value=1;
   }else if(kind==='beam'){
     mesh=new THREE.Mesh(beamGeo,materials.hazard);
@@ -229,6 +285,7 @@ function makeEntity(kind){
     inner.rotation.x=Math.PI/2;
     mesh.add(torus,inner);
     mesh.position.set(0,0,-100);
+    mesh.traverse(o=>{if(o.isMesh)o.layers.enable(BLOOM_LAYER);});
     radius=3.1;
   }else{
     mesh=new THREE.Mesh(hazardGeo,materials.hazard);
@@ -263,6 +320,7 @@ function syncUi(){
   ui.score.textContent=fmt(state.score);
   ui.best.textContent=fmt(state.best);
   ui.keys.textContent=state.keys+'/'+state.needed;
+  if(ui.chain)ui.chain.textContent='x'+state.combo;
   const charge=clamp(state.keys/state.needed*100,0,100);
   ui.objective.textContent=state.gateSpawned?'ゲート中心を抜けろ':'光のキーを 7 個集めろ';
   ui.objectiveSub.innerHTML='CHARGE <span class="meter"><i style="width:'+charge+'%"></i></span>  HULL '+state.hull;
@@ -274,7 +332,8 @@ function resetGame(){
   for(const p of particles)scene.remove(p.mesh);
   particles.length=0;
   Object.assign(state,{
-    mode:'playing',paused:false,score:0,keys:0,hull:3,distance:0,speed:22,gateSpawned:false,gatePassed:false
+    mode:'playing',paused:false,score:0,keys:0,hull:3,distance:0,speed:22,gateSpawned:false,gatePassed:false,
+    combo:0,comboT:0,maxCombo:0,shakeT:0,shakeMag:0,nearMissT:0
   });
   Object.assign(state.player,{x:0,y:0,vx:0,vy:0,invuln:1.6,roll:0});
   Object.assign(state.timers,{hazard:.75,key:.45,beam:3.4,message:0});
@@ -294,6 +353,8 @@ function startGame(){
 function endGame(victory){
   if(state.mode!=='playing')return;
   state.mode=victory?'won':'lost';
+  if(victory)state.score+=state.maxCombo*400;
+  if(ui.reticle)ui.reticle.classList.remove('show','gate');
   ui.overlay.classList.remove('hidden');
   ui.overlay.querySelector('h1').textContent=victory?'Gate Cleared':'Rift Collapsed';
   ui.overlay.querySelector('p').textContent=victory
@@ -317,6 +378,8 @@ function hitPlayer(){
   if(state.player.invuln>0||state.mode!=='playing')return;
   state.hull--;
   state.player.invuln=1.15;
+  state.combo=0;state.comboT=0;
+  if(fxOn){state.shakeT=.35;state.shakeMag=.22;}
   makeBurst(state.player.x,state.player.y,6,0xff4f87,34);
   setMessage('HULL BREACH','残り船体 '+state.hull,1.2);
   pulse(120,.18,'sawtooth',.045);
@@ -326,11 +389,16 @@ function hitPlayer(){
 function collectKey(e){
   e.hit=true;
   state.keys++;
-  state.score+=900+state.keys*120;
+  state.comboT=2.8;
+  state.combo=Math.min(12,state.combo+1);
+  state.maxCombo=Math.max(state.maxCombo,state.combo);
+  const mult=1+state.combo*0.15;
+  const pts=Math.floor((900+state.keys*120)*mult);
+  state.score+=pts;
   makeBurst(e.mesh.position.x,e.mesh.position.y,e.mesh.position.z,0xffd166,24);
   pulse(520+state.keys*30,.08,'triangle',.04);
   scene.remove(e.mesh);
-  setMessage('KEY CAPTURED','ゲート電荷 '+Math.min(100,Math.round(state.keys/state.needed*100))+'%',1.0);
+  setMessage('KEY CAPTURED','CHAIN x'+state.combo+'  +'+fmt(pts),1.0);
   if(state.keys>=state.needed&&!state.gateSpawned){
     state.gateSpawned=true;
     makeEntity('gate');
@@ -427,6 +495,16 @@ function updateEntities(dt){
       if(Math.abs(lx)<3.35&&Math.abs(ly)<.45)hitPlayer();
     }else if(d<e.radius+.42){
       hitPlayer();
+    }else if(e.kind==='hazard'&&d<e.radius+1&&dz<.9&&!e.grazed&&state.player.invuln<=0){
+      // Near-miss: skimmed a hazard without taking damage (additive bonus only).
+      e.grazed=true;
+      if(state.nearMissT<=0){
+        state.nearMissT=.5;
+        const nm=80+state.combo*20;
+        state.score+=nm;
+        setMessage('NEAR MISS','+'+nm,.7);
+        pulse(780,.06,'sine',.03);
+      }
     }
   }
 }
@@ -458,6 +536,41 @@ function updateWorld(dt,t){
     if(p.life<=0){
       scene.remove(p.mesh);
       particles.splice(i,1);
+    }
+  }
+  // key-chain combo decay
+  if(state.comboT>0){
+    state.comboT-=dt;
+    if(state.comboT<=0)state.combo=0;
+  }
+  if(state.nearMissT>0)state.nearMissT-=dt;
+  // warp-streak particles scale with speed (skipped under reduced-motion)
+  if(streaks.visible){
+    const sp=state.speed;
+    const arr=streakGeo.attributes.position.array;
+    for(let i=0;i<streakN;i++){
+      arr[i*3+2]+=sp*dt*streakVel[i]*1.4;
+      if(arr[i*3+2]>16)arr[i*3+2]=rnd(-140,-40);
+    }
+    streakGeo.attributes.position.needsUpdate=true;
+    streaks.material.opacity=clamp(.12+(sp-22)*.022,.1,.55);
+  }
+  // bloom intensity tracks velocity
+  if(fxOn&&bloomPass){
+    bloomPass.strength=clamp(.55+(state.speed-22)*.04,.45,1.2);
+  }
+  // center-line alignment reticle / gate telegraph
+  if(ui.reticle){
+    const off=Math.hypot(state.player.x,state.player.y);
+    if(state.gateSpawned){
+      ui.reticle.classList.add('show','gate');
+      ui.reticle.style.opacity=String(clamp(.55+(1-off/3)*.45,.4,1));
+      ui.reticle.style.borderColor=off<1.4?'rgba(51,231,200,.9)':'rgba(255,79,135,.6)';
+    }else{
+      ui.reticle.classList.add('show');
+      ui.reticle.classList.remove('gate');
+      ui.reticle.style.opacity='';
+      ui.reticle.style.borderColor='';
     }
   }
   if(state.timers.message>0){
@@ -493,6 +606,11 @@ function resize(){
   camera.updateProjectionMatrix();
   renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
   renderer.setSize(innerWidth,innerHeight);
+  if(composer){
+    composer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+    composer.setSize(innerWidth,innerHeight);
+    if(bloomPass)bloomPass.setSize(innerWidth,innerHeight);
+  }
 }
 addEventListener('resize',resize);
 renderer.domElement.addEventListener('webglcontextlost',e=>{
@@ -517,9 +635,21 @@ addEventListener('keydown',e=>{
     if(state.mode==='playing'){
       state.paused=!state.paused;
       setMessage(state.paused?'PAUSED':'RIFT RESUMED',state.paused?'P で再開':'飛行を継続',1);
+      setPauseOverlay(state.paused);
     }
   }
 });
+
+function setPauseOverlay(on){
+  if(on){
+    ui.overlay.classList.remove('hidden');
+    ui.overlay.querySelector('h1').textContent='Paused';
+    ui.overlay.querySelector('p').textContent='P で再開、または RESUME を押す。';
+    ui.start.textContent='RESUME';
+  }else if(state.mode==='playing'){
+    ui.overlay.classList.add('hidden');
+  }
+}
 addEventListener('keyup',e=>{if(keyMap[e.key])state.input[keyMap[e.key]]=false;});
 canvas.addEventListener('pointerdown',e=>{
   state.input.pointer=true;state.input.px=e.clientX;state.input.py=e.clientY;
@@ -527,10 +657,20 @@ canvas.addEventListener('pointerdown',e=>{
 });
 canvas.addEventListener('pointermove',e=>{state.input.px=e.clientX;state.input.py=e.clientY;});
 addEventListener('pointerup',()=>{state.input.pointer=false;});
-ui.start.addEventListener('click',startGame);
+ui.start.addEventListener('click',()=>{
+  // RESUME from pause without restarting the run
+  if(state.mode==='playing'&&state.paused){
+    state.paused=false;
+    setPauseOverlay(false);
+    setMessage('RIFT RESUMED','飛行を継続',1);
+    return;
+  }
+  startGame();
+});
 ui.mute.addEventListener('click',()=>{
   state.muted=!state.muted;
   ui.mute.textContent=state.muted?'SOUND OFF':'SOUND ON';
+  localStorage.setItem(MUTE_KEY,state.muted?'1':'0');
 });
 
 let last=performance.now();
@@ -553,7 +693,15 @@ function frame(now){
   camera.position.x+=(state.player.x*.18-camera.position.x)*Math.min(1,dt*2.4);
   camera.position.y+=(4.8+state.player.y*.08-camera.position.y)*Math.min(1,dt*2.4);
   camera.lookAt(look);
-  renderer.render(scene,camera);
+  // hull-hit screen shake (additive; only when fxOn)
+  if(fxOn&&state.shakeT>0){
+    state.shakeT-=dt;
+    const s=state.shakeMag*Math.max(0,state.shakeT/.35);
+    camera.position.x+=rnd(-s,s);
+    camera.position.y+=rnd(-s,s);
+  }
+  if(fxOn&&composer)composer.render();
+  else renderer.render(scene,camera);
 }
 syncUi();
 requestAnimationFrame(frame);

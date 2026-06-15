@@ -10,7 +10,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Cormorant+Garamond:ital@1&display=swap" rel="stylesheet">
 <script type="importmap">
-{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js"}}
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+}}
 </script>
 <style>
   :root{
@@ -60,6 +63,16 @@
   body.touch .stick.live{display:block}
   #loadError{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:24px;background:#03060b;color:var(--ink);font-family:var(--mono);text-align:center;line-height:1.8}
   #loadError.show{display:flex}
+  /* settings flyout */
+  #settingsPanel{position:fixed;top:60px;right:14px;z-index:10;display:none;flex-direction:column;gap:12px;min-width:220px;
+    border:1px solid var(--line);background:rgba(4,8,15,.92);backdrop-filter:blur(12px);border-radius:10px;padding:15px 16px;
+    box-shadow:0 18px 48px rgba(0,0,0,.5);font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:var(--muted)}
+  #settingsPanel.show{display:flex}
+  #settingsPanel .row{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer}
+  #settingsPanel .row label{cursor:pointer;color:var(--ink)}
+  #settingsPanel input[type=range]{width:96px;accent-color:var(--cyan)}
+  #settingsPanel input[type=checkbox]{accent-color:var(--cyan);width:15px;height:15px;cursor:pointer}
+  #settingsPanel .hd{color:var(--cyan);letter-spacing:.18em;font-size:11px;border-bottom:1px solid var(--line);padding-bottom:7px}
   @media(max-width:760px){
     .top{padding:12px 13px;font-size:10px}.top .title{display:none}.top a,.top button{font-size:10px;padding:7px 9px}
     .objective{top:54px;left:13px;font-size:11px}
@@ -73,7 +86,10 @@
 <div class="top">
   <a href="../index.html">&larr; RETURN</a>
   <span class="title">THE EIDOLON // THREE.JS HORROR</span>
-  <button id="muteBtn" type="button">SOUND ON</button>
+  <span style="display:flex;gap:8px">
+    <button id="settingsBtn" type="button">SETTINGS</button>
+    <button id="muteBtn" type="button">SOUND ON</button>
+  </span>
 </div>
 <div class="objective">
   <div id="objective">SIGNAL SHARD を 5 個集めろ</div>
@@ -84,6 +100,8 @@
     <span>TIME <b id="time">00:00.0</b></span>
     <span>BEST <b id="best">--:--.-</b></span>
     <span>SHARDS <b id="shards">0/5</b></span>
+    <span>SCORE <b id="score">0</b></span>
+    <span>COMBO <b id="combo">x1</b></span>
     <span>FEAR<span class="meter"><i id="fearbar" style="width:0%"></i></span></span>
   </div>
   <div class="panel center"><div class="msg" id="msg">PRESS START</div><div class="subline" id="sub">WASD/矢印で移動。マウスで視点。</div></div>
@@ -102,25 +120,40 @@
     </div>
   </div>
 </div>
+<div id="settingsPanel">
+  <div class="hd">SETTINGS</div>
+  <div class="row"><label for="optBloom">Bloom / glow</label><input type="checkbox" id="optBloom" checked></div>
+  <div class="row"><label for="optShake">Screen shake</label><input type="checkbox" id="optShake" checked></div>
+  <div class="row"><label for="optSens">Look sens</label><input type="range" id="optSens" min="0.0010" max="0.0040" step="0.0002" value="0.0022"></div>
+</div>
 <div id="loadError">THREE.JS の読み込みに失敗しました。<br>ネットワーク接続または CDN へのアクセスを確認してください。</div>
 
 <script type="module">
 import * as THREE from "three";
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 const canvas=document.getElementById('stage');
 const $=id=>document.getElementById(id);
 const ui={
-  overlay:$('overlay'),start:$('startBtn'),mute:$('muteBtn'),
-  time:$('time'),best:$('best'),shards:$('shards'),fearbar:$('fearbar'),
+  overlay:$('overlay'),start:$('startBtn'),mute:$('muteBtn'),settings:$('settingsBtn'),
+  settingsPanel:$('settingsPanel'),optBloom:$('optBloom'),optShake:$('optShake'),optSens:$('optSens'),
+  time:$('time'),best:$('best'),shards:$('shards'),score:$('score'),combo:$('combo'),fearbar:$('fearbar'),
   msg:$('msg'),sub:$('sub'),objective:$('objective'),objectiveSub:$('objectiveSub'),
   fearveil:$('fearveil'),lstick:$('lstick'),rstick:$('rstick')
 };
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const BEST_KEY='alice_the_eidolon_best';
+const BEST_SCORE_KEY='alice_the_eidolon_score';
 const isTouch=matchMedia('(hover:none)').matches || ('ontouchstart' in window);
 if(isTouch) document.body.classList.add('touch');
 const LOW = isTouch && Math.min(innerWidth,innerHeight) < 520;
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// player-facing prefs; heavy FX gated off under reduced-motion
+const prefs={ bloom:!REDUCED, shake:!REDUCED, lookSens:0.0022 };
 
 const FIELD=22;            // half-extent of the floor (world spans -22..22)
 const NEEDED=5;
@@ -145,7 +178,12 @@ const state={
   eidNear:0,           // 0..1 proximity to the entity (audio + vignette)
   invuln:0,            // post-escape contact grace
   taughtFirst:false,   // scripted first-encounter done
-  lossKind:'caught'
+  lossKind:'caught',
+  // ---- stealth combo / score (additive; does NOT affect win/lose) ----
+  score:0, combo:1, comboT:0,
+  bestScore:Number(localStorage.getItem(BEST_SCORE_KEY)||0),
+  // ---- gaze-break juice ----
+  fovKick:0, punchX:0, punchZ:0
 };
 ui.best.textContent=fmtTime(state.best);
 
@@ -168,6 +206,46 @@ renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure=1.05;
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=LOW?THREE.PCFShadowMap:THREE.PCFSoftShadowMap;
+
+/* ---------------------------------------------------------- POST-PROCESSING
+   Full-screen UnrealBloom with a high threshold so only the bright emissives
+   (shards / gate / eidolon eye) bloom — premium cosmic-horror glow. A subtle
+   fear-reactive chromatic-aberration + grain pass ties post-fx to the FEAR state.
+   All of this is gated off entirely under prefers-reduced-motion. */
+const composer=new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+const BLOOM_BASE = LOW?0.55:0.85;
+const bloomPass=new UnrealBloomPass(
+  new THREE.Vector2(innerWidth,innerHeight),
+  BLOOM_BASE,            // strength
+  0.42,                  // radius
+  LOW?0.72:0.58          // threshold — only bright emissives bloom
+);
+composer.addPass(bloomPass);
+
+const FearFX={
+  uniforms:{ tDiffuse:{value:null}, fear:{value:0}, eidNear:{value:0}, time:{value:0} },
+  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+  fragmentShader:`
+    uniform sampler2D tDiffuse; uniform float fear; uniform float eidNear; uniform float time;
+    varying vec2 vUv;
+    void main(){
+      float amt = (fear*0.0014 + eidNear*0.0030) * (0.6 + 0.4*sin(time*9.0));
+      vec2 off = vec2(amt, amt*0.7);
+      float r = texture2D(tDiffuse, vUv + off).r;
+      float g = texture2D(tDiffuse, vUv).g;
+      float b = texture2D(tDiffuse, vUv - off).b;
+      vec3 col = vec3(r,g,b);
+      float vig = smoothstep(0.95, 0.25, distance(vUv, vec2(0.5)));
+      col *= mix(1.0, vig, 0.30 + fear*0.0035);
+      col += (fract(sin(dot(vUv*vec2(12.0,78.0)+time, vec2(12.9898,78.233)))*43758.5453)-0.5) * (0.015 + fear*0.00022);
+      gl_FragColor = vec4(col,1.0);
+    }`
+};
+const fearPass=new ShaderPass(FearFX);
+composer.addPass(fearPass);
+
+let useBloom = prefs.bloom;   // master switch for the whole composer chain
 
 scene.add(new THREE.AmbientLight(0x0c1626, 0.8));
 const hemi=new THREE.HemisphereLight(0x2a2050, 0x03040c, 0.7);
@@ -213,6 +291,38 @@ scene.add(floor);
 const grid=new THREE.GridHelper(FIELD*2, FIELD, 0x2a7d70, 0x163f48);
 grid.material.transparent=true; grid.material.opacity=.45; grid.position.y=0.01;
 scene.add(grid);
+
+/* ---------------------------------------------------------- AMBIENT VOID MOTES
+   Cheap additive THREE.Points drifting upward — fills the empty void with depth.
+   Count gated by LOW; drift disabled under reduced-motion. */
+const MOTES_N = REDUCED ? 0 : (LOW ? 360 : 800);
+let motes=null, motesGeo=null;
+if(MOTES_N>0){
+  const mp=new Float32Array(MOTES_N*3);
+  for(let i=0;i<MOTES_N;i++){
+    mp[i*3]   = rnd(-FIELD,FIELD);
+    mp[i*3+1] = rnd(0.2,5.5);
+    mp[i*3+2] = rnd(-FIELD,FIELD);
+  }
+  motesGeo=new THREE.BufferGeometry();
+  motesGeo.setAttribute('position', new THREE.BufferAttribute(mp,3));
+  motes=new THREE.Points(motesGeo, new THREE.PointsMaterial({
+    color:0x33e7c8, size:LOW?0.04:0.06, transparent:true, opacity:0.30,
+    blending:THREE.AdditiveBlending, depthWrite:false
+  }));
+  scene.add(motes);
+}
+function updateMotes(dt){
+  if(!motes) return;
+  motes.rotation.y += dt*0.03;
+  const mp=motesGeo.attributes.position.array;
+  for(let i=0;i<MOTES_N;i++){
+    mp[i*3+1] += dt*(0.08+(i%7)*0.01);
+    if(mp[i*3+1] > 6) mp[i*3+1]=0.2;
+  }
+  motesGeo.attributes.position.needsUpdate=true;
+  motes.material.opacity = 0.20 + state.fear*0.0018 + state.eidNear*0.14;
+}
 
 /* ---------------------------------------------------------- MONOLITHS (occluders) */
 const PILLARS=[];                 // {minX,maxX,minZ,maxZ}
@@ -456,7 +566,7 @@ addEventListener('keyup',e=>{ if(keyMap[e.key]) keys[keyMap[e.key]]=false; });
 function clampPitch(){ look.pitch=clamp(look.pitch, -Math.PI/2+0.05, Math.PI/2-0.05); }
 addEventListener('mousemove',e=>{
   if((document.pointerLockElement===canvas || dragging) && state.mode==='playing' && !state.paused){
-    look.yaw-=e.movementX*0.0022; look.pitch-=e.movementY*0.0022; clampPitch();
+    look.yaw-=e.movementX*prefs.lookSens; look.pitch-=e.movementY*prefs.lookSens; clampPitch();
   }
 });
 canvas.addEventListener('mousedown',()=>{ if(!isTouch && document.pointerLockElement!==canvas) dragging=true; });
@@ -499,6 +609,20 @@ if(isTouch){
 ui.start.addEventListener('click',startGame);
 ui.mute.addEventListener('click',()=>{ state.muted=!state.muted; ui.mute.textContent=state.muted?'SOUND OFF':'SOUND ON'; });
 
+/* ---- settings flyout ---- */
+// reflect reduced-motion defaults in the controls
+ui.optBloom.checked=prefs.bloom; ui.optShake.checked=prefs.shake; ui.optSens.value=prefs.lookSens;
+ui.settings.addEventListener('click',()=>{ ui.settingsPanel.classList.toggle('show'); });
+ui.optBloom.addEventListener('change',()=>{ prefs.bloom=ui.optBloom.checked; useBloom=prefs.bloom; });
+ui.optShake.addEventListener('change',()=>{ prefs.shake=ui.optShake.checked; });
+ui.optSens.addEventListener('input',()=>{ prefs.lookSens=parseFloat(ui.optSens.value)||0.0022; });
+// close the flyout when clicking elsewhere
+addEventListener('pointerdown',e=>{
+  if(ui.settingsPanel.classList.contains('show') && !ui.settingsPanel.contains(e.target) && e.target!==ui.settings){
+    ui.settingsPanel.classList.remove('show');
+  }
+},true);
+
 /* ---------------------------------------------------------- GAME FLOW */
 function setMsg(main,sub,hold=1.6){ ui.msg.textContent=main; ui.sub.textContent=sub; state.msgT=hold; }
 
@@ -506,6 +630,9 @@ function resetGame(){
   // restore shards
   for(const s of shards){ if(s.got){ scene.add(s.mesh); if(s.light) scene.add(s.light); s.got=false; } }
   state.shards=0; state.fear=0; state.invuln=1.5; state.taughtFirst=false; state.eidNear=0;
+  state.score=0; state.combo=1; state.comboT=0;
+  state.fovKick=0; state.punchX=0; state.punchZ=0;
+  camera.fov=72; camera.updateProjectionMatrix();
   state.mode='playing'; state.paused=false; state.elapsed=0; state.startT=performance.now();
   look.yaw=-Math.PI*0.75; look.pitch=0;
   camera.position.set(SPAWN.x, EYE_H, SPAWN.z);
@@ -529,8 +656,10 @@ function endGame(victory){
     localStorage.setItem(BEST_KEY, state.best);
     localStorage.setItem('alice_bonus_the_eidolon','1');
     grantLantern();
+    // speed bonus for escaping fast
+    state.score += Math.max(0, Math.floor(3000 - state.elapsed*0.4));
     h1.textContent='Light Carried'; tl.textContent='THE EIDOLON ACCORD';
-    p.innerHTML='ゲートを抜けた。お前は光を闇へ運んだ。<br>AlicE sYsTeM が、断片『提灯』を記憶する。 — '+fmtTime(state.elapsed);
+    p.innerHTML='ゲートを抜けた。お前は光を闇へ運んだ。<br>AlicE sYsTeM が、断片『提灯』を記憶する。 — '+fmtTime(state.elapsed)+' — SCORE '+state.score;
     pulse(523,.2,'triangle',.06); setTimeout(()=>pulse(784,.26,'sine',.05),140);
   }else{
     if(state.lossKind==='fear'){ h1.textContent='Consumed'; tl.textContent='THE DARK WINS'; p.innerHTML='恐怖が満ちた。闇が、内側から灯りを消した。<br>The dark put out your light from the inside.'; }
@@ -539,6 +668,9 @@ function endGame(victory){
   }
   ui.start.textContent=victory?'ESCAPE AGAIN':'TRY AGAIN';
   ui.fearveil.style.opacity=0;
+  // persist best score (separate from best time)
+  state.bestScore=Math.max(state.bestScore||0, state.score);
+  try{ localStorage.setItem(BEST_SCORE_KEY, state.bestScore); }catch(e){}
   ui.overlay.classList.remove('hidden');
   syncUi();
 }
@@ -553,6 +685,8 @@ function syncUi(){
   ui.time.textContent=fmtTime(state.elapsed);
   ui.best.textContent=fmtTime(state.best);
   ui.shards.textContent=state.shards+'/'+NEEDED;
+  ui.score.textContent=state.score|0;
+  ui.combo.textContent='x'+state.combo;
   ui.fearbar.style.width=clamp(state.fear,0,100)+'%';
   if(state.shards>=NEEDED){ ui.objective.textContent='出口ゲートが起動した — 脱出せよ'; ui.objectiveSub.textContent='紫の輪の中心を抜けろ'; }
   else{ ui.objective.textContent='SIGNAL SHARD を 5 個集めろ'; ui.objectiveSub.textContent='光を抱き、闇を抜けろ'; }
@@ -580,6 +714,19 @@ function updatePlayer(dt){
   const [cx,cz]=collide(nx,nz,PR);
   camera.position.x=cx; camera.position.z=cz;
   state.invuln=Math.max(0,state.invuln-dt);
+
+  // gaze-break juice: transient FOV kick + camera punch, both decay fast.
+  // Honors the screen-shake pref (motion-sensitive users opt out).
+  if(prefs.shake && (state.fovKick>0.001 || Math.abs(state.punchX)>0.0005 || Math.abs(state.punchZ)>0.0005)){
+    camera.fov = 72 + state.fovKick;
+    camera.updateProjectionMatrix();
+    state.fovKick *= Math.pow(0.05,dt);
+    camera.position.x += state.punchX; camera.position.z += state.punchZ;
+    state.punchX *= Math.pow(0.02,dt); state.punchZ *= Math.pow(0.02,dt);
+  } else if(state.fovKick!==0){
+    state.fovKick=0; state.punchX=0; state.punchZ=0;
+    if(camera.fov!==72){ camera.fov=72; camera.updateProjectionMatrix(); }
+  }
 }
 
 function updateShards(dt,t){
@@ -595,12 +742,15 @@ function updateShards(dt,t){
       scene.remove(s.mesh); if(s.light) scene.remove(s.light);
       burst(s.x,1.2,s.z,0x33e7c8);
       pulse(540+state.shards*40,.09,'triangle',.045);
+      // combo-scaled score (purely additive; shard count unchanged)
+      const gain=500+Math.floor(250*state.combo);
+      state.score+=gain;
       if(state.shards>=NEEDED){
         gate.userData.active=true;
         setMsg('GATE ONLINE','紫の輪の中心を抜けろ',2.4);
         pulse(440,.16,'sine',.05); setTimeout(()=>pulse(660,.18,'sine',.045),130);
       }else{
-        setMsg('SHARD CAPTURED', state.shards+' / '+NEEDED+' — 闇が濃くなる',1.3);
+        setMsg('SHARD CAPTURED', '+'+gain+'  COMBO x'+state.combo,1.3);
       }
       syncUi();
     }
@@ -628,6 +778,15 @@ function updateEidolon(dt){
   const distXZ=Math.hypot(eid.position.x-px, eid.position.z-pz);
   const det=detect(distXZ);
 
+  // ---- stealth combo: grows while unseen, breaks the instant you light the eye ----
+  if(det==='lit'){
+    if(state.combo>1){ state.combo=1; setMsg('COMBO LOST','眼に光を当てた / gaze met',1.0); }
+    state.comboT=0;
+  }else if(!det && E.mode!=='hunt'){
+    state.comboT+=dt;
+    if(state.comboT>2.5){ state.combo=Math.min(8,state.combo+1); state.comboT=0; }
+  }
+
   // detection -> aggro
   if(det){
     if(det==='los'){ E.losTimer+=dt; } else { E.losTimer=2; }
@@ -654,7 +813,15 @@ function updateEidolon(dt){
     E.demoTimer-=dt;
     const [hx,hz]=eidHeading(px,pz);
     E.x+=hx*2.4*dt; E.z+=hz*2.4*dt;
-    if(E.demoTimer<=0){ E.mode='wander'; eidPickWander(); eyeWhite.material.emissiveIntensity=1.2; }
+    if(E.demoTimer<=0){
+      E.mode='wander'; eidPickWander(); eyeWhite.material.emissiveIntensity=1.2;
+      // gaze-break juice: FOV kick + camera punch + sting
+      state.fovKick=6;
+      state.punchX=rnd(-0.08,0.08); state.punchZ=rnd(-0.08,0.08);
+      pulse(660,.14,'triangle',.05); setTimeout(()=>pulse(990,.1,'sine',.04),80);
+      burst(E.x,1.4,E.z,0x7b4dff,LOW?14:24);
+      setMsg('GAZE BROKEN','一瞬だけ — まだ終わらない',1.8);
+    }
   }else if(E.mode==='hunt'){
     eyeWhite.material.emissiveIntensity=2.4+Math.sin(performance.now()*.02)*0.4;
     const huntSpeed=2.6+state.shards*0.2; // tops out under player speed (4.2)
@@ -687,7 +854,7 @@ function updateEidolon(dt){
   }
 }
 
-function updateFear(dt, nearGlow){
+function updateFear(dt, nearGlow, t){
   let f=state.fear;
   f += dt*2.0;                                   // the void erodes you
   if(state.eidNear>0) f += dt*14*state.eidNear;  // proximity dread
@@ -699,6 +866,10 @@ function updateFear(dt, nearGlow){
   if(state.fear>=100){ state.lossKind='fear'; endGame(false); }
   // telegraph
   ui.fearveil.style.opacity = (state.fear/100*0.7 + state.eidNear*0.25).toFixed(3);
+  // drive fear-reactive post-fx (no-op visually when bloom/composer is off)
+  fearPass.uniforms.fear.value=state.fear;
+  fearPass.uniforms.eidNear.value=state.eidNear;
+  fearPass.uniforms.time.value=t;
 }
 
 function updateGate(dt){
@@ -741,18 +912,21 @@ function updateWorld(dt,t){
   updatePlayer(dt);
   const nearGlow=updateShards(dt,t);
   updateEidolon(dt);
-  updateFear(dt,nearGlow);
+  updateFear(dt,nearGlow,t);
   updateGate(dt);
   updateParticles(dt);
+  updateMotes(dt);
   updateAudio(dt);
+  // bloom swells once the gate is online
+  bloomPass.strength = gate.userData.active ? (LOW?0.70:1.05) : BLOOM_BASE;
   // flashlight flicker (worse with fear)
   const drop = Math.random() < (0.01 + state.fear/100*0.04) ? rnd(0.25,0.6) : 1;
   flash.intensity = FLASH_I * (0.9+Math.random()*0.12) * drop;
   handGlow.intensity = 2.4*drop;
   // tentacle sway
   for(const tt of tents){ tt.m.rotation.x=Math.sin(t*2+tt.a)*0.3; tt.m.rotation.z=Math.cos(t*1.6+tt.a)*0.25; }
-  // top-end screen shake
-  if(state.fear>70){ const a=(state.fear-70)/30*0.05; camera.position.x+=rnd(-a,a); camera.position.z+=rnd(-a,a); }
+  // top-end screen shake (motion-sensitive users opt out)
+  if(prefs.shake && state.fear>70){ const a=(state.fear-70)/30*0.05; camera.position.x+=rnd(-a,a); camera.position.z+=rnd(-a,a); }
   if(state.msgT>0){ state.msgT-=dt; if(state.msgT<=0){ ui.msg.textContent=state.shards>=NEEDED?'GATE ONLINE':'IN THE DARK'; ui.sub.textContent=state.shards>=NEEDED?'紫の輪の中心を抜けろ':'光る断片を集めろ。眼に光を当てるな。'; } }
   syncUi();
 }
@@ -762,6 +936,8 @@ function resize(){
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
   renderer.setSize(innerWidth,innerHeight);
+  composer.setSize(innerWidth,innerHeight);
+  bloomPass.setSize(innerWidth,innerHeight);
 }
 addEventListener('resize',resize);
 renderer.domElement.addEventListener('webglcontextlost',e=>{ e.preventDefault(); state.mode='lost'; setMsg('WEBGL CONTEXT LOST','ページを再読み込みしてください。',99); });
@@ -779,7 +955,7 @@ function frame(now){
     for(const tt of tents){ tt.m.rotation.x=Math.sin(t*1.5+tt.a)*0.25; }
     flash.intensity=FLASH_I;
   }
-  renderer.render(scene,camera);
+  if(useBloom) composer.render(); else renderer.render(scene,camera);
   if(dbg<2 && now>1500){ dbg++; if(dbg===2) console.log('%cdraw calls: '+renderer.info.render.calls, 'color:#8090a5;font-family:monospace'); }
 }
 window.__eidolon={state,E,shards,camera,look,frame,startGame,endGame,
