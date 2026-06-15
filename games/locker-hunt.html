@@ -40,7 +40,7 @@
   <span><b id="version">v1.2.0</b> // <b id="state">READY</b></span>
 </div>
 <div class="hud">
-  <div class="panel stats"><span>TRIES <b id="tries">0</b></span><span>FOUND <b id="found">0</b></span><span>LOCKER <b id="selected">1</b>/10</span></div>
+  <div class="panel stats"><span>TRIES <b id="tries">0</b></span><span>FOUND <b id="found">0</b></span><span>SCORE <b id="score">0</b></span><span>LOCKER <b id="selected">1</b>/10</span></div>
   <div class="panel message"><div class="main" id="msg">PRESS START</div><div class="sub" id="sub">Open lockers and find the tiny man before the hallway goes wrong.</div></div>
   <div class="panel keys">MOVE: A/D or ARROWS<br>OPEN: SPACE / ENTER / TAP</div>
 </div>
@@ -60,7 +60,7 @@
   const GAME_VERSION='v1.2.0';
   const cv=document.getElementById('game'),ctx=cv.getContext('2d');
   const $=id=>document.getElementById(id);
-  let W=0,H=0,DPR=1,last=0,running=false,selected=0,target=0,tries=0,found=0,shake=0,faceTimer=1.5,face=0,scroll=0,round=1;
+  let W=0,H=0,DPR=1,last=0,running=false,selected=0,target=0,tries=0,found=0,shake=0,faceTimer=1.5,face=0,scroll=0,round=1,score=0,startTime=0;
   const open=Array(10).fill(false),splats=[],keys=new Set();
   // --- additive enhancement state (visuals/UI/features; never touches hit-test or win/lose rules) ---
   const REDUCE=matchMedia('(prefers-reduced-motion:reduce)').matches;
@@ -71,12 +71,12 @@
   let best=(()=>{try{return JSON.parse(localStorage.getItem(SAVE)||'{}')}catch(e){return{}}})();
   let muted=(()=>{try{return localStorage.getItem(SAVE+':mute')==='1'}catch(e){return false}})();
   const bgImg=new Image(),openLockerImg=new Image();
-  bgImg.src='../assets/locker-hunt/hallway-base.png';
+  bgImg.src='../assets/locker-hunt/hallway-base.jpg';
   openLockerImg.src='../assets/locker-hunt/locker-open.png';
   const BG={w:1680,h:945},LOCKER={x:648,y:312,w:96,h:350,step:101};
   const rand=n=>Math.floor(Math.random()*n),css=name=>getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   $('version').textContent=GAME_VERSION;$('titleVersion').textContent=GAME_VERSION;
-  function recordText(){return 'BEST '+(best.bestTries||'—')+' TRIES · WINS '+(best.wins||0)+(muted?' · MUTED':'')}
+  function recordText(){return 'BEST '+(best.bestTries||'—')+' TRIES · SCORE '+(best.bestScore||0)+' · WINS '+(best.wins||0)+(muted?' · MUTED':'')}
   $('titleVersion').textContent=recordText();
 
   function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);draw(0)}
@@ -87,10 +87,10 @@
   $('start').addEventListener('click',start);
 
   function start(){
-    running=true;last=0;selected=0;target=rand(10);tries=0;found=0;shake=0;face=0;faceTimer=1.2;scroll=desiredPan();open.fill(false);splats.length=0;round=1;danger=0;flash=0;
+    running=true;last=0;selected=0;target=rand(10);tries=0;found=0;score=0;startTime=performance.now();shake=0;face=0;faceTimer=1.2;scroll=desiredPan();open.fill(false);splats.length=0;round=1;danger=0;flash=0;
     $('overlay').classList.add('hidden');$('state').textContent='SEARCHING';$('msg').textContent='LOCKERS WAITING';$('sub').textContent='Choose carefully. The tiny man moves after every find.';sync();requestAnimationFrame(loop);
   }
-  function sync(){$('tries').textContent=tries;$('found').textContent=found;$('selected').textContent=selected+1}
+  function sync(){$('tries').textContent=tries;$('found').textContent=found;$('score').textContent=score;$('selected').textContent=selected+1}
   function loop(t){if(!running)return;const dt=last?Math.min(.033,(t-last)/1000):0;last=t;update(dt);draw(t/1000);requestAnimationFrame(loop)}
   function update(dt){
     if(keys.has('arrowleft')||keys.has('a')){selected=Math.max(0,selected-1);keys.delete('arrowleft');keys.delete('a');sync()}
@@ -106,7 +106,7 @@
     open[selected]=true;tries++;sync();
     burst(lockerX(selected)+lockerW()*0.5,lockerY()+lockerH()*0.5,14,'rgba(53,241,211,0.9)',false);
     if(selected===target){
-      found++;$('msg').textContent='TINY MAN FOUND';$('sub').textContent='He squeaks, waves, and dives into another locker.';beep(740,.08,'square',.035);
+      found++;score+=Math.max(20,120-tries*10);$('msg').textContent='TINY MAN FOUND';$('sub').textContent='He squeaks, waves, and dives into another locker.';beep(740,.08,'square',.035);
       burst(lockerX(selected)+lockerW()*0.5,lockerY()+lockerH()*0.4,40,'rgba(255,209,102,0.95)',true);
       danger=Math.min(1,danger+0.12);round++;
       // curve-aware relocation: later rounds bias the man away from the current pick (HOT/COLD intel still matters)
@@ -118,8 +118,10 @@
     sync();
   }
   function win(){running=false;$('state').textContent='CLEAR';$('msg').textContent='ALL TINY SIGNALS FOUND';$('sub').textContent='The hallway pretends nothing happened.';
-    best.wins=(best.wins||0)+1;if(!best.bestTries||tries<best.bestTries)best.bestTries=tries;try{localStorage.setItem(SAVE,JSON.stringify(best))}catch(e){}
-    showEnd('Clear','Found him 3 times in '+tries+' tries. He bows once, then slips into a crack in the wall.','SEARCH AGAIN')}
+    const secs=startTime?(performance.now()-startTime)/1000:999;score+=Math.max(0,Math.round(150-secs*3));sync();
+    best.wins=(best.wins||0)+1;if(!best.bestTries||tries<best.bestTries)best.bestTries=tries;if(score>(best.bestScore||0))best.bestScore=score;try{localStorage.setItem(SAVE,JSON.stringify(best))}catch(e){}
+    try{localStorage.setItem('alice_bonus_locker_hunt','1');}catch(e){}
+    showEnd('Clear','Found him 3 times in '+tries+' tries for '+score+' points. He bows once, then slips into a crack in the wall.','SEARCH AGAIN')}
   function lose(){
     running=false;shake=1;flash=1;danger=Math.min(1,danger+0.4);for(let i=0;i<100;i++)splats.push({x:lockerX(selected)+55+Math.random()*50,y:lockerY()+120,vx:(Math.random()-.5)*560,vy:-Math.random()*460,life:2});
     $('state').textContent='GAME OVER';$('msg').textContent='THE WRONG LOCKER';$('sub').textContent='The hallway has chosen violence.';beep(92,.35,'sawtooth',.05);

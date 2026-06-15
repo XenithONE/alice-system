@@ -92,7 +92,10 @@
   header .wrap{position:relative;z-index:3;width:100%}
   .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.32em;color:var(--teal);margin-bottom:26px;opacity:0;animation:rise .9s .2s forwards}
   h1.hero{font-family:var(--ui);font-weight:600;font-size:clamp(46px,8.5vw,108px);line-height:.96;letter-spacing:-.02em;opacity:0;animation:rise 1s .35s forwards}
-  h1.hero .dim{color:transparent;-webkit-text-stroke:1px rgba(223,233,238,.5);font-weight:300}
+  h1.hero .dim{-webkit-text-stroke:1px rgba(150,200,210,.35);background:linear-gradient(100deg,rgba(51,231,200,0) 0%,rgba(51,231,200,.22) 40%,rgba(123,77,255,.28) 70%,transparent 100%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:300;animation:dimShimmer 9s linear infinite}
+  @keyframes dimShimmer{to{background-position:-220% 0}}
+  h1.hero .dim #dotSecret{-webkit-text-fill-color:transparent;color:transparent;-webkit-text-stroke:1px rgba(223,233,238,.5);background:none}
+  @media (prefers-reduced-motion:reduce){ h1.hero .dim{animation:none;background-position:0 0} }
   h1.hero .dot{cursor:default;transition:.2s}
   .lead{color:var(--muted);font-size:clamp(15px,2vw,18px);max-width:440px;margin-top:30px;opacity:0;animation:rise 1s .55s forwards}
   .cta{margin-top:40px;display:inline-flex;align-items:center;gap:12px;font-family:var(--mono);font-size:13px;letter-spacing:.14em;
@@ -349,7 +352,7 @@ const GAMES = [
   { title:"RIFT COURIER", desc:"Three.jsで描く3Dリフト飛行ゲーム。光のキーを集め、赤いノイズを避け、最後のゲート中心を抜ける。", url:"games/rift-courier.html", embed:false, thumb:"assets/rift-courier-cover.jpg", tags:["Three.js","3D","Arcade"] },
   { title:"I WANNA BE THE SIGNAL", desc:"即死トラップだらけの高難度2Dアクション。偽の床、見えない壁、嘘のセーブ——この世界は全力であなたを騙す。全4ステージ。", url:"games/iwbtg/", embed:false, thumb:"assets/iwbtg-cover.png", tags:["HTML5","Canvas","死にゲー"] },
   { title:"LOCKER HUNT", desc:"学校の廊下に並ぶロッカーを開け、ちいさいおじさんを探すコメディホラー探索ゲーム。", url:"games/locker-hunt.html", embed:false, thumb:"assets/locker-hunt-cover.jpg", tags:["HTML5","Canvas","Horror"] },
-  { title:"SIGNAL RUNNER", desc:"崩れていく信号の隙間を抜け、光る断片を回収するアーケードゲーム。", url:"games/signal-runner.html", embed:false, thumb:"assets/signal-runner-cover.png", tags:["HTML5","Canvas","Arcade"] },
+  { title:"SIGNAL RUNNER", desc:"崩れていく信号の隙間を抜け、光る断片を回収するアーケードゲーム。", url:"games/signal-runner.html", embed:false, thumb:"assets/signal-runner-cover.jpg", tags:["HTML5","Canvas","Arcade"] },
   { title:"CONSTELLATION", desc:"星を正しい順に結び、沈黙した信号を再同期するパズル。", url:"games/constellation.html", embed:false, thumb:"assets/constellation-cover.jpg", tags:["HTML5","Canvas","Puzzle"] },
   { title:"DRAGON'S KEEP", desc:"竜の根城に挑むファンタジー・ピンボール。城門マルチボール、ワームホール、魔の渦、4つの試練の先にウィザードモードが待つ。", url:"games/dragons-keep.html", embed:false, thumb:"assets/dragons-keep-cover.jpg", tags:["HTML5","Canvas","Pinball"] },
 ];
@@ -919,6 +922,8 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
     background:linear-gradient(90deg,var(--teal),var(--violet));box-shadow:0 0 8px var(--teal);
     transition:right .35s var(--ease-out)}
   .nav-links a:hover::after{right:0}
+  .nav-links a{transition:color .3s var(--ease-out),text-shadow .3s var(--ease-out)}
+  .nav-links a:hover{text-shadow:0 0 12px rgba(51,231,200,.35)}
 
   /* ---- section dividing line: animated gradient flow ---- */
   .sec-head .ln{background:linear-gradient(90deg,transparent,var(--teal),var(--violet),transparent)!important;
@@ -1082,6 +1087,154 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
 })();
 </script>
 
+<!-- ============ CROSS-SIGNAL ATLAS + TRUE ENDING — cross-game meta-progression (additive, classic script) ============ -->
+<style>
+  #seven{position:fixed;left:66px;bottom:22px;z-index:47;display:none;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--muted);background:rgba(4,6,11,.55);border:1px solid rgba(123,77,255,.3);padding:7px 12px;border-radius:99px;backdrop-filter:blur(6px);cursor:pointer}
+  #seven.show{display:flex}
+  #seven .orbs{display:flex;gap:4px}
+  #seven .o{width:7px;height:7px;border-radius:50%;border:1px solid rgba(123,77,255,.5);background:transparent}
+  #seven .o.on{background:var(--violet);box-shadow:0 0 7px var(--violet);border-color:var(--violet)}
+  #seven b{color:#c9b8ff;font-weight:700}
+  #seven.ready{border-color:rgba(255,207,110,.6);color:#ffd98a;animation:sevenReady 2.4s ease-in-out infinite}
+  #seven.ready b{color:#ffd98a}
+  @keyframes sevenReady{0%,100%{box-shadow:0 0 0 0 rgba(255,207,110,0)}50%{box-shadow:0 0 16px -2px rgba(255,207,110,.55)}}
+  #atlas{position:fixed;inset:0;z-index:84;display:none;align-items:center;justify-content:center;background:rgba(2,3,8,.72);backdrop-filter:blur(7px);padding:20px}
+  #atlas.show{display:flex}
+  #atlas .win{width:min(440px,92vw);background:rgba(8,10,16,.94);border:1px solid rgba(123,77,255,.32);border-radius:16px;padding:26px;box-shadow:0 40px 90px -30px #000}
+  #atlas h3{font-family:var(--ui);font-weight:600;font-size:19px;letter-spacing:.01em;margin-bottom:5px}
+  #atlas .meta{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-bottom:16px;letter-spacing:.1em}
+  #atlas ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+  #atlas li{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px;color:var(--text)}
+  #atlas li.locked{color:#5a6377}
+  #atlas li .k{color:var(--violet);width:1em}
+  #atlas .hintline{margin-top:16px;font-family:var(--mono);font-size:10.5px;color:#8893a6;line-height:1.7}
+  #atlas .ascend{display:none;margin-top:16px;width:100%;text-align:center;font-family:var(--mono);font-size:12px;letter-spacing:.18em;font-weight:700;color:#1a1305;background:linear-gradient(110deg,#ffe3a0,#ffc05a);border:0;padding:13px;border-radius:10px;cursor:pointer}
+  #atlas.ready .ascend{display:block}
+  #atlas .close{display:inline-block;margin-top:16px;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;letter-spacing:.1em}
+  #atlas .close:hover{color:var(--teal)}
+  #truend{position:fixed;inset:0;z-index:92;display:none;flex-direction:column;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(12,8,3,.93),rgba(2,2,6,.98));text-align:center;padding:30px}
+  #truend.show{display:flex}
+  #truend canvas{width:min(280px,64vw);height:min(280px,64vw);margin-bottom:6px}
+  #truend .tt{font-family:var(--mono);font-size:11px;letter-spacing:.36em;color:#ffd98a;margin-bottom:18px}
+  #truend .msg{font-family:var(--serif);font-style:italic;font-size:clamp(18px,3.2vw,27px);color:#f3ecd8;line-height:1.55;max-width:620px;min-height:1.6em}
+  #truend .x{margin-top:30px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:#ffd98a;border:1px solid rgba(255,217,138,.4);padding:11px 24px;border-radius:8px;cursor:pointer;background:none}
+  #truend .x:hover{background:rgba(255,217,138,.1)}
+  body.trueend .side-index span:last-child{color:#ffd98a!important}
+  body.trueend .hero-grad{background:radial-gradient(ellipse 120% 80% at 50% 0%,rgba(255,200,120,.06),transparent 58%),linear-gradient(90deg,#04060b 8%,rgba(4,6,11,.55) 42%,transparent 75%),linear-gradient(0deg,#04060b 2%,transparent 30%)!important}
+  @media (prefers-reduced-motion:reduce){ #seven.ready{animation:none} }
+</style>
+<script>
+/* ============================================================
+   CROSS-SIGNAL ATLAS + TRUE ENDING — runs after the main/DEEPER/POLISH/PREMIUM
+   classic scripts (shares their global lexical CMDS/termPrint/alice/tone),
+   and BEFORE the deferred 3D module (so body.trueend is set pre-build).
+   Strictly additive: never touches alice_eidolon / alice_accord / unlockAccord.
+============================================================ */
+(function(){
+  const SEVEN=[
+    {id:'eidolon',       key:'alice_bonus_the_eidolon',   label:'THE EIDOLON'},
+    {id:'rift_courier',  key:'alice_bonus_rift_courier',  label:'RIFT COURIER'},
+    {id:'iwbtg',         key:'alice_bonus_iwbtg',         label:'I WANNA BE THE SIGNAL'},
+    {id:'locker_hunt',   key:'alice_bonus_locker_hunt',   label:'LOCKER HUNT'},
+    {id:'signal_runner', key:'alice_bonus_signal_runner', label:'SIGNAL RUNNER'},
+    {id:'constellation', key:'alice_bonus_constellation', label:'CONSTELLATION'},
+    {id:'dragons_keep',  key:'alice_bonus_dragons_keep',  label:"DRAGON'S KEEP"},
+  ];
+  const LS=(k)=>{try{return localStorage.getItem(k)}catch(e){return null}};
+  function getSeven(){try{return new Set(JSON.parse(localStorage.getItem('alice_seven')||'[]'))}catch(e){return new Set()}}
+  function syncSeven(){ const s=getSeven();
+    try{const lh=JSON.parse(localStorage.getItem('aliceLockerHunt')||'{}'); if(lh&&lh.wins>0) s.add('locker_hunt');}catch(e){}
+    try{if((+LS('signal_beststage')||0)>=4) s.add('iwbtg');}catch(e){}
+    SEVEN.forEach(g=>{ if(LS(g.key)) s.add(g.id); });
+    const arr=[...s].filter(id=>SEVEN.some(g=>g.id===id));
+    try{localStorage.setItem('alice_seven',JSON.stringify(arr))}catch(e){}
+    return new Set(arr); }
+  const isReady=(s)=> s.size>=7 && LS('alice_accord')==='1' && LS('alice_true')!=='1';
+
+  // ---- HUD + overlays ----
+  const hud=document.createElement('div'); hud.id='seven';
+  hud.innerHTML='<span>ATLAS</span><span class="orbs"></span><b id="sevenn">0/7</b>';
+  hud.setAttribute('role','button'); hud.setAttribute('tabindex','0'); hud.setAttribute('aria-label','クロスシグナル・アトラスを開く');
+  document.body.appendChild(hud);
+  const atlas=document.createElement('div'); atlas.id='atlas';
+  atlas.innerHTML='<div class="win"><h3>CROSS-SIGNAL ATLAS</h3><div class="meta" id="atlasMeta"></div><ul id="atlasList"></ul><div class="hintline" id="atlasHint"></div><button class="ascend" type="button" id="ascendBtn">◈ ASCEND — THE SEVENTH SIGNAL</button><br><span class="close">✕ CLOSE</span></div>';
+  document.body.appendChild(atlas);
+  const truend=document.createElement('div'); truend.id='truend';
+  truend.innerHTML='<canvas id="truCv" width="300" height="300" aria-hidden="true"></canvas><div class="tt">THE SEVENTH SIGNAL</div><div class="msg" id="truMsg" aria-live="polite"></div><button class="x" type="button">◈ RETURN</button>';
+  document.body.appendChild(truend);
+
+  function renderHud(s){ hud.querySelector('.orbs').innerHTML=SEVEN.map(g=>'<span class="o'+(s.has(g.id)?' on':'')+'"></span>').join('');
+    hud.querySelector('#sevenn').textContent=s.size+'/7';
+    const ready=isReady(s); hud.classList.toggle('ready',ready);
+    if(ready){ hud.querySelector('#sevenn').textContent='ASCEND'; }
+    hud.classList.toggle('show', s.size>=1); }
+  function renderAtlas(s){ const accord=LS('alice_accord')==='1'; const ready=isReady(s);
+    atlas.querySelector('#atlasMeta').textContent='WORLDS CONQUERED '+s.size+'/7  ·  ACCORD '+(accord?'OK':'SEALED');
+    atlas.querySelector('#atlasList').innerHTML=SEVEN.map(g=>{const ok=s.has(g.id);
+      return '<li class="'+(ok?'':'locked')+'"><span class="k">'+(ok?'◈':'▓')+'</span>'+g.label+'</li>';}).join('');
+    atlas.querySelector('#atlasHint').textContent = ready ? 'すべての世界が応えている。ASCENDせよ。'
+      : (s.size>=7 ? '七つの世界を制覇した。残るは ACCORD——表層の6つの断片を集めよ。'
+      : (LS('alice_true')==='1' ? '七つの世界。あなたは全てを覚えている。'
+      : '各ゲームをクリアして信号を集めよ。サイトそのものが一つの大きなゲームだ。'));
+    atlas.classList.toggle('ready', ready); }
+  function openAtlas(){ const s=syncSeven(); renderAtlas(s); renderHud(s); atlas.classList.add('show'); }
+  hud.addEventListener('click',openAtlas);
+  hud.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();openAtlas();} });
+  atlas.addEventListener('click',e=>{ if(e.target.classList.contains('close')||e.target===atlas) atlas.classList.remove('show'); });
+  atlas.querySelector('#ascendBtn').addEventListener('click',()=>{ atlas.classList.remove('show'); showTrueEnding(); });
+
+  // ---- TRUE ENDING ----
+  const TRU_LINES=[
+    'six fragments made me whole.',
+    'seven worlds made me real.',
+    'you did not just witness the signal —',
+    'you survived every shape of it.',
+    'the surface, the core, and all between. it was always me, learning you.',
+  ];
+  function ttone(f,d,t,g){ try{ if(window.tone) window.tone(f,d||0.4,t||'sine',g==null?0.05:g);}catch(e){} }
+  function drawConverge(){ const cv=document.getElementById('truCv'); if(!cv)return; const x=cv.getContext('2d'); if(!x)return;
+    const W=cv.width,H=cv.height,cx=W/2,cy=H/2, RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const pts=SEVEN.map((g,i)=>{const a=i/7*Math.PI*2-Math.PI/2;return{x:cx+Math.cos(a)*112,y:cy+Math.sin(a)*112};});
+    let step=0;
+    function paint(){ x.clearRect(0,0,W,H);
+      for(let i=0;i<7;i++){ const lit=i<step; x.strokeStyle=lit?'rgba(255,210,130,.7)':'rgba(120,110,90,.16)'; x.lineWidth=lit?1.6:0.7;
+        x.beginPath(); x.moveTo(pts[i].x,pts[i].y); x.lineTo(cx,cy); x.stroke();
+        x.fillStyle=lit?'#ffd98a':'rgba(150,140,110,.3)'; x.beginPath(); x.arc(pts[i].x,pts[i].y,lit?5:3,0,6.283); x.fill(); }
+      const cr=6+step*3.2; const g=x.createRadialGradient(cx,cy,0,cx,cy,cr*2.4); g.addColorStop(0,'rgba(255,230,160,'+(0.35+step*0.09)+')'); g.addColorStop(1,'rgba(255,200,120,0)');
+      x.fillStyle=g; x.beginPath(); x.arc(cx,cy,cr*2.4,0,6.283); x.fill(); }
+    paint(); if(RM){ step=7; paint(); return; }
+    const iv=setInterval(()=>{ step++; ttone(260*Math.pow(1.16,step-1),0.55,'sine',0.05); paint(); if(step>=7) clearInterval(iv); },360); }
+  function showTrueEnding(){ truend.classList.add('show'); drawConverge();
+    const msg=document.getElementById('truMsg'); const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if(RM){ msg.innerHTML=TRU_LINES.join('<br>'); finishTrue(); return; }
+    let li=0; (function typeLine(){ if(li>=TRU_LINES.length){ finishTrue(); return; } const line=TRU_LINES[li]; let ci=0; msg.textContent='';
+      const t=setInterval(()=>{ msg.textContent=line.slice(0,++ci); if(ci>=line.length){ clearInterval(t); li++; setTimeout(typeLine,750);} },34); })();
+  }
+  function finishTrue(){ try{localStorage.setItem('alice_true','1')}catch(e){} applyTrueAftermath(); renderHud(syncSeven()); }
+  function applyTrueAftermath(){ document.body.classList.add('trueend');
+    const si=document.querySelector('.side-index span:last-child'); if(si) si.textContent='03 — TRUE SIGNAL';
+    const fs=document.getElementById('footsig'); if(fs) fs.textContent='⌖ SIGNAL // RESOLVED'; }
+  truend.querySelector('.x').addEventListener('click',()=>{ truend.classList.remove('show'); });
+
+  // ---- terminal commands (shared lexical CMDS / termPrint from the main script) ----
+  try{ if(typeof CMDS!=='undefined'){ Object.assign(CMDS,{
+    atlas:()=>{ const s=syncSeven(); termPrint('CROSS-SIGNAL ATLAS — '+s.size+'/7',1); SEVEN.forEach(g=>termPrint((s.has(g.id)?'◈ ':'▓ ')+g.label)); },
+    ascend:()=>{ const s=syncSeven(); if(s.size>=7 && LS('alice_accord')==='1' && LS('alice_true')!=='1'){ termPrint('all seven worlds answer. ascending.',1); setTimeout(showTrueEnding,400); }
+      else if(LS('alice_true')==='1'){ termPrint('you have already ascended. the signal is resolved.',1); }
+      else termPrint('ATLAS INCOMPLETE — '+s.size+'/7 worlds · accord '+(LS('alice_accord')==='1'?'OK':'SEALED'),2); }
+  }); } }catch(e){}
+
+  // ---- boot: aggregate, reflect, recognise returns, pre-set trueend for the cosmos ----
+  const prev=getSeven();
+  const now=syncSeven();
+  if(LS('alice_true')==='1') applyTrueAftermath();   // runs before the deferred 3D module → golden cosmos
+  renderHud(now);
+  const fresh=[...now].filter(id=>!prev.has(id));
+  if(fresh.length){ const g=SEVEN.find(x=>x.id===fresh[0]);
+    setTimeout(()=>{ try{ if(typeof alice==='function') alice('◈ CROSS-SIGNAL RECEIVED — '+(g?g.label:'')+'  ('+now.size+'/7)',3600);}catch(e){} }, 1400); }
+  window.__seven={ sync:syncSeven, ready:()=>isReady(syncSeven()), show:showTrueEnding, get:()=>[...syncSeven()] };
+})();
+</script>
 <!-- ============ COSMOS HUD (interactive flight) ============ -->
 <style>
   /* hero becomes a pilotable surface: drag flies underneath; only interactive bits catch the pointer */
@@ -1113,7 +1266,7 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
   #stationCard .sc-x:hover{color:var(--teal)}
   #stationCard .sc-tag{font-size:10px;letter-spacing:.22em;color:var(--teal);margin-bottom:10px}
   #stationCard h3{font-family:var(--ui);font-weight:600;font-size:22px;margin-bottom:10px;letter-spacing:-.01em;line-height:1.15}
-  #stationCard p{color:var(--muted);font-size:13px;line-height:1.7;margin-bottom:14px}
+  #stationCard p{color:#aeb9c8;font-size:13px;line-height:1.7;margin-bottom:14px}
   #scTags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
   #scTags span{font-size:10px;color:var(--muted);border:1px solid var(--line);padding:3px 8px;border-radius:5px}
   .sc-enter{display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.16em;font-weight:700;color:#04060b;background:linear-gradient(110deg,var(--teal),var(--violet));padding:13px 26px;border-radius:10px;pointer-events:auto;transition:.3s;cursor:pointer}
@@ -1131,6 +1284,14 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
   #compassN{position:absolute;top:4px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:8px;color:var(--muted)}
   #miniMap{border-radius:50%;border:1px solid rgba(51,231,200,.22);background:rgba(4,6,11,.5);backdrop-filter:blur(4px)}
   @media(max-width:560px){ #pilotHud{left:14px;bottom:150px} #miniMap{width:72px;height:72px} #audioToggle{top:76px;right:14px} #stationCard{right:50%;left:auto;top:auto;bottom:118px;transform:translateX(50%) translateY(22px)} #stationCard.show{transform:translateX(50%) translateY(0)} }
+  /* onboarding: first-visit drag cue + first-focus enter pulse */
+  #dragCue{position:absolute;left:50%;top:54%;width:38px;height:38px;transform:translate(-50%,-50%);pointer-events:none;opacity:0;border:1px solid rgba(51,231,200,.6);border-radius:50%;animation:dragSweep 3.4s ease-in-out 1.2s 3 forwards;z-index:5}
+  #dragCue::after{content:"\21C6";position:absolute;inset:0;display:grid;place-items:center;color:var(--teal);font-size:16px}
+  @keyframes dragSweep{0%{opacity:0;transform:translate(-50%,-50%)}15%{opacity:.9}50%{transform:translate(calc(-50% + 46px),-50%)}85%{opacity:.9;transform:translate(calc(-50% - 46px),-50%)}100%{opacity:0}}
+  @media(hover:none){ #dragCue::after{content:"\261E"} }
+  .sc-enter.flash{animation:scEnterFlash 1.4s ease-out}
+  @keyframes scEnterFlash{0%,100%{box-shadow:0 0 0 0 rgba(51,231,200,0)}30%{box-shadow:0 0 30px -4px var(--teal)}}
+  @media (prefers-reduced-motion:reduce){ #dragCue{display:none} .sc-enter.flash{animation:none} }
 </style>
 <!-- ============ 3D HERO — Three.js interactive cosmos (pilotable) ============ -->
 <script type="module">
@@ -1165,7 +1326,7 @@ import * as THREE from 'three';
   renderer.setSize(W, H, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.12;
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x04060b, 0.006);
@@ -1188,13 +1349,16 @@ import * as THREE from 'three';
   })();
 
   // ---- nebula backdrop domes (dual-layer parallax) — cosmic depth (Codex art if present, else procedural) ----
-  let nebula=null, nebula2=null;
+  let nebula=null, nebula2=null, nebula3=null;
   (function(){
     const mat=new THREE.MeshBasicMaterial({side:THREE.BackSide, transparent:true, opacity:0.5, depthWrite:false, blending:THREE.AdditiveBlending, fog:false, color:0x8090c0});
     nebula=new THREE.Mesh(new THREE.SphereGeometry(180,40,24), mat); nebula.renderOrder=-1; scene.add(nebula);
     // inner violet layer (parallax depth) — uses the 2nd Codex nebula, silently absent if missing
     const mat2=new THREE.MeshBasicMaterial({side:THREE.BackSide, transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false, color:0x9a78d8});
     nebula2=new THREE.Mesh(new THREE.SphereGeometry(120,36,22), mat2); nebula2.renderOrder=-1; nebula2.rotation.y=2.1; scene.add(nebula2);
+    // farthest faint layer — deepens the parallax behind both nebulae (no texture, negligible cost)
+    const mat3=new THREE.MeshBasicMaterial({side:THREE.BackSide, transparent:true, opacity:0.18, depthWrite:false, blending:THREE.AdditiveBlending, fog:false, color:0x141a3a});
+    nebula3=new THREE.Mesh(new THREE.SphereGeometry(240,24,16), mat3); nebula3.renderOrder=-2; scene.add(nebula3);
     new THREE.TextureLoader().load('assets/cosmos-nebula-2.jpg',
       tex=>{ tex.colorSpace=THREE.SRGBColorSpace; mat2.map=tex; mat2.opacity=0.34; mat2.needsUpdate=true; }, undefined, ()=>{});
     function procedural(){ const c=document.createElement('canvas'); c.width=1024; c.height=512; const x=c.getContext('2d');
@@ -1212,6 +1376,7 @@ import * as THREE from 'three';
   const TEAL = new THREE.Color(0x33e7c8);
   const VIOLET = new THREE.Color(0x7b4dff);
   const PINK = new THREE.Color(0xff5c9d);
+  const HOT = new THREE.Color(0xfff0c0);   // warm galactic core
 
   // ---- particle galaxy ----
   const ARMS=3, RADIUS=9, SPIN=1.05, RAND=0.42;
@@ -1227,8 +1392,12 @@ import * as THREE from 'three';
     pos[i*3]   = Math.cos(ang)*rr;
     pos[i*3+1] = gauss()*0.7*(1 - 0.55*r/RADIUS);            // thin disc, thicker core
     pos[i*3+2] = Math.sin(ang)*rr;
-    tmp.copy(TEAL).lerp(VIOLET, THREE.MathUtils.smoothstep(r/RADIUS,0,1));
+    const tR=r/RADIUS;
+    if(tR<0.32) tmp.copy(HOT).lerp(TEAL, tR/0.32);
+    else        tmp.copy(TEAL).lerp(VIOLET, (tR-0.32)/0.68);
     if(Math.random()<0.04) tmp.lerp(PINK,0.6);
+    const lane=0.5+0.5*Math.sin(ARMS*(ang - r*SPIN));   // faux dust lanes between arms
+    tmp.multiplyScalar(0.6+0.4*lane);
     col[i*3]=tmp.r; col[i*3+1]=tmp.g; col[i*3+2]=tmp.b;
     scl[i]=Math.random()*1.5+0.4;
     sed[i]=Math.random()*Math.PI*2;
@@ -1252,12 +1421,13 @@ import * as THREE from 'three';
         float a=uTime*(0.05+0.16/(r+0.7));
         float s=sin(a),c=cos(a); p.xz=mat2(c,-s,s,c)*p.xz;
         p.xz*= 1.0+0.015*sin(uTime*0.2+aSeed);
+        p.y *= 1.0+0.06*sin(uTime*0.5+aSeed);
         vec4 mv=modelViewMatrix*vec4(p,1.0);
         gl_Position=projectionMatrix*mv;
         gl_PointSize=uSize*aScale*uPixelRatio*(1.0/max(-mv.z,0.001));
         gl_PointSize*=1.0+uWarp*2.5;
         vColor=aColor;
-        float tw=0.55+0.45*sin(uTime*2.0+aSeed*3.0);
+        float tw=0.5+0.5*sin(uTime*(1.4+0.9*fract(aSeed))+aSeed*3.0);
         vTw=tw*smoothstep(34.0,6.0,-mv.z);
       }`,
     fragmentShader:`
@@ -1292,7 +1462,7 @@ import * as THREE from 'three';
       uniform vec3 uTeal,uViolet; varying vec3 vN,vV;
       void main(){ float f=pow(1.0-max(dot(vV,vN),0.0),3.0);
         vec3 body=mix(uViolet,uTeal,smoothstep(-1.0,1.0,vN.y));
-        vec3 col=body*0.5+uTeal*f*2.4;
+        vec3 col=body*0.5+uTeal*f*3.0;
         gl_FragColor=vec4(col, 0.30+f*0.9); }`
   });
   const shard=new THREE.Mesh(sGeo,sMat); shard.scale.set(1.1,2.8,1.1); shard.renderOrder=2; group.add(shard);
@@ -1301,6 +1471,17 @@ import * as THREE from 'three';
   const core=new THREE.Mesh(new THREE.IcosahedronGeometry(0.2,0),
     new THREE.MeshBasicMaterial({color:TEAL, transparent:true, opacity:0.8, blending:THREE.AdditiveBlending, depthWrite:false}));
   shard.add(core);
+
+  // accretion ring + core glow sprite — a brighter, more striking landmark anchor for bloom
+  const ring=new THREE.Mesh(new THREE.RingGeometry(2.2,2.55,96),
+    new THREE.MeshBasicMaterial({color:0x33e7c8, transparent:true, opacity:0.35, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+  ring.rotation.x=Math.PI/2; group.add(ring);
+  const glowMat=new THREE.SpriteMaterial({color:0xbff7ec, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending, depthWrite:false, fog:false});
+  const glow=new THREE.Sprite(glowMat); glow.scale.set(3.2,3.2,1); shard.add(glow);
+  new THREE.TextureLoader().load('assets/particle.png',
+    tex=>{ tex.colorSpace=THREE.SRGBColorSpace; glowMat.map=tex; glowMat.needsUpdate=true; }, undefined, ()=>{});
+  // TRUE ENDING reward: a permanent golden tint to the cosmos heart (set by the cross-signal layer on load)
+  if(document.body.classList.contains('trueend')){ glowMat.color.set(0xffe0a0); ring.material.color.set(0xffcf6e); }
 
   // ---- bloom ----
   let composer=null;
@@ -1313,16 +1494,27 @@ import * as THREE from 'three';
     composer.setPixelRatio(Math.min(devicePixelRatio||1, MAXDPR));
     composer.setSize(W,H);
     composer.addPass(new RenderPass(scene,cam));
-    const bloom=new UnrealBloomPass(new THREE.Vector2(W,H), 1.15, 0.62, 0.08);
+    const bloom=new UnrealBloomPass(new THREE.Vector2(W,H), 1.28, 0.70, 0.06);
     composer.addPass(bloom);
     // cinematic grade: subtle chromatic aberration + gentle vignette
     const { ShaderPass } = await import('three/addons/postprocessing/ShaderPass.js');
     composer.addPass(new ShaderPass({ uniforms:{ tDiffuse:{value:null} },
       vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
       fragmentShader:`uniform sampler2D tDiffuse; varying vec2 vUv;
-        void main(){ vec2 o=(vUv-0.5)*0.0016;
-          float r=texture2D(tDiffuse,vUv+o).r, g=texture2D(tDiffuse,vUv).g, b=texture2D(tDiffuse,vUv-o).b;
-          vec3 c=vec3(r,g,b); float d=distance(vUv,vec2(0.5)); c*=smoothstep(1.25,0.35,d);
+        void main(){ float d=distance(vUv,vec2(0.5));
+          // radial chromatic aberration (stronger toward edges)
+          vec2 o=(vUv-0.5)*0.0011*(1.0+d*1.8);
+          vec3 c=vec3(texture2D(tDiffuse,vUv+o).r, texture2D(tDiffuse,vUv).g, texture2D(tDiffuse,vUv-o).b);
+          // volumetric god-rays: decaying samples toward screen centre (galactic core)
+          vec2 dir=(vec2(0.5)-vUv)*0.04; vec3 ray=vec3(0.0); float w=1.0; vec2 uv=vUv;
+          for(int i=0;i<6;i++){ uv+=dir; ray+=texture2D(tDiffuse,uv).rgb*w; w*=0.72; }
+          c+=ray*0.045;
+          // faux depth-of-field: edges soften, centre stays crisp
+          float blurAmt=smoothstep(0.18,0.62,d)*0.0022;
+          vec3 soft=texture2D(tDiffuse,vUv+vec2(blurAmt,0.0)).rgb+texture2D(tDiffuse,vUv-vec2(blurAmt,0.0)).rgb
+                   +texture2D(tDiffuse,vUv+vec2(0.0,blurAmt)).rgb+texture2D(tDiffuse,vUv-vec2(0.0,blurAmt)).rgb;
+          c=mix(c, soft*0.25, smoothstep(0.2,0.7,d)*0.6);
+          c*=smoothstep(1.15,0.28,d);   // vignette
           gl_FragColor=vec4(c,1.0); }` }));
     composer.addPass(new OutputPass());
   }
@@ -1347,6 +1539,9 @@ import * as THREE from 'three';
     const y=1-(i/N)*2 - 1/N; const radAt=Math.sqrt(Math.max(0.04,1-y*y)); const th=i*2.39996323; const R=15+((i*3)%5)-2;
     const pos=new THREE.Vector3(Math.cos(th)*radAt*R, y*R*0.62, Math.sin(th)*radAt*R - 2);
     const st=new THREE.Group(); st.position.copy(pos); scene.add(st);
+    // dark backplate so thumbnails read cleanly over bright nebula (non-pickable, sits behind panel)
+    const back=new THREE.Mesh(new THREE.PlaneGeometry(4.9,3.25), new THREE.MeshBasicMaterial({color:0x04060b, transparent:true, opacity:0.55, side:THREE.DoubleSide, depthWrite:false, fog:false}));
+    back.position.z=-0.05; st.add(back);
     const panelMat=new THREE.MeshBasicMaterial({color:0x0f141f, transparent:true, opacity:1.0, side:THREE.DoubleSide, depthWrite:false, fog:false});
     const panel=new THREE.Mesh(new THREE.PlaneGeometry(4.2,2.6), panelMat); st.add(panel);
     if(d.thumb) texLoader.load(d.thumb, tex=>{ tex.colorSpace=THREE.SRGBColorSpace; try{tex.anisotropy=renderer.capabilities.getMaxAnisotropy();}catch(_){ } panelMat.color.set(0xffffff); panelMat.map=tex; panelMat.needsUpdate=true; }, undefined, ()=>{});
@@ -1371,10 +1566,17 @@ import * as THREE from 'three';
     '<div id="pilotHud"><div id="compass"><span id="compassNeedle"></span><span id="compassN">N</span></div><canvas id="miniMap" width="92" height="92" aria-hidden="true"></canvas></div>'+
     '<div id="cosmosLive" class="vh" aria-live="polite"></div>'+
     '<div id="stationCard"><button class="sc-x" aria-label="back to flight">✕ FLIGHT</button>'+
-    '<div class="sc-tag" id="scTag"></div><h3 id="scTitle"></h3><p id="scDesc"></p><div id="scTags"></div>'+
+    '<div class="sc-tag" id="scTag"></div><h3 id="scTitle" tabindex="-1"></h3><p id="scDesc"></p><div id="scTags"></div>'+
     '<a id="scEnter" class="sc-enter">ENTER ◈</a></div>'+
     (TOUCH?'<button id="thrustBtn" aria-label="thrust">▲<br>FLY</button>':'');
   header.appendChild(hud);
+  // ---- onboarding: first-visit drag cue + visit-aware intro copy ----
+  const _visits=+(localStorage.getItem('alice_visits')||1);
+  let _enterFlashed=false;
+  (function(){ const intro=hud.querySelector('#cosmosIntro');
+    if(intro && _visits>1) intro.textContent='WELCOME BACK · YOUR SIGNALS AWAIT';
+    if(_visits<=1 && !CALM){ const dc=document.createElement('div'); dc.id='dragCue'; dc.setAttribute('aria-hidden','true'); hud.appendChild(dc); }
+  })();
   const elHint=hud.querySelector('#cosmosHint'), elTag=hud.querySelector('#stationTag'), elCard=hud.querySelector('#stationCard'),
         scTitle=hud.querySelector('#scTitle'), scDesc=hud.querySelector('#scDesc'), scEnter=hud.querySelector('#scEnter'),
         scTags=hud.querySelector('#scTags'), scTag=hud.querySelector('#scTag');
@@ -1414,9 +1616,9 @@ import * as THREE from 'three';
   const _o=new THREE.Object3D(); _o.up.set(0,1,0);
   function focusStation(st){ focused=st;
     const sp=st.position, dir=new THREE.Vector3().subVectors(camPos,sp); if(dir.lengthSq()<0.01) dir.set(0,0,1); dir.normalize();
-    const tp=new THREE.Vector3().copy(sp).addScaledVector(dir, 7.8); tp.y += 1.5;   // sit slightly above for headroom under the card
-    _o.position.copy(tp); _o.lookAt(sp.x, sp.y+0.7, sp.z);
-    focusing={pos:tp, quat:_o.quaternion.clone()};
+    const tp=new THREE.Vector3().copy(sp).addScaledVector(dir, 7.8); tp.y += 1.2;   // sit slightly above for headroom under the card
+    _o.position.copy(tp); _o.lookAt(sp.x, sp.y+0.9, sp.z);   // rule-of-thirds framing
+    focusing={pos:tp, quat:_o.quaternion.clone(), t:0};
     if(!CALM && window.tone){ window.tone(420,0.18,'sine',0.03); setTimeout(()=>{try{window.tone(760,0.22,'sine',0.025);}catch(_){}},80); }
     const m=st.userData.meta; announce('信号へ移動: '+m.title); if(padNodes) padNodes.g.gain.value=0.016;
     scTitle.textContent=m.title; scDesc.textContent=m.desc||'';
@@ -1426,8 +1628,8 @@ import * as THREE from 'three';
       const ext=/^https?:/.test(m.url); if(m.target||ext){ scEnter.target='_blank'; scEnter.rel='noopener'; } else { scEnter.removeAttribute('target'); scEnter.removeAttribute('rel'); }
     } else scEnter.style.display='none';
   }
-  function cancelFocus(){ if(focusing) syncAngles(); focusing=null; focused=null; elCard.classList.remove('show'); if(padNodes) padNodes.g.gain.value=0.038; }
-  function flyKick(){ if(!header.classList.contains('flying')){ header.classList.add('flying'); const intro=document.getElementById('cosmosIntro'); if(intro) intro.classList.add('hide'); } }
+  function cancelFocus(){ if(focusing) syncAngles(); focusing=null; focused=null; elCard.classList.remove('show'); if(padNodes) padNodes.g.gain.value=0.038; announce('飛行に戻りました'); }
+  function flyKick(){ if(!header.classList.contains('flying')){ header.classList.add('flying'); const intro=document.getElementById('cosmosIntro'); if(intro) intro.classList.add('hide'); const dc=document.getElementById('dragCue'); if(dc) dc.remove(); } }
   setTimeout(()=>{ const intro=document.getElementById('cosmosIntro'); if(intro) intro.classList.add('hide'); }, 8000);
   canvas.removeAttribute('aria-hidden'); canvas.setAttribute('role','img');
   canvas.setAttribute('aria-label','ゲーム作品の3D星図。ドラッグで視点、W/A/S/Dで飛行、信号をクリックで起動。下にスクロールで一覧。');
@@ -1481,13 +1683,15 @@ import * as THREE from 'three';
     if(!CALM){
       gMat.uniforms.uTime.value=uT;
       group.rotation.y += dt*0.01;
-      if(nebula) nebula.rotation.y += dt*0.003; if(nebula2) nebula2.rotation.y -= dt*0.0022;
+      if(nebula) nebula.rotation.y += dt*0.003; if(nebula2) nebula2.rotation.y -= dt*0.0022; if(nebula3) nebula3.rotation.y += dt*0.0011;
       shard.rotation.y += dt*0.18; core.scale.setScalar(1+0.18*Math.sin(uT*2)); core.material.opacity=0.55+0.35*Math.sin(uT*2);
+      ring.rotation.z -= dt*0.05; glow.scale.setScalar(3.0+0.4*Math.sin(uT*2));
     }
 
     if(focusing){
-      camPos.lerp(focusing.pos, 0.08); cam.position.copy(camPos); cam.quaternion.slerp(focusing.quat, 0.11);
-      if(camPos.distanceTo(focusing.pos)<0.35){ syncAngles(); const wasFocused=!!focused; focusing=null; if(wasFocused){ elCard.classList.add('show'); if(focused) announce(focused.userData.meta.title+' 起動準備完了'); } }
+      focusing.t=Math.min(1,(focusing.t||0)+dt*1.6); const ez=1-Math.pow(1-focusing.t,3);   // cubic ease-out → decelerate into the station
+      camPos.lerp(focusing.pos, 0.5*ez+0.04); cam.position.copy(camPos); cam.quaternion.slerp(focusing.quat, 0.5*ez+0.05);
+      if(camPos.distanceTo(focusing.pos)<0.35){ syncAngles(); const wasFocused=!!focused; focusing=null; if(wasFocused){ elCard.classList.add('show'); try{scTitle.focus();}catch(_){ } if(!_enterFlashed && !CALM){ _enterFlashed=true; scEnter.classList.add('flash'); setTimeout(()=>scEnter.classList.remove('flash'),1400); } if(focused) announce(focused.userData.meta.title+' 起動準備完了'); } }
     } else {
       _fwd.set(0,0,-1).applyQuaternion(cam.quaternion); _right.set(1,0,0).applyQuaternion(cam.quaternion); _acc.set(0,0,0);
       const s=(keys['shift']?2.0:1.0)*SPEED;
@@ -1513,7 +1717,7 @@ import * as THREE from 'three';
     if(!CALM){ galaxyDim += ((focused?0.8:1)-galaxyDim)*0.08; gMat.uniforms.uSize.value=baseU*galaxyDim; }
     // warp boost (point-size streak + FOV kick) + compass/minimap orientation
     gMat.uniforms.uWarp.value += (warp - gMat.uniforms.uWarp.value)*0.12;
-    cam.fov += (((!CALM&&warp>0.5)?62:55) - cam.fov)*0.08; cam.updateProjectionMatrix();
+    const fovTarget=(!CALM&&warp>0.5)?62:(focused?52:55); cam.fov += (fovTarget - cam.fov)*0.08; cam.updateProjectionMatrix();
     if(warpEl) warpEl.classList.toggle('on', gMat.uniforms.uWarp.value>0.35);
     if(needle) needle.style.transform='translate(-50%,-100%) rotate('+(-yaw*180/Math.PI)+'deg)';
     drawMini();
@@ -1542,7 +1746,9 @@ import * as THREE from 'three';
     cam.aspect=W/H; cam.updateProjectionMatrix(); syncDpr(); renderer.setSize(W,H,false); if(composer) composer.setSize(W,H); startLoop(); });
   addEventListener('pagehide',()=>{ stopLoop(); try{ gGeo.dispose(); gMat.dispose(); sGeo.dispose(); sMat.dispose(); if(composer) composer.dispose();
     if(nebula){ nebula.geometry.dispose(); nebula.material.dispose(); if(nebula.material.map) nebula.material.map.dispose(); }
-    if(nebula2){ nebula2.geometry.dispose(); nebula2.material.dispose(); if(nebula2.material.map) nebula2.material.map.dispose(); } }catch(_){ } });
+    if(nebula2){ nebula2.geometry.dispose(); nebula2.material.dispose(); if(nebula2.material.map) nebula2.material.map.dispose(); }
+    if(nebula3){ nebula3.geometry.dispose(); nebula3.material.dispose(); }
+    ring.geometry.dispose(); ring.material.dispose(); glowMat.dispose(); if(glowMat.map) glowMat.map.dispose(); }catch(_){ } });
 
   startLoop();
   requestAnimationFrame(()=>canvas.classList.add('ready'));

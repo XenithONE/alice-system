@@ -52,6 +52,7 @@ function spr(name, frame, dx, dy, dw, dh, flip) {
 
 /* ---------- サウンド ---------- */
 let actx = null, mute = localStorage.getItem('signal_mute') === '1';
+let musicMute = localStorage.getItem('signal_music') === '1';   // [N]トグル（'1'=BGM OFF）
 function tone(f, d = 0.08, type = 'square', g = 0.04) {
   if (mute) return;
   try {
@@ -62,6 +63,47 @@ function tone(f, d = 0.08, type = 'square', g = 0.04) {
     const t = actx.currentTime;
     gn.gain.setValueAtTime(0, t); gn.gain.linearRampToValueAtTime(g, t + 0.01);
     gn.gain.exponentialRampToValueAtTime(0.0001, t + d); o.start(t); o.stop(t + d);
+  } catch (e) {}
+}
+
+/* ---------- 追加: 手続き的BGM（WebAudioシンセ。state==='play' && !mute && !musicMute のみ発音） ----------
+   ・既存 actx を共有（第2のAudioContextは作らない）
+   ・musicGain 経由で短いベース＋アルペジオのループを setInterval で駆動
+   ・厳格ゲート: play 以外（title/card/pause/dead/stageclear/clear）では一切鳴らさない
+   ・物理/update には一切触れない（純粋にオーディオのみ） */
+let musicGain = null, musicTimer = null, musicStep = 0;
+const MUSIC_BPM = 132;                                   // 1/8音符ステップ間隔の基準
+const MUSIC_INT = (60000 / MUSIC_BPM) / 2;               // 8分音符（ms）
+const MUSIC_BASS = [55.00, 55.00, 65.41, 49.00];         // A1 A1 C2 G1（小節ごと）
+const MUSIC_ARP  = [220.00, 261.63, 329.63, 392.00,      // A3 C4 E4 G4 …
+                    329.63, 261.63, 392.00, 523.25];     // E4 C4 G4 C5
+function musicVoice(freq, dur, type, gain) {
+  try {
+    const o = actx.createOscillator(), gn = actx.createGain();
+    o.type = type; o.frequency.value = freq; o.connect(gn); gn.connect(musicGain);
+    const t = actx.currentTime;
+    gn.gain.setValueAtTime(0, t); gn.gain.linearRampToValueAtTime(gain, t + 0.012);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.start(t); o.stop(t + dur);
+  } catch (e) {}
+}
+function musicTick() {
+  // 厳格ゲート: play 以外、またはミュート時は無音（タイマーは回り続けるが発音しない）
+  if (state !== 'play' || mute || musicMute || !actx || !musicGain) return;
+  const step = musicStep % 8;
+  if (step === 0) musicVoice(MUSIC_BASS[(musicStep >> 3) % MUSIC_BASS.length], 0.42, 'triangle', 0.16);
+  if (step % 2 === 0) musicVoice(MUSIC_BASS[(musicStep >> 3) % MUSIC_BASS.length] * 2, 0.16, 'square', 0.05);
+  musicVoice(MUSIC_ARP[step], 0.20, 'square', 0.045);
+  musicStep++;
+}
+function startMusic() {
+  // 最初のジェスチャ後（actx.resume 済み）に遅延起動。多重起動はしない。
+  if (musicTimer || !actx) return;
+  try {
+    musicGain = actx.createGain();
+    musicGain.gain.value = 0.5;
+    musicGain.connect(actx.destination);
+    musicStep = 0;
+    musicTimer = setInterval(musicTick, MUSIC_INT);
   } catch (e) {}
 }
 
@@ -116,6 +158,7 @@ let combo = 0;                                    // ノーデス連続クリア
 let bestCombo = parseInt(localStorage.getItem('signal_bestcombo'), 10) || 0;
 let bestTime = parseFloat(localStorage.getItem('signal_besttime')) || 0;
 let bestStage = parseInt(localStorage.getItem('signal_beststage'), 10) || 0;
+let seenOnboard = localStorage.getItem('signal_seen') === '1';   // 初回オンボーディングカード既読フラグ（表示専用）
 
 const keyOf = (tx, ty) => tx + ',' + ty;
 const isSolid = (tx, ty) => solid.has(keyOf(tx, ty));
@@ -199,9 +242,16 @@ addEventListener('keydown', e => {
     if (e.key >= '1' && e.key <= '9') { const n = +e.key - 1; if (n < DEFS.length) { loadStage(n); return; } }
     if (e.key === 'g' || e.key === 'G') { god = !god; toastMsg(god ? 'GOD ON' : 'GOD OFF'); return; }
   }
+  // BGMトグル [N]（state不問・どの画面でも切替可。発音ゲートは musicTick 側が担保）
+  if (e.key === 'n' || e.key === 'N') {
+    musicMute = !musicMute; localStorage.setItem('signal_music', musicMute ? '1' : '0');
+    toastMsg(musicMute ? 'MUSIC OFF' : 'MUSIC ON'); startMusic(); return;
+  }
   if (state === 'title') {
     if (e.key === '0' && stageIdx > 0) { loadStage(0, true); toastMsg('PROGRESS RESET'); return; }
-    state = 'card'; cardT = 1.2; tone(660, .1, 'square', .05); return;
+    try { localStorage.setItem('signal_seen', '1'); } catch (e2) {}   // 初回オンボーディングカードを既読化
+    seenOnboard = true;
+    state = 'card'; cardT = 1.2; tone(660, .1, 'square', .05); startMusic(); return;
   }
   if (state === 'clear') {
     if (e.key === 'r' || e.key === 'R') { loadStage(0); runT = 0; }
@@ -210,10 +260,10 @@ addEventListener('keydown', e => {
   // 一時停止トグル（ESC / P）— update() は 'pause' で即 return するため物理は完全停止
   if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
     if (state === 'play') { state = 'pause'; tone(330, .06, 'sine', .04); return; }
-    if (state === 'pause') { state = 'play'; tone(440, .06, 'sine', .04); return; }
+    if (state === 'pause') { state = 'play'; tone(440, .06, 'sine', .04); startMusic(); return; }
   }
   // ミュートは play/dead/pause で有効（一時停止画面からも切替可）
-  if (e.key === 'm' || e.key === 'M') { mute = !mute; localStorage.setItem('signal_mute', mute ? '1' : '0'); toastMsg(mute ? 'MUTE ON' : 'MUTE OFF'); return; }
+  if (e.key === 'm' || e.key === 'M') { mute = !mute; localStorage.setItem('signal_mute', mute ? '1' : '0'); toastMsg(mute ? 'MUTE ON' : 'MUTE OFF'); startMusic(); return; }
   if (state === 'pause') return;   // 一時停止中はジャンプ等のゲーム入力を無視
   if (state !== 'play' && state !== 'dead') return;
   if (e.key === 'r' || e.key === 'R') { if (state === 'play') { if (god) respawn(); else die(); } return; }
@@ -392,6 +442,7 @@ function update(dt) {
     if (clearT <= 0) {
       if (stageIdx + 1 < DEFS.length) loadStage(stageIdx + 1);
       else { state = 'clear'; localStorage.setItem('signal_stage', 0);
+        try{localStorage.setItem('alice_bonus_iwbtg','1');}catch(e){}
         if (bestTime === 0 || runT < bestTime) { bestTime = runT; localStorage.setItem('signal_besttime', runT.toFixed(2)); } }
     }
     return;
@@ -741,18 +792,41 @@ function render() {
     ctx.fillText('AlicE sYsTeM // game lab — ' + DEFS.length + ' STAGES OF PAIN', VIEW_W / 2, VIEW_H / 2 - 40);
     ctx.fillStyle = 'rgba(234,244,242,.75)'; ctx.font = '700 14px "Courier New",monospace';
     ctx.fillText('← → MOVE   Z / SPACE JUMP ×2   R RETRY   M MUTE   ESC PAUSE', VIEW_W / 2, VIEW_H / 2 + 14);
+    ctx.fillStyle = C.teal; ctx.font = '700 12px "Courier New",monospace';
+    ctx.fillText('[N] MUSIC ' + (musicMute ? 'OFF' : 'ON') + '   ·   [M] SOUND ' + (mute ? 'OFF' : 'ON'), VIEW_W / 2, VIEW_H / 2 + 34);
     if (stageIdx > 0) {
-      ctx.fillStyle = C.teal;
-      ctx.fillText('CONTINUE: STAGE ' + (stageIdx + 1) + '   (0キーで最初から)', VIEW_W / 2, VIEW_H / 2 + 44);
+      ctx.fillStyle = C.teal; ctx.font = '700 14px "Courier New",monospace';
+      ctx.fillText('CONTINUE: STAGE ' + (stageIdx + 1) + '   (0キーで最初から)', VIEW_W / 2, VIEW_H / 2 + 56);
     }
-    ctx.fillStyle = C.teal;
-    ctx.fillText(Math.sin(time * 4) > 0 ? '— PRESS ANY KEY —' : '', VIEW_W / 2, VIEW_H / 2 + 80);
+    ctx.fillStyle = C.teal; ctx.font = '700 14px "Courier New",monospace';
+    ctx.fillText(Math.sin(time * 4) > 0 ? '— PRESS ANY KEY —' : '', VIEW_W / 2, VIEW_H / 2 + 86);
     ctx.fillStyle = C.red; ctx.font = '700 12px "Courier New",monospace';
-    ctx.fillText('警告: この世界はあなたを騙します。全てを疑え。', VIEW_W / 2, VIEW_H / 2 + 116);
+    ctx.fillText('警告: この世界はあなたを騙します。全てを疑え。', VIEW_W / 2, VIEW_H / 2 + 120);
     if (bestStage > 0) {
       ctx.fillStyle = 'rgba(51,231,200,.7)'; ctx.font = '700 12px "Courier New",monospace';
       const bt = bestTime ? '  BEST ' + Math.floor(bestTime / 60) + ':' + (bestTime % 60).toFixed(1).padStart(4, '0') : '';
-      ctx.fillText('BEST  STAGE ' + bestStage + ' / ' + DEFS.length + bt, VIEW_W / 2, VIEW_H / 2 + 142);
+      ctx.fillText('BEST  STAGE ' + bestStage + ' / ' + DEFS.length + bt, VIEW_W / 2, VIEW_H / 2 + 144);
+    }
+    // 初回オンボーディングカード（signal_seen 未設定時のみ・1回だけ前面に提示。表示専用で状態/入力は変えない）
+    if (!seenOnboard) {
+      const cw = 620, ch = 300, cx = (VIEW_W - cw) / 2, cy = (VIEW_H - ch) / 2;
+      ctx.fillStyle = 'rgba(4,6,11,.96)'; ctx.fillRect(cx, cy, cw, ch);
+      ctx.strokeStyle = C.violet; ctx.lineWidth = 2; ctx.strokeRect(cx + 1, cy + 1, cw - 2, ch - 2);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.teal; ctx.font = '700 18px "Courier New",monospace';
+      ctx.fillText('はじめに — WELCOME, SIGNAL', VIEW_W / 2, cy + 40);
+      ctx.fillStyle = C.red; ctx.font = '700 15px "Courier New",monospace';
+      ctx.fillText('セーブもゴールも嘘をつく — 全てを疑え', VIEW_W / 2, cy + 80);
+      ctx.fillStyle = 'rgba(234,244,242,.85)'; ctx.font = '700 13px "Courier New",monospace';
+      ctx.fillText('一見安全なブロック・セーブ・ゴールが即死トラップのことがある。', VIEW_W / 2, cy + 108);
+      ctx.fillText('だが恐れるな — 死んでも即リトライ。死んで覚えるゲームだ。', VIEW_W / 2, cy + 132);
+      ctx.fillStyle = C.ink; ctx.font = '700 15px "Courier New",monospace';
+      ctx.fillText('◆ ← →  : 移動', VIEW_W / 2, cy + 176);
+      ctx.fillText('◆ Z / SPACE  : ジャンプ（空中でもう1回＝2段ジャンプ）', VIEW_W / 2, cy + 204);
+      ctx.fillStyle = 'rgba(234,244,242,.55)'; ctx.font = '700 12px "Courier New",monospace';
+      ctx.fillText('R リトライ ・ M サウンド ・ N BGM ・ ESC ポーズ', VIEW_W / 2, cy + 240);
+      ctx.fillStyle = C.teal; ctx.font = '700 14px "Courier New",monospace';
+      ctx.fillText('— PRESS ANY KEY TO BEGIN —', VIEW_W / 2, cy + ch - 24);
     }
   } else if (state === 'card') {
     ctx.fillStyle = 'rgba(4,6,11,.78)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -773,7 +847,7 @@ function render() {
     ctx.fillStyle = 'rgba(234,244,242,.8)';
     ctx.fillText('← → MOVE   Z / SPACE JUMP ×2   R RETRY', VIEW_W / 2, VIEW_H / 2 + 2);
     ctx.fillStyle = C.teal;
-    ctx.fillText('[M] ' + (mute ? 'SOUND OFF' : 'SOUND ON') + '   ·   MOTION ' + (REDUCE ? 'REDUCED' : 'ON') + '   ·   [ESC] RESUME', VIEW_W / 2, VIEW_H / 2 + 36);
+    ctx.fillText('[M] ' + (mute ? 'SOUND OFF' : 'SOUND ON') + '   ·   [N] MUSIC ' + (musicMute ? 'OFF' : 'ON') + '   ·   MOTION ' + (REDUCE ? 'REDUCED' : 'ON') + '   ·   [ESC] RESUME', VIEW_W / 2, VIEW_H / 2 + 36);
     if (combo > 1) { ctx.fillStyle = 'rgba(51,231,200,.7)';
       ctx.fillText('NO-DEATH COMBO x' + combo, VIEW_W / 2, VIEW_H / 2 + 64); }
   } else if (state === 'clear') {

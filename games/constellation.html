@@ -36,7 +36,7 @@
     background:linear-gradient(110deg,#fff,var(--teal),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 50px rgba(51,231,200,.4)}
   #win p{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.1em}
   #win a{font-family:var(--mono);font-size:13px;letter-spacing:.16em;color:#04060b;background:linear-gradient(110deg,var(--teal),var(--violet));
-    padding:13px 28px;border-radius:8px;font-weight:700;text-decoration:none}
+    padding:13px 28px;border-radius:8px;font-weight:700;text-decoration:none;cursor:pointer}
   .top .score{color:var(--teal);font-variant-numeric:tabular-nums;font-size:11px}
   .top .right{display:flex;align-items:center;gap:14px}
   .top .mute{color:var(--muted);cursor:pointer;transition:.2s;font-size:11px;letter-spacing:.1em}
@@ -72,6 +72,7 @@
 <div id="win">
   <h1>SIGNAL ALIGNED</h1>
   <p id="winp">三つの星座が、同期した。</p>
+  <a id="endlessBtn">∞ CONTINUE — ENDLESS</a>
   <a href="../index.html">↩ RETURN TO THE SIGNAL</a>
 </div>
 <div id="title" class="show">
@@ -107,6 +108,47 @@
 
   let level=0, nodes=[], decoys=[], target=[], progress=0, phase='flash', flashT=0, errorT=0, bgStars=[];
   let pulse=0;
+
+  // --- additive: endless mode + procedural generation ---
+  let endless=false, endlessIdx=0, streak=0;
+  // genLevel(n) -> array of [nx,ny] in the SAME normalized shape as LEVELS entries.
+  // Produces a wandering, non-self-overlapping path so segments stay legible and
+  // nodes stay far enough apart for the existing nearestNode tolerance to resolve them.
+  function genLevel(n){
+    n = Math.max(4, n|0);
+    const pts=[], minD=0.15;            // min normalized spacing between nodes (keeps nearestNode unambiguous)
+    let guard=0;
+    while(pts.length<n && guard++ < 600){
+      // bias new points to flow across the field rather than clump
+      const nx = 0.16 + Math.random()*0.68;
+      const ny = 0.16 + Math.random()*0.68;
+      let ok=true;
+      for(let i=0;i<pts.length;i++){
+        if(Math.hypot(pts[i][0]-nx, pts[i][1]-ny) < minD){ ok=false; break; }
+      }
+      if(ok) pts.push([nx,ny]);
+    }
+    // top up if spacing rejection left us short (rare): relaxed placement
+    while(pts.length<n){
+      pts.push([0.16 + Math.random()*0.68, 0.16 + Math.random()*0.68]);
+    }
+    // order into a readable path: nearest-neighbour walk from the left-most point
+    const used=new Array(pts.length).fill(false);
+    let start=0; for(let i=1;i<pts.length;i++){ if(pts[i][0]<pts[start][0]) start=i; }
+    const path=[pts[start]]; used[start]=true; let cur=start;
+    for(let step=1;step<pts.length;step++){
+      let bi=-1,bd=1e9;
+      for(let i=0;i<pts.length;i++){ if(used[i]) continue;
+        const d=Math.hypot(pts[cur][0]-pts[i][0], pts[cur][1]-pts[i][1]);
+        if(d<bd){ bd=d; bi=i; } }
+      used[bi]=true; cur=bi; path.push(pts[bi]);
+    }
+    return path;
+  }
+
+  // --- additive: combo decay timer (decays ONLY the score multiplier) ---
+  let comboTimer=1, lastDecayT=0;
+  const COMBO_DECAY_MS=2600;            // full bar -> empty over this window
 
   // --- additive: juice / particles / shake ---
   let parts=[], shake=0;
@@ -147,15 +189,18 @@
     decoys=decoys.map(d=>({nx:d.nx,ny:d.ny,r:d.r,x:pad+d.nx*(W-2*pad),y:pad+d.ny*(H-2*pad)}));
   }
   function startLevel(){
-    target=LEVELS[level];
+    // campaign pulls the authored level; endless generates one in the SAME shape.
+    target = level < LEVELS.length ? LEVELS[level] : genLevel(4 + endlessIdx);
     // decoys
     const nd=18+level*4+(level===LEVELS.length-1?6:0); decoys=Array.from({length:nd},()=>{const r=Math.random()*1.6+.6;return {nx:Math.random(),ny:Math.random(),r};});
     progress=0; phase='flash'; flashT=performance.now(); errorT=0;
     ignite=0; igniteSeg=-1;
+    comboTimer=1; lastDecayT=performance.now();
     layout(); buildBg();
-    $('lvl').textContent='LEVEL '+(level+1)+'/'+LEVELS.length;
+    if(endless){ $('lvl').textContent='ENDLESS '+(endlessIdx+1); }
+    else $('lvl').textContent='LEVEL '+(level+1)+'/'+LEVELS.length;
     $('msg').textContent='記憶せよ…'; $('msg').style.opacity=1;
-    $('sub').textContent='光る星座を覚えて、同じ順に星をつなげ';
+    $('sub').textContent= endless ? ('STREAK '+streak+'  ·  星座を覚えて再現せよ') : '光る星座を覚えて、同じ順に星をつなげ';
     renderScore();
     // chime
     tone(420,0.25,'sine',0.04);
@@ -173,14 +218,21 @@
       // juice + scoring (additive, never affects order/tolerance logic)
       burst(nodes[i].x, nodes[i].y, 16, .35); addShake(3);
       if(progress>=2){ igniteSeg=progress-2; ignite=1; }
+      comboTimer=1; lastDecayT=performance.now();   // correct tap refills the decay bar
       combo++; score += 10*combo;
       if(score>best){ best=score; try{localStorage.setItem('alice_constellation_best',best);}catch(e){} }
       renderScore();
       if(progress>=nodes.length){ // level complete
         phase='done'; tone(660,0.3,'sine',0.06); setTimeout(()=>tone(880,0.4,'sine',0.05),120);
         burst(nodes[nodes.length-1].x, nodes[nodes.length-1].y, 60, .55); addShake(9);
-        $('msg').textContent='✦ 整列 ✦';
-        setTimeout(()=>{ level++; if(level>=LEVELS.length){ winGame(); } else startLevel(); }, 1100);
+        $('msg').textContent= endless ? ('✦ 整列 ✦  STREAK '+(streak+1)) : '✦ 整列 ✦';
+        if(endless){
+          // endless: grow the constellation, chase the streak, never re-fire winGame.
+          // (score-best is handled by the existing per-tap logic above.)
+          setTimeout(()=>{ streak++; endlessIdx++; level++; startLevel(); }, 1100);
+        } else {
+          setTimeout(()=>{ level++; if(level>=LEVELS.length){ winGame(); } else startLevel(); }, 1100);
+        }
       }
     } else { // wrong
       errorT=performance.now(); progress=0; tone(120,0.25,'sawtooth',0.05);
@@ -192,8 +244,18 @@
   cv.addEventListener('pointerdown',e=>{const r=cv.getBoundingClientRect();onTap(e.clientX-r.left,e.clientY-r.top);});
 
   function winGame(){ try{localStorage.setItem('alice_bonus_constellation','1');}catch(e){}
+    try{parent.__markD&&parent.__markD('constellation');}catch(e){}
     $('win').classList.add('show');
     [0,1,2,3,4].forEach(i=>setTimeout(()=>tone(440*Math.pow(1.2,i),0.5,'sine',0.05),i*150)); }
+
+  // --- additive: enter endless from the campaign win overlay (signal already fired) ---
+  function startEndless(){ audio();
+    $('win').classList.remove('show');
+    endless=true; endlessIdx=0; streak=0;
+    // level is already == LEVELS.length here (campaign finished); generated levels follow.
+    if(level<LEVELS.length) level=LEVELS.length;
+    startLevel(); }
+  if($('endlessBtn')) $('endlessBtn').addEventListener('click',e=>{ e.preventDefault(); startEndless(); });
 
   $('restart').addEventListener('click',()=>{ if(phase!=='done'){ progress=0; phase='flash'; flashT=performance.now();
     $('msg').textContent='記憶せよ…'; } });
@@ -214,6 +276,13 @@
     x.globalAlpha=1;
     // flash phase: show target lines + nodes
     const now=performance.now();
+    // combo decay timer — soft, input-phase only. Decays ONLY the score multiplier.
+    // Never touches progress / phase / tolerance.
+    if(phase==='input' && combo>0){
+      const dt = now - lastDecayT; lastDecayT = now;
+      comboTimer -= dt / COMBO_DECAY_MS;
+      if(comboTimer<=0){ combo = Math.max(0, combo-1); comboTimer = combo>0 ? 1 : 0; renderScore(); }
+    } else { lastDecayT = now; }
     if(phase==='flash'){ const el=now-flashT;
       const a = el<1600 ? 1 : Math.max(0,1-(el-1600)/500);
       drawConstellation(nodes.length, a, true);
@@ -248,6 +317,17 @@
       x.beginPath(); x.arc(p.x,p.y,p.r*p.life,0,6.28); x.fill(); }
     x.shadowBlur=0; x.globalAlpha=1;
     x.restore();
+    // combo-multiplier decay bar — thin, shrinking. Reduced-motion: no-op (skip render).
+    if(!reduceMotion && phase==='input' && combo>1){
+      const bw = Math.min(220, W*0.42), bh = 3, bx = (W-bw)/2, by = 52;
+      const f = Math.max(0, Math.min(1, comboTimer));
+      x.save();
+      x.globalAlpha=0.18; x.fillStyle='#33e7c8'; x.fillRect(bx, by, bw, bh);
+      x.globalAlpha=0.9; x.fillStyle='rgb('+grade().line+')';
+      x.shadowColor='rgb('+grade().line+')'; x.shadowBlur=8;
+      x.fillRect(bx, by, bw*f, bh);
+      x.restore(); x.shadowBlur=0; x.globalAlpha=1;
+    }
     requestAnimationFrame(draw);
   }
   function drawConstellation(upto,alpha,full){

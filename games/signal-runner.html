@@ -36,6 +36,11 @@
   button.primary{color:#03100e;background:linear-gradient(110deg,var(--cyan),var(--amber));border-color:transparent;font-weight:700}
   button:hover,.link:hover{border-color:var(--cyan);color:var(--cyan)}
   button.primary:hover{color:#03100e;filter:brightness(1.08)}
+  .diffrow{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:22px}
+  button.diff{font-size:11px;padding:9px 16px;opacity:.72}
+  button.diff[aria-pressed="true"]{opacity:1;border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 18px rgba(47,247,210,.22)}
+  .diffhint{margin:11px auto 0;max-width:460px;color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.06em;line-height:1.6;min-height:1.6em}
+  #phasechip{color:var(--blue)}
   .hidden{opacity:0;pointer-events:none}
   @media(max-width:720px){
     .top{padding:14px 15px;font-size:10px}.top span:nth-child(2){display:none}
@@ -52,7 +57,7 @@
   <span id="state">READY</span>
 </div>
 <div class="hud">
-  <div class="panel readout"><span>SCORE <b id="score">0</b></span><span>BEST <b id="best">0</b></span><span>CHARGE <b id="charge">0%</b></span><span id="combochip" style="display:none;color:var(--amber)">COMBO <b id="combo">x1</b></span></div>
+  <div class="panel readout"><span>SCORE <b id="score">0</b></span><span>BEST <b id="best">0</b></span><span>CHARGE <b id="charge">0%</b></span><span id="combochip" style="display:none;color:var(--amber)">COMBO <b id="combo">x1</b></span><span id="phasechip" style="display:none">PHASE <b id="phasename">CLEAR</b></span></div>
   <div class="panel center"><div class="msg" id="msg">PRESS START</div><div class="sub" id="sub">Move through the fracture. Collect light. Avoid red noise.</div></div>
   <div class="panel keys">MOVE: WASD / ARROWS<br>FOCUS: HOLD SPACE<br><span id="setmute" style="pointer-events:auto;cursor:pointer">[M] SOUND ON</span> &nbsp; <span id="setmotion" style="pointer-events:auto;cursor:pointer">[B] MOTION ON</span></div>
 </div>
@@ -60,6 +65,12 @@
   <div class="card">
     <h1>Signal Runner</h1>
     <p>Guide the blue runner through a collapsing signal field. Collect golden fragments, avoid red noise, and reach 100% charge before the system catches you.</p>
+    <div class="diffrow" id="diffrow" aria-label="Difficulty">
+      <button class="diff" data-diff="drift">DRIFT</button>
+      <button class="diff" data-diff="run">RUN</button>
+      <button class="diff" data-diff="overclock">OVERCLOCK</button>
+    </div>
+    <div class="diffhint" id="diffhint">RUN — the standard signal. Drift slows the noise; Overclock turns it up.</div>
     <div class="actions">
       <button class="primary" id="start">START RUN</button>
       <a class="link" href="../index.html">RETURN</a>
@@ -90,6 +101,18 @@
   let combo=0,comboT=0;         // shard combo multiplier + decay timer
   const powerups=[]; let puSpawn=8,timeScale=1,slowT=0; // rare orbs + slow-time
   const trail=[];               // motion-blur trail samples for the runner
+
+  // --- difficulty selector (additive; RUN = identity = TODAY'S behaviour exactly) ---
+  // Multipliers applied ONLY at: spawn-timer reset, hazard fall-speed maker, charge increment.
+  // RUN keeps every multiplier at 1 so the shipped pacing is reproduced bit-for-bit.
+  const DIFFS={
+    drift:    {label:'DRIFT',     spawn:1.35, fall:0.82, charge:1.3},  // easier: slower spawn, slower fall, faster charge
+    run:      {label:'RUN',       spawn:1,    fall:1,    charge:1},     // IDENTITY — current shipped game
+    overclock:{label:'OVERCLOCK', spawn:0.78, fall:1.22, charge:0.8}   // harder: faster spawn, faster fall, slower charge
+  };
+  let diffKey=localStorage.getItem('alice_sr_diff'); if(!DIFFS[diffKey])diffKey='run';
+  let diff=DIFFS[diffKey];
+  function setDiff(k){ if(!DIFFS[k])k='run'; diffKey=k; diff=DIFFS[k]; localStorage.setItem('alice_sr_diff',k); renderDiff(); }
 
   function emit(x,y,n,c,spd){    // spawn n particles of colour c (rgb string)
     if(noMotion())return;
@@ -137,6 +160,20 @@
   addEventListener('keydown',e=>{const k=e.key.toLowerCase();if(k==='m')toggleMute();else if(k==='b')toggleMotion();});
   renderSettings();
 
+  // --- difficulty selector wiring (menu only; never alters core loop, collision, win, or phase timers) ---
+  const DIFF_HINTS={
+    drift:'DRIFT — slower noise, gentler descent, charge builds faster. The forgiving route.',
+    run:'RUN — the standard signal. Drift slows the noise; Overclock turns it up.',
+    overclock:'OVERCLOCK — relentless spawns, faster fall, charge crawls. For breach veterans.'
+  };
+  function renderDiff(){
+    const row=$('diffrow');if(row)row.querySelectorAll('button.diff').forEach(b=>b.setAttribute('aria-pressed',b.dataset.diff===diffKey?'true':'false'));
+    const h=$('diffhint');if(h)h.textContent=DIFF_HINTS[diffKey]||DIFF_HINTS.run;
+  }
+  const diffRow=$('diffrow');
+  if(diffRow)diffRow.querySelectorAll('button.diff').forEach(b=>b.addEventListener('click',()=>{setDiff(b.dataset.diff);}));
+  renderDiff();
+
   function start(){
     running=true;last=0;spawn=.35;shardSpawn=.35;score=0;charge=0;
     gameTime=0;gimmickPhase=0;wallSpawn=2.5;staticFlash=0;staticTimer=6;
@@ -148,7 +185,7 @@
     requestAnimationFrame(loop);
   }
   function end(victory){
-    running=false;combo=0;const chip=$('combochip');if(chip)chip.style.display='none';
+    running=false;combo=0;const chip=$('combochip');if(chip)chip.style.display='none';const pchip=$('phasechip');if(pchip)pchip.style.display='none';
     $('state').textContent=victory?'SYNCED':'LOST';
     $('msg').textContent=victory?'SIGNAL SYNCHRONIZED':'SIGNAL LOST';
     $('sub').textContent=victory?'The archive noticed your run.':'Press Enter or Start to breach again.';
@@ -204,7 +241,7 @@
     player.y=clamp(player.y+player.vy,player.r+52,H-player.r-96);
     player.shield=Math.max(0,player.shield-dt);
     spawn-=dt;shardSpawn-=dt;
-    if(spawn<=0){spawn=Math.max(.2,.78-charge*.004);makeHazard()}
+    if(spawn<=0){spawn=Math.max(.2,.78-charge*.004)*diff.spawn;makeHazard()}/* diff.spawn===1 on RUN → identity */
     if(shardSpawn<=0){shardSpawn=.48+Math.random()*.5;makeShard()}
     if(gameTime>15){wallSpawn-=dt;if(wallSpawn<=0){wallSpawn=3.5+Math.random()*2;makeWall()}}
     if(gameTime>50){staticTimer-=dt;if(staticTimer<=0){staticFlash=0.4;staticTimer=5+Math.random()*4;pulse(120,.15,'square',.022);}if(staticFlash>0)staticFlash=Math.max(0,staticFlash-dt*4);}
@@ -232,7 +269,7 @@
       if(s.y>H+50)shards.splice(i,1);
       else if(Math.hypot(s.x-player.x,s.y-player.y)<s.r+player.r){
         combo=Math.min(6,combo+1);comboT=2.6;
-        score+=25*combo;charge=Math.min(100,charge+8);shards.splice(i,1);pulse(520+charge*5+combo*40,.08,'triangle',.035);
+        score+=25*combo;charge=Math.min(100,charge+8*diff.charge);shards.splice(i,1);pulse(520+charge*5+combo*40,.08,'triangle',.035);/* diff.charge===1 on RUN → identity (+8) */
         emit(s.x,s.y,10,'255,209,102',110);addShake(2);
         $('msg').textContent=charge>=76?'FINAL LOCK':(combo>1?'FRAGMENT x'+combo:'FRAGMENT CAPTURED');
         if(charge>=100){end(true);return}
@@ -240,10 +277,19 @@
     }
     score+=Math.max(0,Math.floor(dt*18));$('score').textContent=score;$('charge').textContent=Math.floor(charge)+'%';
     const chip=$('combochip');if(chip){if(combo>1){chip.style.display='';$('combo').textContent='x'+combo;}else chip.style.display='none';}
+    // phase telegraph chip — reads gimmickPhase only (set by the fixed 15/30/50s timers)
+    const pchip=$('phasechip');
+    if(pchip){
+      if(gimmickPhase>0){pchip.style.display='';const pn=$('phasename');if(pn)pn.textContent=PHASE_NAMES[gimmickPhase]||'';
+        pchip.style.color=PHASE_COLORS[gimmickPhase]||'var(--blue)';}
+      else pchip.style.display='none';
+    }
   }
+  const PHASE_NAMES={1:'WALLS',2:'GHOST',3:'INTERFERENCE'};
+  const PHASE_COLORS={1:'var(--cyan)',2:'#9b7bff',3:'var(--rose)'};
   function makeHazard(){
     const r=12+Math.random()*22,homing=gameTime>30&&Math.random()<.3;
-    hazards.push({x:40+Math.random()*(W-80),y:-50,r,vy:140+Math.random()*180+charge*2.2,sway:homing?0:24+Math.random()*80,phase:Math.random()*6.28,rot:0,spin:(Math.random()-.5)*4,homing});
+    hazards.push({x:40+Math.random()*(W-80),y:-50,r,vy:(140+Math.random()*180+charge*2.2)*diff.fall,sway:homing?0:24+Math.random()*80,phase:Math.random()*6.28,rot:0,spin:(Math.random()-.5)*4,homing});/* diff.fall===1 on RUN → identity */
   }
   function makeShard(){shards.push({x:35+Math.random()*(W-70),y:-30,r:8+Math.random()*5,vy:110+Math.random()*100,p:Math.random()*6.28})}
   function makeWall(){
@@ -294,7 +340,10 @@
     // motion-blur trail behind runner
     if(trail.length>1){ctx.save();for(let i=0;i<trail.length;i++){const tp=trail[i],a=(i/trail.length)*.5;ctx.globalAlpha=a;ctx.fillStyle='rgba(47,247,210,1)';ctx.beginPath();ctx.arc(tp.x,tp.y,player.r*(.4+i/trail.length*.5),0,Math.PI*2);ctx.fill();}ctx.restore();}
     ctx.save();ctx.translate(player.x,player.y);ctx.shadowBlur=28;ctx.shadowColor='rgba(47,247,210,.95)';ctx.fillStyle='rgba(47,247,210,.94)';ctx.beginPath();ctx.arc(0,0,player.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=player.shield>0?'rgba(255,209,102,.9)':'rgba(255,255,255,.74)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,player.r+5+Math.sin(time*8)*2,0,Math.PI*2);ctx.stroke();
-    if(slowT>0){ctx.globalAlpha=.5+Math.sin(time*6)*.3;ctx.strokeStyle='rgba(107,166,255,.8)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,player.r+12,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
+    if(slowT>0){ctx.globalAlpha=noMotion()?.7:.5+Math.sin(time*6)*.3;ctx.strokeStyle='rgba(107,166,255,.8)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,player.r+12,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
+    // power-up countdown rings: depleting arc shows remaining time (readout, not decoration)
+    if(slowT>0){const frac=Math.max(0,Math.min(1,slowT/3));ctx.globalAlpha=.95;ctx.strokeStyle='rgba(107,166,255,.95)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,player.r+16,-Math.PI/2,-Math.PI/2+frac*Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
+    if(player.shield>0){const frac=Math.max(0,Math.min(1,player.shield/2.2));ctx.globalAlpha=.95;ctx.strokeStyle='rgba(255,209,102,.95)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,player.r+(slowT>0?22:16),-Math.PI/2,-Math.PI/2+frac*Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
     ctx.restore();
     ctx.save();ctx.globalAlpha=.18;ctx.strokeStyle='rgba(107,166,255,.8)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(player.x,player.y+18);ctx.lineTo(player.x-player.vx*.08,player.y-player.vy*.08+38);ctx.stroke();ctx.restore();
     // additive particles

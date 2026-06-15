@@ -73,6 +73,24 @@
   #settingsPanel input[type=range]{width:96px;accent-color:var(--cyan)}
   #settingsPanel input[type=checkbox]{accent-color:var(--cyan);width:15px;height:15px;cursor:pointer}
   #settingsPanel .hd{color:var(--cyan);letter-spacing:.18em;font-size:11px;border-bottom:1px solid var(--line);padding-bottom:7px}
+  /* first-run onboarding primer (additive; matches the title card) */
+  #primer{margin:20px auto 0;max-width:520px;text-align:left;border:1px solid var(--line);background:rgba(8,13,23,.55);
+    border-radius:10px;padding:14px 18px;font-family:var(--mono);font-size:12px;letter-spacing:.06em;line-height:1.7;color:#a7b8c7}
+  #primer.hide{display:none}
+  #primer .ph{color:var(--cyan);letter-spacing:.18em;font-size:10px;margin-bottom:8px}
+  #primer ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+  #primer li{display:flex;gap:9px;align-items:flex-start}
+  #primer li::before{content:"›";color:var(--cyan);flex:0 0 auto}
+  /* shard compass / proximity ping (read-only HUD; reduced-motion = no rotate transition) */
+  #compass{position:fixed;left:50%;top:78px;z-index:5;width:46px;height:46px;margin-left:-23px;pointer-events:none;
+    opacity:0;transition:opacity .25s linear;display:none}
+  body.compass-on #compass{display:block}
+  #compass .ring{position:absolute;inset:0;border:1px solid var(--line);border-radius:50%;background:rgba(4,8,15,.34)}
+  #compass .needle{position:absolute;left:50%;top:50%;width:3px;height:19px;margin:-19px 0 0 -1.5px;border-radius:2px;
+    transform-origin:50% 100%;background:linear-gradient(180deg,var(--cyan),rgba(51,231,200,0));
+    box-shadow:0 0 8px rgba(51,231,200,.6);transition:transform .08s linear}
+  @media(prefers-reduced-motion:reduce){#compass,#compass .needle{transition:none}}
+  @media(max-width:760px){#compass{top:60px}}
   @media(max-width:760px){
     .top{padding:12px 13px;font-size:10px}.top .title{display:none}.top a,.top button{font-size:10px;padding:7px 9px}
     .objective{top:54px;left:13px;font-size:11px}
@@ -109,6 +127,7 @@
 </div>
 <div class="stick" id="lstick"><div class="knob"></div></div>
 <div class="stick" id="rstick"><div class="knob"></div></div>
+<div id="compass" aria-hidden="true"><div class="ring"></div><div class="needle" id="compassNeedle"></div></div>
 <div class="overlay" id="overlay">
   <div class="card">
     <h1>The Eidolon</h1>
@@ -118,12 +137,21 @@
       <button class="btn primary" id="startBtn" type="button">ENTER THE DARK</button>
       <a class="link" href="../index.html">RETURN</a>
     </div>
+    <div id="primer" class="hide">
+      <div class="ph">FIRST DESCENT — 3 THINGS</div>
+      <ul>
+        <li>WASD＋マウスで移動・視点（スマホは画面左右のスティック）</li>
+        <li>光を眼に当てるな——見つめ返してくる</li>
+        <li>信号シャードの光は安全——集めて脱出</li>
+      </ul>
+    </div>
   </div>
 </div>
 <div id="settingsPanel">
   <div class="hd">SETTINGS</div>
   <div class="row"><label for="optBloom">Bloom / glow</label><input type="checkbox" id="optBloom" checked></div>
   <div class="row"><label for="optShake">Screen shake</label><input type="checkbox" id="optShake" checked></div>
+  <div class="row"><label for="optCompass">Shard compass</label><input type="checkbox" id="optCompass" checked></div>
   <div class="row"><label for="optSens">Look sens</label><input type="range" id="optSens" min="0.0010" max="0.0040" step="0.0002" value="0.0022"></div>
 </div>
 <div id="loadError">THREE.JS の読み込みに失敗しました。<br>ネットワーク接続または CDN へのアクセスを確認してください。</div>
@@ -139,10 +167,11 @@ const canvas=document.getElementById('stage');
 const $=id=>document.getElementById(id);
 const ui={
   overlay:$('overlay'),start:$('startBtn'),mute:$('muteBtn'),settings:$('settingsBtn'),
-  settingsPanel:$('settingsPanel'),optBloom:$('optBloom'),optShake:$('optShake'),optSens:$('optSens'),
+  settingsPanel:$('settingsPanel'),optBloom:$('optBloom'),optShake:$('optShake'),optCompass:$('optCompass'),optSens:$('optSens'),
   time:$('time'),best:$('best'),shards:$('shards'),score:$('score'),combo:$('combo'),fearbar:$('fearbar'),
   msg:$('msg'),sub:$('sub'),objective:$('objective'),objectiveSub:$('objectiveSub'),
-  fearveil:$('fearveil'),lstick:$('lstick'),rstick:$('rstick')
+  fearveil:$('fearveil'),lstick:$('lstick'),rstick:$('rstick'),
+  primer:$('primer'),compass:$('compass'),compassNeedle:$('compassNeedle')
 };
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -153,7 +182,8 @@ if(isTouch) document.body.classList.add('touch');
 const LOW = isTouch && Math.min(innerWidth,innerHeight) < 520;
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 // player-facing prefs; heavy FX gated off under reduced-motion
-const prefs={ bloom:!REDUCED, shake:!REDUCED, lookSens:0.0022 };
+const prefs={ bloom:!REDUCED, shake:!REDUCED, compass:true, lookSens:0.0022 };
+const SEEN_KEY='alice_eidolon_seen';
 
 const FIELD=22;            // half-extent of the floor (world spans -22..22)
 const NEEDED=5;
@@ -186,6 +216,11 @@ const state={
   fovKick:0, punchX:0, punchZ:0
 };
 ui.best.textContent=fmtTime(state.best);
+
+// first-run onboarding primer: shown only if the seen-flag is unset (display-only)
+let firstRun=true;
+try{ firstRun = !localStorage.getItem(SEEN_KEY); }catch(e){ firstRun=true; }
+if(firstRun && ui.primer) ui.primer.classList.remove('hide');
 
 /* ---------------------------------------------------------- RENDER */
 const scene=new THREE.Scene();
@@ -441,6 +476,17 @@ let gateX=0, gateZ=0;
   const ring=new THREE.Mesh(new THREE.TorusGeometry(1.5,0.16,16,64), M.gate);
   const inner=new THREE.Mesh(new THREE.TorusGeometry(1.18,0.04,8,64), M.gateInner);
   gate.add(ring, inner);
+  // beacon shaft: thin vertical emissive cylinder marking the active exit.
+  // Inert (no collider; collision only tests PILLARS) and hidden until the gate is online.
+  try{
+    const shaftGeo=new THREE.CylinderGeometry(0.07,0.07,14,12,1,true);
+    const shaftMat=new THREE.MeshBasicMaterial({color:0x9b7cff, transparent:true, opacity:0.55, side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending});
+    const beacon=new THREE.Mesh(shaftGeo, shaftMat);
+    beacon.position.set(0, 5.4, 0);   // local to gate (world y ~1.6..15)
+    beacon.visible=false;
+    gate.add(beacon);
+    gate.userData.beacon=beacon;
+  }catch(e){}
   gate.position.set(gateX,1.6,gateZ);
   scene.add(gate);
 })();
@@ -612,9 +658,12 @@ ui.mute.addEventListener('click',()=>{ state.muted=!state.muted; ui.mute.textCon
 /* ---- settings flyout ---- */
 // reflect reduced-motion defaults in the controls
 ui.optBloom.checked=prefs.bloom; ui.optShake.checked=prefs.shake; ui.optSens.value=prefs.lookSens;
+if(ui.optCompass) ui.optCompass.checked=prefs.compass;
+document.body.classList.toggle('compass-on', prefs.compass);
 ui.settings.addEventListener('click',()=>{ ui.settingsPanel.classList.toggle('show'); });
 ui.optBloom.addEventListener('change',()=>{ prefs.bloom=ui.optBloom.checked; useBloom=prefs.bloom; });
 ui.optShake.addEventListener('change',()=>{ prefs.shake=ui.optShake.checked; });
+if(ui.optCompass) ui.optCompass.addEventListener('change',()=>{ prefs.compass=ui.optCompass.checked; document.body.classList.toggle('compass-on', prefs.compass); if(!prefs.compass) ui.compass.style.opacity=0; });
 ui.optSens.addEventListener('input',()=>{ prefs.lookSens=parseFloat(ui.optSens.value)||0.0022; });
 // close the flyout when clicking elsewhere
 addEventListener('pointerdown',e=>{
@@ -638,9 +687,13 @@ function resetGame(){
   camera.position.set(SPAWN.x, EYE_H, SPAWN.z);
   E.x=FIELD-4; E.z=FIELD-4; E.mode='wander'; E.losTimer=0; E.calmTimer=0; E.demoTimer=0; eidPickWander();
   gate.userData.active=false; M.gateInner.opacity=0; gateLight.intensity=0; M.gate.emissiveIntensity=.4;
+  if(gate.userData.beacon) gate.userData.beacon.visible=false;   // beacon off until 5 shards
   syncUi(); setMsg('RIFT OPEN','光る断片を追え。眼に光を当てるな。',2.2);
 }
 function startGame(){
+  // mark onboarding as seen (display-only flag; never gates input or state)
+  try{ localStorage.setItem(SEEN_KEY,'1'); }catch(e){}
+  if(ui.primer) ui.primer.classList.add('hide');
   audioInit(); resetGame(); ui.overlay.classList.add('hidden');
   if(!isTouch) lockNow();
   pulse(320,.1,'triangle',.05); setTimeout(()=>pulse(540,.12,'sine',.04),100);
@@ -656,6 +709,7 @@ function endGame(victory){
     localStorage.setItem(BEST_KEY, state.best);
     localStorage.setItem('alice_bonus_the_eidolon','1');
     grantLantern();
+    try{parent.__markD&&parent.__markD('lantern')}catch(e){}   // live iframe bonus marking
     // speed bonus for escaping fast
     state.score += Math.max(0, Math.floor(3000 - state.elapsed*0.4));
     h1.textContent='Light Carried'; tl.textContent='THE EIDOLON ACCORD';
@@ -756,6 +810,32 @@ function updateShards(dt,t){
     }
   }
   return nearGlow;
+}
+
+// shard compass: faint HUD needle toward the NEAREST uncollected shard.
+// READ-ONLY over shards + look.yaw — never mutates game state. Optional + reduced-motion safe.
+function updateCompass(){
+  if(!prefs.compass || !ui.compass) return;
+  const px=camera.position.x, pz=camera.position.z;
+  let best=null, bestD=Infinity;
+  for(const s of shards){
+    if(s.got) continue;
+    const d=Math.hypot(s.x-px, s.z-pz);
+    if(d<bestD){ bestD=d; best=s; }
+  }
+  if(!best){ ui.compass.style.opacity=0; return; }   // all collected -> gate phase, hide
+  // bearing relative to current facing. forward/right match updatePlayer's basis:
+  //   fwd=(-sin yaw,-cos yaw)   right=(cos yaw,-sin yaw)
+  const dx=best.x-px, dz=best.z-pz;
+  const sy=Math.sin(look.yaw), cy=Math.cos(look.yaw);
+  const fc = dx*(-sy) + dz*(-cy);   // forward component
+  const rc = dx*( cy) + dz*(-sy);   // right component
+  // CSS needle points up at 0deg; +deg = clockwise -> turns toward screen-right
+  const deg = Math.atan2(rc, fc)*180/Math.PI;
+  ui.compassNeedle.style.transform='rotate('+deg+'deg)';
+  // intensity rises as you close in (cap so a distant shard still reads faintly)
+  const prox=clamp(1 - bestD/26, 0, 1);
+  ui.compass.style.opacity=(0.22 + prox*0.66).toFixed(3);
 }
 
 function detect(distXZ){
@@ -874,6 +954,7 @@ function updateFear(dt, nearGlow, t){
 
 function updateGate(dt){
   if(!gate.userData.active) return;
+  if(gate.userData.beacon && !gate.userData.beacon.visible) gate.userData.beacon.visible=true;  // inert glow marker
   M.gateInner.opacity=Math.min(0.9, M.gateInner.opacity+dt*0.8);
   M.gate.emissiveIntensity=Math.min(2.2, M.gate.emissiveIntensity+dt*1.2);
   M.gate.emissive.setHex(0x6b8cff);
@@ -917,6 +998,7 @@ function updateWorld(dt,t){
   updateParticles(dt);
   updateMotes(dt);
   updateAudio(dt);
+  updateCompass();
   // bloom swells once the gate is online
   bloomPass.strength = gate.userData.active ? (LOW?0.70:1.05) : BLOOM_BASE;
   // flashlight flicker (worse with fear)
@@ -954,6 +1036,7 @@ function frame(now){
     eid.rotation.y+=dt*0.2;
     for(const tt of tents){ tt.m.rotation.x=Math.sin(t*1.5+tt.a)*0.25; }
     flash.intensity=FLASH_I;
+    if(ui.compass) ui.compass.style.opacity=0;   // compass only reads during play
   }
   if(useBloom) composer.render(); else renderer.render(scene,camera);
   if(dbg<2 && now>1500){ dbg++; if(dbg===2) console.log('%cdraw calls: '+renderer.info.render.calls, 'color:#8090a5;font-family:monospace'); }

@@ -47,6 +47,11 @@
   .tagline{margin-top:9px;font-family:var(--mono);font-size:12px;letter-spacing:.42em;color:var(--gold)}
   .card p{margin:18px auto 0;max-width:540px;color:#a7b8c7;font-size:14px;line-height:1.85;letter-spacing:.04em}
   .actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:24px}
+  .diffrow{display:flex;justify-content:center;align-items:center;gap:9px;flex-wrap:wrap;margin-top:22px}
+  .difflabel{font-family:var(--mono);font-size:11px;letter-spacing:.24em;color:var(--muted);margin-right:4px}
+  .diffbtn{pointer-events:auto;border:1px solid var(--line);border-radius:7px;background:rgba(8,13,23,.72);color:var(--muted);font-family:var(--mono);font-size:11px;letter-spacing:.14em;padding:9px 15px;cursor:pointer;transition:.18s}
+  .diffbtn:hover{border-color:var(--cyan);color:var(--cyan)}
+  .diffbtn[aria-pressed="true"]{color:#03110f;background:linear-gradient(110deg,var(--cyan),var(--blue));border-color:transparent;font-weight:800}
   button.btn,a.link{pointer-events:auto;border:1px solid var(--line);border-radius:8px;background:rgba(8,13,23,.72);color:var(--ink);font-family:var(--mono);font-size:12px;letter-spacing:.12em;padding:12px 18px;cursor:pointer;text-decoration:none;transition:.2s}
   button.btn.primary{color:#03110f;background:linear-gradient(110deg,var(--cyan),var(--gold));border-color:transparent;font-weight:800}
   button.btn:hover,a.link:hover{border-color:var(--cyan);color:var(--cyan)}
@@ -60,7 +65,10 @@
   #reticle::after{top:50%;left:6px;right:6px;height:1px;margin-top:-.5px}
   #reticle.gate{border-color:rgba(123,77,255,.78);animation:pulseGate 1s ease-in-out infinite}
   @keyframes pulseGate{50%{transform:scale(1.08);opacity:.9}}
-  @media(prefers-reduced-motion:reduce){#reticle.gate{animation:none}}
+  /* Near-miss cyan ring-flash. JS only adds .grazeflash when fxOn; this is also a no-op under reduced-motion. */
+  #reticle.grazeflash{animation:grazeFlash .42s ease-out}
+  @keyframes grazeFlash{0%{box-shadow:0 0 0 0 rgba(51,231,200,.75),0 0 26px rgba(51,231,200,.6);border-color:rgba(51,231,200,1);transform:scale(1.18)}100%{box-shadow:0 0 0 14px rgba(51,231,200,0),0 0 18px rgba(51,231,200,.22);border-color:rgba(51,231,200,.32);transform:scale(1)}}
+  @media(prefers-reduced-motion:reduce){#reticle.gate,#reticle.grazeflash{animation:none}}
   @media(max-width:760px){
     .top{padding:12px 13px;font-size:10px}.top .title{display:none}.top a,.top button{font-size:10px;padding:7px 9px}
     .objective{top:56px;left:13px;font-size:11px}
@@ -86,6 +94,7 @@
     <span>BEST <b id="best">0</b></span>
     <span>KEYS <b id="keys">0/7</b></span>
     <span>CHAIN <b id="chain">x0</b></span>
+    <span>GRAZE <b id="graze">x0</b></span>
   </div>
   <div class="panel center"><div class="msg" id="msg">PRESS START</div><div class="subline" id="sub">WASD / ARROWS で飛行。タッチはドラッグ。</div></div>
   <div class="panel keys">MOVE: WASD / ARROWS<br>TOUCH: DRAG<br>PAUSE: P</div>
@@ -95,6 +104,12 @@
     <h1>Rift Courier</h1>
     <div class="tagline">THREE DIMENSIONAL SIGNAL</div>
     <p>崩壊する3Dリフトを飛び、光のキーを集めてゲートを起動する。赤いノイズを避け、最後のリングの中心を抜けろ。</p>
+    <div class="diffrow" id="diffRow" role="group" aria-label="DIFFICULTY">
+      <span class="difflabel">DIFFICULTY</span>
+      <button class="diffbtn" type="button" data-diff="cadet">CADET</button>
+      <button class="diffbtn" type="button" data-diff="pilot">PILOT</button>
+      <button class="diffbtn" type="button" data-diff="ace">ACE</button>
+    </div>
     <div class="actions">
       <button class="btn primary" id="startBtn" type="button">START FLIGHT</button>
       <a class="link" href="../index.html">RETURN</a>
@@ -114,7 +129,7 @@ const canvas=document.getElementById('stage');
 const $=id=>document.getElementById(id);
 const ui={
   overlay:$('overlay'),start:$('startBtn'),mute:$('muteBtn'),score:$('score'),best:$('best'),keys:$('keys'),
-  chain:$('chain'),reticle:$('reticle'),
+  chain:$('chain'),graze:$('graze'),reticle:$('reticle'),
   msg:$('msg'),sub:$('sub'),objective:$('objective'),objectiveSub:$('objectiveSub')
 };
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -122,15 +137,30 @@ const rnd=(a,b)=>a+Math.random()*(b-a);
 const fmt=n=>Math.floor(n).toLocaleString('en-US');
 const BEST_KEY='alice_rift_courier_best';
 const MUTE_KEY='alice_rift_courier_mute';
+const DIFF_KEY='alice_rift_diff';
 // Heavy FX (bloom, screen shake, FOV kick, warp streaks) respect motion preference.
 const reduceMotion=(()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}})();
 let fxOn=!reduceMotion;
+
+// --- Difficulty (additive). Multipliers are INTERVAL/cap scalers consumed at the
+// existing spawn-timer resets and speed clamp. PILOT IS IDENTITY: every multiplier
+// is exactly 1 and speedCap is the original 38, so x*1===x / clamp(...,38) byte-for-byte
+// reproduce today's behavior. hazardMul/keyMul/beamMul scale the spawn interval
+// (>1 = rarer/easier, <1 = denser/harder). speedCap replaces the literal 38 upper bound.
+const DIFFS={
+  cadet:{label:'CADET',hazardMul:1.35,keyMul:0.82,speedCap:32,beamMul:1.5},
+  pilot:{label:'PILOT',hazardMul:1,   keyMul:1,    speedCap:38,beamMul:1},
+  ace:  {label:'ACE',  hazardMul:0.78,keyMul:1.15, speedCap:44,beamMul:0.7}
+};
+let diffKey=(()=>{try{const v=localStorage.getItem(DIFF_KEY);return DIFFS[v]?v:'pilot';}catch(e){return 'pilot';}})();
+let DIFF=DIFFS[diffKey];
 
 const state={
   mode:'menu',paused:false,score:0,best:Number(localStorage.getItem(BEST_KEY)||0),
   keys:0,needed:7,hull:3,distance:0,speed:22,gateSpawned:false,gatePassed:false,
   combo:0,comboT:0,maxCombo:0,
   shakeT:0,shakeMag:0,nearMissT:0,
+  grazeStreak:0,grazeStreakT:0,
   player:{x:0,y:0,vx:0,vy:0,invuln:0,roll:0},
   input:{left:false,right:false,up:false,down:false,pointer:false,px:0,py:0},
   timers:{hazard:.8,key:.5,beam:3.5,message:0},
@@ -321,6 +351,7 @@ function syncUi(){
   ui.best.textContent=fmt(state.best);
   ui.keys.textContent=state.keys+'/'+state.needed;
   if(ui.chain)ui.chain.textContent='x'+state.combo;
+  if(ui.graze)ui.graze.textContent='x'+state.grazeStreak;
   const charge=clamp(state.keys/state.needed*100,0,100);
   ui.objective.textContent=state.gateSpawned?'ゲート中心を抜けろ':'光のキーを 7 個集めろ';
   ui.objectiveSub.innerHTML='CHARGE <span class="meter"><i style="width:'+charge+'%"></i></span>  HULL '+state.hull;
@@ -333,7 +364,7 @@ function resetGame(){
   particles.length=0;
   Object.assign(state,{
     mode:'playing',paused:false,score:0,keys:0,hull:3,distance:0,speed:22,gateSpawned:false,gatePassed:false,
-    combo:0,comboT:0,maxCombo:0,shakeT:0,shakeMag:0,nearMissT:0
+    combo:0,comboT:0,maxCombo:0,shakeT:0,shakeMag:0,nearMissT:0,grazeStreak:0,grazeStreakT:0
   });
   Object.assign(state.player,{x:0,y:0,vx:0,vy:0,invuln:1.6,roll:0});
   Object.assign(state.timers,{hazard:.75,key:.45,beam:3.4,message:0});
@@ -354,7 +385,7 @@ function endGame(victory){
   if(state.mode!=='playing')return;
   state.mode=victory?'won':'lost';
   if(victory)state.score+=state.maxCombo*400;
-  if(ui.reticle)ui.reticle.classList.remove('show','gate');
+  if(ui.reticle)ui.reticle.classList.remove('show','gate','grazeflash');
   ui.overlay.classList.remove('hidden');
   ui.overlay.querySelector('h1').textContent=victory?'Gate Cleared':'Rift Collapsed';
   ui.overlay.querySelector('p').textContent=victory
@@ -367,6 +398,7 @@ function endGame(victory){
   }
   if(victory){
     localStorage.setItem('alice_bonus_rift_courier','1');
+    try{parent.__markD&&parent.__markD('rift')}catch(e){}
     pulse(523,.2,'triangle',.06);setTimeout(()=>pulse(784,.25,'sine',.05),130);
   }else{
     pulse(96,.35,'sawtooth',.05);
@@ -441,15 +473,18 @@ function updateEntities(dt){
   state.timers.beam-=dt;
   const spawnBoost=clamp(state.distance/620,0,1);
   if(state.timers.hazard<=0&&!state.gateSpawned){
-    state.timers.hazard=rnd(.52,.86)-spawnBoost*.14;
+    // Pilot: hazardMul===1 → identical to original rnd(.52,.86)-spawnBoost*.14
+    state.timers.hazard=(rnd(.52,.86)-spawnBoost*.14)*DIFF.hazardMul;
     makeEntity('hazard');
   }
   if(state.timers.key<=0&&!state.gateSpawned){
-    state.timers.key=rnd(1.05,1.55);
+    // Pilot: keyMul===1 → identical to original rnd(1.05,1.55)
+    state.timers.key=rnd(1.05,1.55)*DIFF.keyMul;
     makeEntity('key');
   }
   if(state.timers.beam<=0&&!state.gateSpawned&&state.distance>140){
-    state.timers.beam=rnd(4.0,5.8)-spawnBoost*.9;
+    // Pilot: beamMul===1 → identical to original rnd(4.0,5.8)-spawnBoost*.9
+    state.timers.beam=(rnd(4.0,5.8)-spawnBoost*.9)*DIFF.beamMul;
     makeEntity('beam');
   }
   const p=state.player;
@@ -502,8 +537,18 @@ function updateEntities(dt){
         state.nearMissT=.5;
         const nm=80+state.combo*20;
         state.score+=nm;
-        setMessage('NEAR MISS','+'+nm,.7);
-        pulse(780,.06,'sine',.03);
+        // --- Near-miss feedback escalation (additive; score above is unchanged). ---
+        state.grazeStreak++;
+        state.grazeStreakT=3.2;
+        setMessage(state.grazeStreak>1?'GRAZE x'+state.grazeStreak:'NEAR MISS','+'+nm,.7);
+        // Sound sharpens (rises in pitch) as grazes chain; capped so it never gets harsh.
+        pulse(760+Math.min(state.grazeStreak,8)*55,.06,'sine',.03);
+        // Cyan reticle ring-flash — fxOn-gated and also a CSS no-op under reduced-motion.
+        if(fxOn&&ui.reticle){
+          ui.reticle.classList.remove('grazeflash');
+          void ui.reticle.offsetWidth; // restart the animation
+          ui.reticle.classList.add('grazeflash');
+        }
       }
     }
   }
@@ -511,7 +556,8 @@ function updateEntities(dt){
 
 function updateWorld(dt,t){
   state.distance+=state.speed*dt;
-  state.speed=clamp(22+state.distance*.012,22,38);
+  // Pilot: DIFF.speedCap===38 → identical to original clamp(22+distance*.012,22,38)
+  state.speed=clamp(22+state.distance*.012,22,DIFF.speedCap);
   state.score+=dt*(45+state.speed*2);
   rimLight.position.x=state.player.x*.65;
   rimLight.position.y=state.player.y*.45+2;
@@ -544,6 +590,11 @@ function updateWorld(dt,t){
     if(state.comboT<=0)state.combo=0;
   }
   if(state.nearMissT>0)state.nearMissT-=dt;
+  // graze-streak decay (feedback only; resets the counter when a chain lapses)
+  if(state.grazeStreakT>0){
+    state.grazeStreakT-=dt;
+    if(state.grazeStreakT<=0)state.grazeStreak=0;
+  }
   // warp-streak particles scale with speed (skipped under reduced-motion)
   if(streaks.visible){
     const sp=state.speed;
@@ -672,6 +723,19 @@ ui.mute.addEventListener('click',()=>{
   ui.mute.textContent=state.muted?'SOUND OFF':'SOUND ON';
   localStorage.setItem(MUTE_KEY,state.muted?'1':'0');
 });
+
+// --- Difficulty selector (additive). Sets DIFF + persists; does not start the run. ---
+const diffBtns=Array.prototype.slice.call(document.querySelectorAll('.diffbtn'));
+function applyDiff(key,persist){
+  if(!DIFFS[key])key='pilot';
+  diffKey=key;DIFF=DIFFS[key];
+  for(const b of diffBtns)b.setAttribute('aria-pressed',b.dataset.diff===key?'true':'false');
+  if(persist){try{localStorage.setItem(DIFF_KEY,key);}catch(e){}}
+}
+for(const b of diffBtns){
+  b.addEventListener('click',()=>{applyDiff(b.dataset.diff,true);pulse(520,.05,'sine',.03);});
+}
+applyDiff(diffKey,false);
 
 let last=performance.now();
 function frame(now){
