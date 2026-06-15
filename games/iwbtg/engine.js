@@ -51,7 +51,7 @@ function spr(name, frame, dx, dy, dw, dh, flip) {
 }
 
 /* ---------- サウンド ---------- */
-let actx = null, mute = false;
+let actx = null, mute = localStorage.getItem('signal_mute') === '1';
 function tone(f, d = 0.08, type = 'square', g = 0.04) {
   if (mute) return;
   try {
@@ -108,6 +108,14 @@ let state = 'title';           // title | card | play | dead | stageclear | clea
 let deadT = 0, cardT = 0, clearT = 0, toast = '', toastT = 0, time = 0, runT = 0;
 let god = false, activeSave = -1, checkpoint = null;
 const parts = [];
+
+/* ---------- 追加: 演出・スコア・設定（描画とスコアのみ。物理/衝突には一切触れない） ---------- */
+const REDUCE = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
+let shake = 0, flash = 0;                         // 画面シェイク量・死亡フラッシュ（描画カメラ専用のオフセット）
+let combo = 0;                                    // ノーデス連続クリア数
+let bestCombo = parseInt(localStorage.getItem('signal_bestcombo'), 10) || 0;
+let bestTime = parseFloat(localStorage.getItem('signal_besttime')) || 0;
+let bestStage = parseInt(localStorage.getItem('signal_beststage'), 10) || 0;
 
 const keyOf = (tx, ty) => tx + ',' + ty;
 const isSolid = (tx, ty) => solid.has(keyOf(tx, ty));
@@ -173,6 +181,8 @@ function die(msg) {
   if (state !== 'play' || god) return;
   state = 'dead'; deadT = 0;
   deaths++; localStorage.setItem('signal_deaths', deaths);
+  combo = 0;                                       // ノーデス連続クリアをリセット（スコアのみ）
+  shake = REDUCE ? 0 : 16; flash = REDUCE ? 0.25 : 0.6;  // 描画専用の演出（物理には無関係）
   burst(P.x, P.y - P.h / 2, C.red, 28);
   if (msg) toastMsg(msg);
   tone(220, 0.12, 'sawtooth', 0.06); setTimeout(() => tone(110, 0.25, 'sawtooth', 0.05), 60);
@@ -197,8 +207,15 @@ addEventListener('keydown', e => {
     if (e.key === 'r' || e.key === 'R') { loadStage(0); runT = 0; }
     return;
   }
+  // 一時停止トグル（ESC / P）— update() は 'pause' で即 return するため物理は完全停止
+  if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+    if (state === 'play') { state = 'pause'; tone(330, .06, 'sine', .04); return; }
+    if (state === 'pause') { state = 'play'; tone(440, .06, 'sine', .04); return; }
+  }
+  // ミュートは play/dead/pause で有効（一時停止画面からも切替可）
+  if (e.key === 'm' || e.key === 'M') { mute = !mute; localStorage.setItem('signal_mute', mute ? '1' : '0'); toastMsg(mute ? 'MUTE ON' : 'MUTE OFF'); return; }
+  if (state === 'pause') return;   // 一時停止中はジャンプ等のゲーム入力を無視
   if (state !== 'play' && state !== 'dead') return;
-  if (e.key === 'm' || e.key === 'M') { mute = !mute; toastMsg(mute ? 'MUTE ON' : 'MUTE OFF'); return; }
   if (e.key === 'r' || e.key === 'R') { if (state === 'play') { if (god) respawn(); else die(); } return; }
   if (JUMPK.includes(e.key) && state === 'play' && P.jumps > 0) {
     const first = P.ground;
@@ -361,16 +378,21 @@ function updatePlatforms(dt) {
 }
 
 function update(dt) {
+  if (state === 'pause') return;   // 一時停止: シミュレーションを完全凍結（描画ループは継続）
   time += dt;
   if (toastT > 0) toastT -= dt;
   updateParts(dt);
+  // 演出の減衰（描画専用オフセット。物理には無関係）
+  if (shake > 0) shake = Math.max(0, shake - 60 * dt);
+  if (flash > 0) flash = Math.max(0, flash - 1.6 * dt);
   if (state === 'card') { cardT -= dt; if (cardT <= 0) state = 'play'; return; }
   if (state === 'dead') { deadT += dt; if (deadT > 0.9) respawn(); return; }
   if (state === 'stageclear') {
     clearT -= dt;
     if (clearT <= 0) {
       if (stageIdx + 1 < DEFS.length) loadStage(stageIdx + 1);
-      else { state = 'clear'; localStorage.setItem('signal_stage', 0); }
+      else { state = 'clear'; localStorage.setItem('signal_stage', 0);
+        if (bestTime === 0 || runT < bestTime) { bestTime = runT; localStorage.setItem('signal_besttime', runT.toFixed(2)); } }
     }
     return;
   }
@@ -450,6 +472,9 @@ function update(dt) {
     if (rectsHit(pl, pt, pr, pb, l, t, l + TILE, b)) {
       if (g.fake) { burst(l + 16, b - 24, C.violet, 22); die('そのドアは嘘だった。'); return; }
       state = 'stageclear'; clearT = 1.5;
+      // スコア記録（進行はゲートしない・難易度は不変）
+      combo++; if (combo > bestCombo) { bestCombo = combo; localStorage.setItem('signal_bestcombo', bestCombo); }
+      if (stageIdx + 1 > bestStage) { bestStage = stageIdx + 1; localStorage.setItem('signal_beststage', bestStage); }
       tone(660, .1, 'sine', .06); setTimeout(() => tone(880, .14, 'sine', .06), 90);
       setTimeout(() => tone(1320, .2, 'sine', .06), 200);
       return;
@@ -480,26 +505,53 @@ function drawSpikeShape(x, y, dir, bright) {
   ctx.restore();
 }
 
+// CRTビネット + スキャンライン + 紫のエッジ着色（フレーム最終段の純描画オーバーレイ）
+function drawCRT() {
+  const g = ctx.createRadialGradient(VIEW_W / 2, VIEW_H * 0.46, VIEW_H * 0.35, VIEW_W / 2, VIEW_H / 2, VIEW_W * 0.62);
+  g.addColorStop(0, 'rgba(4,6,11,0)'); g.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  ctx.globalAlpha = 0.06; ctx.fillStyle = C.teal;
+  const off = REDUCE ? 0 : Math.floor(time * 30) % 4;   // reduced-motion ではスクロールを停止
+  for (let y = off; y < VIEW_H; y += 4) ctx.fillRect(0, y, VIEW_W, 1);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = 'rgba(123,77,255,0.05)';
+  ctx.fillRect(0, 0, VIEW_W, 8); ctx.fillRect(0, VIEW_H - 8, VIEW_W, 8);
+}
+
 function render() {
   const camX = Math.max(0, Math.min(P.x - VIEW_W / 2, LV.w * TILE - VIEW_W));
   const camY = Math.max(0, Math.min(P.y - VIEW_H * 0.6, Math.max(0, LV.h * TILE - VIEW_H)));
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 
-  const bg = SPR['bg_stage1'];
+  // 背景: ステージ別PNGがあれば使用、無ければ stage1、それも無ければ手続き的な星空にフォールバック
+  const bg = SPR['bg_stage' + (stageIdx + 1)] || SPR['bg_stage1'];
   if (bg) {
     const off = (camX * 0.3) % VIEW_W;
     ctx.drawImage(bg.img, 0, 0, bg.fw, bg.fh, -off, 0, VIEW_W, VIEW_H);
     ctx.drawImage(bg.img, 0, 0, bg.fw, bg.fh, VIEW_W - off, 0, VIEW_W, VIEW_H);
   } else {
-    ctx.fillStyle = 'rgba(234,244,242,.22)';
-    for (let i = 0; i < 90; i++) {
-      const sx = (i * 97 + 13) % (LV.w * TILE), sy = (i * 57 + 31) % VIEW_H;
-      const x = ((sx - camX * 0.3) % VIEW_W + VIEW_W) % VIEW_W;
-      ctx.fillRect(x, sy, 2, 2);
+    // 2層パララックス星空 + ゆっくり漂う紫のモート（純描画・衝突に無関係）
+    for (let layer = 0; layer < 2; layer++) {
+      const par = layer ? 0.5 : 0.22, sz = layer ? 2 : 1;
+      ctx.fillStyle = layer ? 'rgba(51,231,200,.28)' : 'rgba(234,244,242,.18)';
+      for (let i = 0; i < 70; i++) {
+        const sx = (i * 97 + 13 + layer * 40) % (LV.w * TILE), sy = (i * 57 + 31 + layer * 90) % VIEW_H;
+        const x = ((sx - camX * par) % VIEW_W + VIEW_W) % VIEW_W;
+        ctx.fillRect(x, sy, sz, sz);
+      }
+    }
+    ctx.fillStyle = 'rgba(123,77,255,.18)';
+    for (let i = 0; i < 8; i++) {
+      const x = ((i * 131 - camX * 0.12 + time * 6) % VIEW_W + VIEW_W) % VIEW_W;
+      const y = ((i * 61 + Math.sin(time * 0.6 + i) * 14) % VIEW_H + VIEW_H) % VIEW_H;
+      ctx.fillRect(x, y, 3, 3);
     }
   }
 
-  ctx.save(); ctx.translate(-camX, -camY);
+  // 画面シェイク: 描画カメラのオフセットのみ（P.x/P.y・衝突判定には一切影響しない）
+  const sx = shake ? (Math.random() * 2 - 1) * shake : 0;
+  const sy = shake ? (Math.random() * 2 - 1) * shake : 0;
+  ctx.save(); ctx.translate(-camX + sx, -camY + sy);
   const tx0 = Math.floor(camX / TILE) - 1, tx1 = Math.ceil((camX + VIEW_W) / TILE) + 1;
 
   const drawBlock = (x, y) => {
@@ -655,6 +707,9 @@ function render() {
   ctx.globalAlpha = 1;
   ctx.restore();
 
+  // 死亡フラッシュ（フルスクリーンの赤・カメラ復帰後に重ねる）
+  if (flash > 0) { ctx.fillStyle = 'rgba(255,59,92,' + (flash * 0.5).toFixed(3) + ')'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
+
   /* ---- HUD ---- */
   const mm = Math.floor(runT / 60), ss = (runT % 60).toFixed(1).padStart(4, '0');
   ctx.font = '700 13px "Courier New",monospace';
@@ -662,6 +717,8 @@ function render() {
   ctx.fillText('DEATHS ' + String(deaths).padStart(3, '0'), 14, 22);
   ctx.fillStyle = 'rgba(234,244,242,.5)';
   ctx.fillText('TIME ' + mm + ':' + ss, 14, 40);
+  if (combo > 1) { ctx.fillStyle = C.teal; ctx.textAlign = 'left';
+    ctx.fillText('COMBO x' + combo + ' NO-DEATH', 14, 58); }
   ctx.textAlign = 'center';
   ctx.fillText((stageIdx + 1) + '/' + DEFS.length + '  ' + LV.name, VIEW_W / 2, 22);
   ctx.textAlign = 'right';
@@ -683,7 +740,7 @@ function render() {
     ctx.fillStyle = C.violet; ctx.font = '700 13px "Courier New",monospace';
     ctx.fillText('AlicE sYsTeM // game lab — ' + DEFS.length + ' STAGES OF PAIN', VIEW_W / 2, VIEW_H / 2 - 40);
     ctx.fillStyle = 'rgba(234,244,242,.75)'; ctx.font = '700 14px "Courier New",monospace';
-    ctx.fillText('← → MOVE   Z / SPACE JUMP ×2   R RETRY   M MUTE', VIEW_W / 2, VIEW_H / 2 + 14);
+    ctx.fillText('← → MOVE   Z / SPACE JUMP ×2   R RETRY   M MUTE   ESC PAUSE', VIEW_W / 2, VIEW_H / 2 + 14);
     if (stageIdx > 0) {
       ctx.fillStyle = C.teal;
       ctx.fillText('CONTINUE: STAGE ' + (stageIdx + 1) + '   (0キーで最初から)', VIEW_W / 2, VIEW_H / 2 + 44);
@@ -692,6 +749,11 @@ function render() {
     ctx.fillText(Math.sin(time * 4) > 0 ? '— PRESS ANY KEY —' : '', VIEW_W / 2, VIEW_H / 2 + 80);
     ctx.fillStyle = C.red; ctx.font = '700 12px "Courier New",monospace';
     ctx.fillText('警告: この世界はあなたを騙します。全てを疑え。', VIEW_W / 2, VIEW_H / 2 + 116);
+    if (bestStage > 0) {
+      ctx.fillStyle = 'rgba(51,231,200,.7)'; ctx.font = '700 12px "Courier New",monospace';
+      const bt = bestTime ? '  BEST ' + Math.floor(bestTime / 60) + ':' + (bestTime % 60).toFixed(1).padStart(4, '0') : '';
+      ctx.fillText('BEST  STAGE ' + bestStage + ' / ' + DEFS.length + bt, VIEW_W / 2, VIEW_H / 2 + 142);
+    }
   } else if (state === 'card') {
     ctx.fillStyle = 'rgba(4,6,11,.78)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.fillStyle = C.ink; ctx.font = '700 30px "Courier New",monospace';
@@ -702,17 +764,34 @@ function render() {
     ctx.fillStyle = 'rgba(4,6,11,.6)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.fillStyle = C.teal; ctx.font = '700 34px "Courier New",monospace';
     ctx.fillText('SIGNAL ACQUIRED', VIEW_W / 2, VIEW_H / 2);
+  } else if (state === 'pause') {
+    ctx.fillStyle = 'rgba(4,6,11,.86)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    ctx.fillStyle = C.ink; ctx.font = '700 30px "Courier New",monospace';
+    ctx.fillText('PAUSED', VIEW_W / 2, VIEW_H / 2 - 70);
+    ctx.fillStyle = C.violet; ctx.font = '700 13px "Courier New",monospace';
+    ctx.fillText('OBJECTIVE: 嘘を見抜き、本物のシグナル(ゴール)に到達せよ。', VIEW_W / 2, VIEW_H / 2 - 36);
+    ctx.fillStyle = 'rgba(234,244,242,.8)';
+    ctx.fillText('← → MOVE   Z / SPACE JUMP ×2   R RETRY', VIEW_W / 2, VIEW_H / 2 + 2);
+    ctx.fillStyle = C.teal;
+    ctx.fillText('[M] ' + (mute ? 'SOUND OFF' : 'SOUND ON') + '   ·   MOTION ' + (REDUCE ? 'REDUCED' : 'ON') + '   ·   [ESC] RESUME', VIEW_W / 2, VIEW_H / 2 + 36);
+    if (combo > 1) { ctx.fillStyle = 'rgba(51,231,200,.7)';
+      ctx.fillText('NO-DEATH COMBO x' + combo, VIEW_W / 2, VIEW_H / 2 + 64); }
   } else if (state === 'clear') {
     ctx.fillStyle = 'rgba(4,6,11,.88)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     ctx.fillStyle = C.teal; ctx.font = '700 40px "Courier New",monospace';
     ctx.fillText('ALL SIGNALS CLAIMED', VIEW_W / 2, VIEW_H / 2 - 50);
     ctx.fillStyle = C.ink; ctx.font = '700 15px "Courier New",monospace';
     ctx.fillText('TOTAL DEATHS: ' + deaths + '    TIME: ' + mm + ':' + ss, VIEW_W / 2, VIEW_H / 2 - 8);
+    if (bestTime > 0) { ctx.fillStyle = 'rgba(51,231,200,.7)'; ctx.font = '700 13px "Courier New",monospace';
+      ctx.fillText('BEST TIME ' + Math.floor(bestTime / 60) + ':' + (bestTime % 60).toFixed(1).padStart(4, '0') + '   BEST COMBO ' + bestCombo, VIEW_W / 2, VIEW_H / 2 + 16); }
     ctx.fillStyle = C.violet;
     ctx.fillText('あなたはシグナルになった。', VIEW_W / 2, VIEW_H / 2 + 28);
     ctx.fillStyle = 'rgba(234,244,242,.6)';
     ctx.fillText('R — RESTART FROM STAGE 1', VIEW_W / 2, VIEW_H / 2 + 64);
   }
+
+  // CRTグレード（HUD・オーバーレイの後＝フレーム最終段。全ステージを統一した見栄えに）
+  drawCRT();
 }
 
 /* ---------- 起動 ---------- */

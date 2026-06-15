@@ -125,7 +125,9 @@ addEventListener('resize',resize);
 /* ============================================================
    AUDIO — small synth engine
 ============================================================ */
+const MUTE_KEY='alice_dragons_keep_mute';
 let AC=null, master=null, musicGain=null, muted=false;
+try{muted=localStorage.getItem(MUTE_KEY)==='1';}catch(e){}
 function audioInit(){
   if(AC){if(AC.state!=='running')AC.resume();return;} // iOS: revive after interruption
   try{
@@ -317,6 +319,14 @@ function emit(x,y,n,opt={}){
 }
 function ftext(x,y,txt,c='#ffc34d',size=17){TEXTS.push({x,y,txt,c,size,t:0});}
 let shakeT=0,shakeM=0,flashA=0,flashC='#fff',timeScale=1,slowT=0;
+/* accessibility: honor prefers-reduced-motion (zeroes screen-shake amplitude
+   and freezes the CRT scanline scroll — purely visual, never touches the sim) */
+let REDUCE=false;
+try{
+  const rm=matchMedia('(prefers-reduced-motion: reduce)');
+  REDUCE=rm.matches;
+  rm.addEventListener?.('change',e=>{REDUCE=e.matches;});
+}catch(e){}
 function shake(m,t=.3){shakeM=Math.max(shakeM,m);shakeT=Math.max(shakeT,t);}
 function flash(c='#fff',a=.4){flashC=c;flashA=Math.max(flashA,a);}
 function slowmo(){timeScale=.3;slowT=.85;}
@@ -870,8 +880,10 @@ document.addEventListener('visibilitychange',()=>{
     if(AC&&AC.state!=='running')AC.resume();
   }
 });
-function toggleMute(){muted=!muted;document.getElementById('muteBtn').textContent=muted?'♪ OFF':'♪ ON';}
+function toggleMute(){muted=!muted;try{localStorage.setItem(MUTE_KEY,muted?'1':'0');}catch(e){}document.getElementById('muteBtn').textContent=muted?'♪ OFF':'♪ ON';}
 document.getElementById('muteBtn').addEventListener('click',()=>{audioInit();toggleMute();});
+/* reflect persisted mute state on the button at load */
+document.getElementById('muteBtn').textContent=muted?'♪ OFF':'♪ ON';
 
 /* start / restart */
 function startGame(){
@@ -1448,6 +1460,66 @@ function drawPanel(t){
   cx.restore();
 }
 
+/* ---------- combo chip (additive HUD; purely cosmetic) ---------- */
+function drawCombo(t){
+  if(state!=='playing'||game.combo<2)return;
+  // fade with the existing comboT timer so it disappears when the combo lapses
+  const a=clamp(game.comboT/4,0,1);
+  if(a<=0)return;
+  cx.save();
+  cx.globalAlpha=a;
+  cx.translate(270,300);
+  const pulse=REDUCE?1:(1+.05*Math.sin(t*9));
+  cx.scale(pulse,pulse);
+  // soft backing using the cached glow sprite (no per-frame shadowBlur)
+  glow(0,0,58,'rgba(157,123,255,.5)',a*.8);
+  cx.font='700 22px "Space Grotesk"';cx.textAlign='center';cx.textBaseline='middle';
+  cx.fillStyle='#cdb7ff';
+  cx.fillText('COMBO x'+game.combo,0,0);
+  cx.restore();
+  cx.globalAlpha=1;
+}
+
+/* ---------- CRT / vignette / scanline grade (screen-space post pass) ----------
+   Drawn last, in raw device space (after setTransform reset) so it grades the
+   whole frame. Uses a cached vignette gradient + a cached scanline pattern —
+   no per-frame shadowBlur, no allocation in the hot path. Reduced-motion
+   freezes the scanline scroll. */
+let crtGrad=null, crtScan=null, crtW=0, crtH=0;
+function buildCRT(w,h){
+  crtW=w;crtH=h;
+  const g=cx.createRadialGradient(w*0.5,h*0.46,Math.min(w,h)*0.32,w*0.5,h*0.5,Math.max(w,h)*0.72);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(.72,'rgba(4,3,10,.18)');
+  g.addColorStop(1,'rgba(2,1,6,.62)');
+  crtGrad=g;
+  // scanline tile (2px on / 2px off) — built once, repeated
+  const sc=document.createElement('canvas');sc.width=2;sc.height=4;
+  const c=sc.getContext('2d');
+  c.fillStyle='rgba(0,0,0,.16)';c.fillRect(0,0,2,2);
+  crtScan=cx.createPattern(sc,'repeat');
+}
+function drawGrade(t){
+  const w=cv.width,h=cv.height;
+  cx.setTransform(1,0,0,1,0,0);
+  if(!crtGrad||crtW!==w||crtH!==h)buildCRT(w,h);
+  cx.save();
+  // scanlines (scroll unless reduced-motion); offset via translate so the
+  // cached pattern is reused rather than rebuilt
+  const off=REDUCE?0:Math.floor(t*40)%4;
+  cx.translate(0,off);
+  cx.fillStyle=crtScan;
+  cx.fillRect(0,-4,w,h+4);
+  cx.setTransform(1,0,0,1,0,0);
+  // vignette
+  cx.fillStyle=crtGrad;
+  cx.fillRect(0,0,w,h);
+  // faint cosmic edge tint (teal top, violet bottom) for table identity
+  cx.fillStyle='rgba(51,231,200,.05)';cx.fillRect(0,0,w,Math.max(3,h*0.012));
+  cx.fillStyle='rgba(157,123,255,.05)';cx.fillRect(0,h-Math.max(3,h*0.012),w,Math.max(3,h*0.012));
+  cx.restore();
+}
+
 /* ============================================================
    MAIN LOOP
 ============================================================ */
@@ -1522,14 +1594,16 @@ function frame(now){
   /* ---------- draw ---------- */
   cx.setTransform(1,0,0,1,0,0);
   cx.fillStyle='#06050b';cx.fillRect(0,0,cv.width,cv.height);
-  const sx=ox+(shakeT>0?rnd(-shakeM,shakeM)*scale:0);
-  const sy=oy+DMD_H*scale+GAP*scale+(shakeT>0?rnd(-shakeM,shakeM)*scale:0);
+  const shAmp=REDUCE?0:shakeM;
+  const sx=ox+(shakeT>0?rnd(-shAmp,shAmp)*scale:0);
+  const sy=oy+DMD_H*scale+GAP*scale+(shakeT>0?rnd(-shAmp,shAmp)*scale:0);
   cx.setTransform(scale*dpr,0,0,scale*dpr,sx*dpr,sy*dpr);
 
   drawTable(t,dt);
   drawParticles(dt);
   drawBalls();
   drawFlippers();
+  drawCombo(t);
   drawDMD(t);
   drawPanel(t);
 
@@ -1542,6 +1616,8 @@ function frame(now){
   if(state!=='playing'&&Math.random()<.3){
     emit(rnd(40,500),TH-20,1,{a0:-Math.PI*.6,a1:-Math.PI*.4,sp0:20,sp1:80,t0:1.5,t1:3,s0:1,s1:2.5,g:-30,c:'#ff7a3c'});
   }
+  // CRT / vignette / scanline grade — final screen-space post pass
+  drawGrade(t);
 }
 initGrads();
 resize();

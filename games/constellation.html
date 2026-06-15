@@ -37,6 +37,20 @@
   #win p{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.1em}
   #win a{font-family:var(--mono);font-size:13px;letter-spacing:.16em;color:#04060b;background:linear-gradient(110deg,var(--teal),var(--violet));
     padding:13px 28px;border-radius:8px;font-weight:700;text-decoration:none}
+  .top .score{color:var(--teal);font-variant-numeric:tabular-nums;font-size:11px}
+  .top .right{display:flex;align-items:center;gap:14px}
+  .top .mute{color:var(--muted);cursor:pointer;transition:.2s;font-size:11px;letter-spacing:.1em}
+  .top .mute:hover{color:var(--teal)}
+  /* title overlay reuses #win visual language */
+  #title{position:fixed;inset:0;z-index:11;display:none;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;
+    background:radial-gradient(circle,rgba(4,6,11,.7),#04060b 75%)}
+  #title.show{display:flex}
+  #title h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:clamp(34px,7vw,68px);
+    background:linear-gradient(110deg,#fff,var(--teal),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 50px rgba(51,231,200,.4)}
+  #title p{font-family:var(--mono);font-size:13px;color:var(--muted);letter-spacing:.1em;max-width:520px;line-height:1.7}
+  #title #titlebest{color:var(--teal)}
+  #title a{font-family:var(--mono);font-size:13px;letter-spacing:.16em;color:#04060b;background:linear-gradient(110deg,var(--teal),var(--violet));
+    padding:13px 28px;border-radius:8px;font-weight:700;text-decoration:none;cursor:pointer}
 </style>
 </head>
 <body>
@@ -44,8 +58,11 @@
 <div class="vig"></div><div class="grain"></div>
 <div class="top">
   <a href="../index.html">↩ RETURN</a>
-  <span>CONSTELLATION // SIGNAL ALIGNMENT</span>
-  <span class="lvl" id="lvl">LEVEL 1/3</span>
+  <span class="score" id="score">SCORE 0</span>
+  <div class="right">
+    <span class="mute" id="mute">♪ ON</span>
+    <span class="lvl" id="lvl">LEVEL 1/3</span>
+  </div>
 </div>
 <div class="hud">
   <div class="msg" id="msg">記憶せよ…</div>
@@ -56,6 +73,12 @@
   <h1>SIGNAL ALIGNED</h1>
   <p id="winp">三つの星座が、同期した。</p>
   <a href="../index.html">↩ RETURN TO THE SIGNAL</a>
+</div>
+<div id="title" class="show">
+  <h1>CONSTELLATION</h1>
+  <p>光る星座を記憶し、同じ順に星をつなげ。<br>Memorize the signal, then retrace it from memory.</p>
+  <p id="titlebest"></p>
+  <a id="begin">◈ BEGIN ALIGNMENT</a>
 </div>
 
 <script>
@@ -70,7 +93,7 @@
 
   // audio
   let ac=null;function audio(){if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}if(ac&&ac.state==='suspended')ac.resume();return ac;}
-  function tone(f,d=0.2,type='sine',g=0.06){const a=audio();if(!a)return;const o=a.createOscillator(),gn=a.createGain();
+  function tone(f,d=0.2,type='sine',g=0.06){if(muted)return;const a=audio();if(!a)return;const o=a.createOscillator(),gn=a.createGain();
     o.type=type;o.frequency.value=f;o.connect(gn);gn.connect(a.destination);const t=a.currentTime;
     gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(g,t+0.01);gn.gain.exponentialRampToValueAtTime(0.0001,t+d);o.start(t);o.stop(t+d);}
 
@@ -79,10 +102,40 @@
     [[.30,.40],[.45,.30],[.58,.42],[.50,.58]],
     [[.28,.55],[.38,.35],[.52,.30],[.62,.45],[.55,.62]],
     [[.25,.48],[.36,.32],[.48,.40],[.58,.28],[.66,.46],[.52,.58]],
+    [[.22,.52],[.33,.34],[.45,.46],[.50,.26],[.60,.40],[.70,.30],[.66,.56]],
   ];
 
   let level=0, nodes=[], decoys=[], target=[], progress=0, phase='flash', flashT=0, errorT=0, bgStars=[];
   let pulse=0;
+
+  // --- additive: juice / particles / shake ---
+  let parts=[], shake=0;
+  let reduceMotion=false;
+  try{ reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+  function burst(px,py,n,hueMix){ if(reduceMotion) return;
+    for(let i=0;i<n;i++){ const a=Math.random()*6.28, sp=Math.random()*2.6+.6;
+      parts.push({x:px,y:py,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,
+        c: Math.random()<hueMix ? '123,77,255' : '51,231,200', r:Math.random()*2+1}); } }
+  function addShake(v){ if(!reduceMotion) shake=Math.min(14,shake+v); }
+
+  // --- additive: ignition sweep ---
+  let ignite=0, igniteSeg=-1;
+
+  // --- additive: score / combo / persistence ---
+  let score=0, combo=0, best=0;
+  try{ best=+(localStorage.getItem('alice_constellation_best')||0)||0; }catch(e){}
+  function renderScore(){ const el=$('score'); if(el) el.textContent='SCORE '+score+(combo>1?' x'+combo:'')+'  ·  BEST '+best; }
+
+  // --- additive: mute toggle (persisted) ---
+  let muted=false; try{ muted=localStorage.getItem('alice_constellation_mute')==='1'; }catch(e){}
+  function renderMute(){ const m=$('mute'); if(m) m.textContent = muted?'♪ OFF':'♪ ON'; }
+
+  // --- additive: per-level color grade (teal -> violet) ---
+  const GRADES=[ {line:'51,231,200', tint:'rgba(51,231,200,0.025)'},
+                 {line:'90,200,230', tint:'rgba(80,150,255,0.03)'},
+                 {line:'123,150,255', tint:'rgba(110,90,255,0.035)'},
+                 {line:'160,110,255', tint:'rgba(150,80,255,0.045)'} ];
+  function grade(){ return GRADES[Math.min(level,GRADES.length-1)]; }
 
   function buildBg(){ const N=Math.min(160,(W*H)/9000|0); bgStars=Array.from({length:N},()=>({
     x:Math.random(),y:Math.random(),r:Math.random()*1.2+.2,p:Math.random()*6.28,sp:Math.random()*.5+.2})); }
@@ -96,12 +149,14 @@
   function startLevel(){
     target=LEVELS[level];
     // decoys
-    const nd=18+level*4; decoys=Array.from({length:nd},()=>{const r=Math.random()*1.6+.6;return {nx:Math.random(),ny:Math.random(),r};});
+    const nd=18+level*4+(level===LEVELS.length-1?6:0); decoys=Array.from({length:nd},()=>{const r=Math.random()*1.6+.6;return {nx:Math.random(),ny:Math.random(),r};});
     progress=0; phase='flash'; flashT=performance.now(); errorT=0;
+    ignite=0; igniteSeg=-1;
     layout(); buildBg();
-    $('lvl').textContent='LEVEL '+(level+1)+'/3';
+    $('lvl').textContent='LEVEL '+(level+1)+'/'+LEVELS.length;
     $('msg').textContent='記憶せよ…'; $('msg').style.opacity=1;
     $('sub').textContent='光る星座を覚えて、同じ順に星をつなげ';
+    renderScore();
     // chime
     tone(420,0.25,'sine',0.04);
   }
@@ -115,13 +170,21 @@
     if(phase!=='input')return;
     const i=nearestNode(px,py);
     if(i===progress){ progress++; tone(380+progress*70,0.18,'triangle',0.05);
+      // juice + scoring (additive, never affects order/tolerance logic)
+      burst(nodes[i].x, nodes[i].y, 16, .35); addShake(3);
+      if(progress>=2){ igniteSeg=progress-2; ignite=1; }
+      combo++; score += 10*combo;
+      if(score>best){ best=score; try{localStorage.setItem('alice_constellation_best',best);}catch(e){} }
+      renderScore();
       if(progress>=nodes.length){ // level complete
         phase='done'; tone(660,0.3,'sine',0.06); setTimeout(()=>tone(880,0.4,'sine',0.05),120);
+        burst(nodes[nodes.length-1].x, nodes[nodes.length-1].y, 60, .55); addShake(9);
         $('msg').textContent='✦ 整列 ✦';
         setTimeout(()=>{ level++; if(level>=LEVELS.length){ winGame(); } else startLevel(); }, 1100);
       }
     } else { // wrong
       errorT=performance.now(); progress=0; tone(120,0.25,'sawtooth',0.05);
+      combo=0; renderScore();
       $('msg').textContent='信号がずれた。最初から。';
       setTimeout(()=>{ if(phase==='input')$('msg').textContent='星をつなげ'; },1100);
     }
@@ -138,10 +201,14 @@
   function draw(t){
     pulse+=0.04;
     x.clearRect(0,0,W,H);
+    x.save();
+    if(shake>0.2){ x.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake); shake*=0.86; } else shake=0;
     // bg stars
     for(const s of bgStars){ const tw=.3+Math.abs(Math.sin(s.p+pulse*s.sp))*.5;
       x.globalAlpha=tw*.5; x.fillStyle='#9fd8ff'; x.beginPath();x.arc(s.x*W,s.y*H,s.r,0,6.28);x.fill(); }
     x.globalAlpha=1;
+    // per-level color grade (skip on title)
+    if(phase!=='title'){ x.fillStyle=grade().tint; x.fillRect(0,0,W,H); }
     // decoy stars
     for(const d of decoys){ x.globalAlpha=.5;x.fillStyle='#6f86a8';x.beginPath();x.arc(d.x,d.y,d.r,0,6.28);x.fill(); }
     x.globalAlpha=1;
@@ -155,6 +222,15 @@
       // draw accepted progress
       drawConstellation(progress, 1, false);
     }
+    // ignition sweep along the most-recently-completed segment
+    if(ignite>0 && igniteSeg>=0 && igniteSeg+1<nodes.length){
+      ignite=Math.max(0,ignite-0.05);
+      const a=nodes[igniteSeg], b=nodes[igniteSeg+1], k=1-ignite; // travel 0->1
+      const px=a.x+(b.x-a.x)*k, py=a.y+(b.y-a.y)*k;
+      x.save(); x.globalAlpha=Math.min(1,ignite*1.4);
+      x.shadowColor='#7dffae'; x.shadowBlur=18; x.fillStyle='#eafff4';
+      x.beginPath(); x.arc(px,py,3.2,0,6.28); x.fill(); x.restore(); x.shadowBlur=0;
+    }
     // node glows (always faint so they're findable as stars)
     nodes.forEach((n,i)=>{ const lit = (phase==='flash') || i<progress;
       x.globalAlpha = lit?1:.6;
@@ -164,19 +240,37 @@
     x.globalAlpha=1;
     // error flash
     if(errorT){ const e=(now-errorT)/300; if(e<1){ x.fillStyle='rgba(255,92,157,'+(0.25*(1-e))+')'; x.fillRect(0,0,W,H);} else errorT=0; }
+    // particles
+    for(let i=parts.length-1;i>=0;i--){ const p=parts[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.015; p.life-=0.018;
+      if(p.life<=0){ parts.splice(i,1); continue; }
+      x.globalAlpha=p.life; x.fillStyle='rgba('+p.c+','+p.life+')';
+      x.shadowColor='rgba('+p.c+',1)'; x.shadowBlur=8;
+      x.beginPath(); x.arc(p.x,p.y,p.r*p.life,0,6.28); x.fill(); }
+    x.shadowBlur=0; x.globalAlpha=1;
+    x.restore();
     requestAnimationFrame(draw);
   }
   function drawConstellation(upto,alpha,full){
     if(upto<2 && !full) { return; }
-    x.save(); x.globalAlpha=alpha; x.strokeStyle='rgba(51,231,200,'+(full?.7:.9)+')'; x.lineWidth=1.4;
-    x.shadowColor='#33e7c8'; x.shadowBlur=8;
+    x.save(); x.globalAlpha=alpha; x.strokeStyle='rgba('+grade().line+','+(full?.7:.9)+')'; x.lineWidth=1.4;
+    x.shadowColor='rgb('+grade().line+')'; x.shadowBlur=8;
     x.beginPath();
     const n = full?nodes.length:upto;
     for(let i=0;i<n-1;i++){ x.moveTo(nodes[i].x,nodes[i].y); x.lineTo(nodes[i+1].x,nodes[i+1].y); }
     x.stroke(); x.shadowBlur=0; x.restore();
   }
 
-  resize(); startLevel(); requestAnimationFrame(draw);
+  // --- mute toggle wiring ---
+  renderMute();
+  if($('mute')) $('mute').addEventListener('click',()=>{ muted=!muted;
+    try{localStorage.setItem('alice_constellation_mute',muted?'1':'0');}catch(e){} renderMute(); });
+
+  // --- title screen: idle loop until BEGIN, then run the puzzle ---
+  resize(); phase='title'; buildBg(); renderScore();
+  const tb=$('titlebest'); if(tb) tb.textContent = best>0 ? ('BEST  '+best) : '';
+  if($('begin')) $('begin').addEventListener('click',e=>{ e.preventDefault(); audio();
+    $('title').classList.remove('show'); startLevel(); });
+  requestAnimationFrame(draw);
 })();
 </script>
 </body>
