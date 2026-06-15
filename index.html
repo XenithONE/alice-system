@@ -1128,8 +1128,10 @@ import * as THREE from 'three';
   function webglOK(){ try{ const c=document.createElement('canvas');
     return !!(window.WebGLRenderingContext && (c.getContext('webgl2')||c.getContext('webgl'))); }catch(e){ return false; } }
 
-  // ---- capability gate: tiny / no-webgl / reduced-motion → keep static hero2.jpg ----
-  if(RM || W0 < 360 || !webglOK()){ canvas.style.display='none'; return; }
+  // ---- capability gate: only tiny / no-webgl → static hero2.jpg ----
+  // reduced-motion still gets the cosmos, but CALM (no autonomous motion; moves only on user input)
+  if(W0 < 360 || !webglOK()){ canvas.style.display='none'; return; }
+  const CALM = RM;
 
   const LOW = W0 < 760 || TOUCH;
   const COUNT = LOW ? 5000 : 16000;
@@ -1373,8 +1375,9 @@ import * as THREE from 'three';
   if(tb){ const on=e=>{e.preventDefault(); thrusting=true; if(focusing||focused) cancelFocus(); flyKick();}; const off=()=>thrusting=false;
     tb.addEventListener('pointerdown',on); tb.addEventListener('pointerup',off); tb.addEventListener('pointerleave',off); tb.addEventListener('pointercancel',off); }
 
-  // intro: gentle cinematic glide to the home vantage
-  _o.position.set(0,0,34); _o.lookAt(0,0,0); focusing={pos:new THREE.Vector3(0,0,34), quat:_o.quaternion.clone()};
+  // intro: gentle cinematic glide to the home vantage (skipped under reduced-motion → snap home)
+  if(CALM){ camPos.set(0,0,34); yaw=0; pitch=0; }
+  else { _o.position.set(0,0,34); _o.lookAt(0,0,0); focusing={pos:new THREE.Vector3(0,0,34), quat:_o.quaternion.clone()}; }
   applyCam();
 
   // ---- loop ----
@@ -1383,9 +1386,11 @@ import * as THREE from 'three';
   function frame(){
     rafId=requestAnimationFrame(frame);
     const dt=Math.min(clock.getDelta(),0.05); uT+=dt;
-    gMat.uniforms.uTime.value=uT;
-    group.rotation.y += dt*0.01;
-    shard.rotation.y += dt*0.18; core.scale.setScalar(1+0.18*Math.sin(uT*2)); core.material.opacity=0.55+0.35*Math.sin(uT*2);
+    if(!CALM){
+      gMat.uniforms.uTime.value=uT;
+      group.rotation.y += dt*0.01;
+      shard.rotation.y += dt*0.18; core.scale.setScalar(1+0.18*Math.sin(uT*2)); core.material.opacity=0.55+0.35*Math.sin(uT*2);
+    }
 
     if(focusing){
       camPos.lerp(focusing.pos, 0.07); cam.position.copy(camPos); cam.quaternion.slerp(focusing.quat, 0.07);
@@ -1404,8 +1409,7 @@ import * as THREE from 'three';
 
     for(const st of stations){
       st.quaternion.copy(cam.quaternion);
-      st.position.y = st.userData.baseY + Math.sin(uT*0.6+st.userData.seed)*0.5;
-      st.userData.cr.rotation.y += dt*0.6;
+      if(!CALM){ st.position.y = st.userData.baseY + Math.sin(uT*0.6+st.userData.seed)*0.5; st.userData.cr.rotation.y += dt*0.6; }
       const want=(st===hovered||st===focused)?1:0; st.userData.hover += (want-st.userData.hover)*0.15;
       const h=st.userData.hover; st.scale.setScalar(1+h*0.13); st.userData.frame.material.opacity=0.12+h*0.55;
     }
