@@ -18,6 +18,8 @@
 </script>
 <!-- social / open graph -->
 <meta property="og:type" content="website">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:locale:alternate" content="en_US">
 <meta property="og:site_name" content="AlicE sYsTeM">
 <meta property="og:title" content="AlicE sYsTeM // AI GAMES & VIDEOS">
 <meta property="og:description" content="AIが生成したゲームと映像。静かな表層は、探索する者だけに深淵を開く。">
@@ -344,7 +346,7 @@ const SITE = {
 };
 const GAMES = [
   { title:"THE EIDOLON", desc:"Three.jsの一人称ホラー探索。暗い虚空を懐中電灯で進み、信号の断片を5個集めて脱出せよ。眼の怪物に光を当てるな——見つめ返してくる。", url:"games/the-eidolon.html", embed:false, thumb:"assets/the-eidolon-cover.jpg", tags:["Three.js","3D","Horror"] },
-  { title:"RIFT COURIER", desc:"Three.jsで描く3Dリフト飛行ゲーム。光のキーを集め、赤いノイズを避け、最後のゲート中心を抜ける。", url:"games/rift-courier.html", embed:false, thumb:"assets/nebula.jpg", tags:["Three.js","3D","Arcade"] },
+  { title:"RIFT COURIER", desc:"Three.jsで描く3Dリフト飛行ゲーム。光のキーを集め、赤いノイズを避け、最後のゲート中心を抜ける。", url:"games/rift-courier.html", embed:false, thumb:"assets/rift-courier-cover.jpg", tags:["Three.js","3D","Arcade"] },
   { title:"I WANNA BE THE SIGNAL", desc:"即死トラップだらけの高難度2Dアクション。偽の床、見えない壁、嘘のセーブ——この世界は全力であなたを騙す。全4ステージ。", url:"games/iwbtg/", embed:false, thumb:"assets/iwbtg-cover.png", tags:["HTML5","Canvas","死にゲー"] },
   { title:"LOCKER HUNT", desc:"学校の廊下に並ぶロッカーを開け、ちいさいおじさんを探すコメディホラー探索ゲーム。", url:"games/locker-hunt.html", embed:false, thumb:"assets/locker-hunt-cover.jpg", tags:["HTML5","Canvas","Horror"] },
   { title:"SIGNAL RUNNER", desc:"崩れていく信号の隙間を抜け、光る断片を回収するアーケードゲーム。", url:"games/signal-runner.html", embed:false, thumb:"assets/signal-runner-cover.png", tags:["HTML5","Canvas","Arcade"] },
@@ -380,6 +382,7 @@ function ac(){ if(!audioC){ try{audioC=new (window.AudioContext||window.webkitAu
 function tone(f,d=0.12,type='sine',g=0.05){ const a=ac(); if(!a||!soundOn)return; const o=a.createOscillator(),gn=a.createGain();
   o.type=type;o.frequency.value=f;o.connect(gn);gn.connect(a.destination);const t=a.currentTime;
   gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(g,t+0.01);gn.gain.exponentialRampToValueAtTime(0.0001,t+d);o.start(t);o.stop(t+d); }
+window.tone=tone; window.ac=ac;   // expose for the 3D cosmos module (hover/travel SFX + ambient pad)
 
 let aliceTimer;
 function alice(text,hold=3400){ const el=$('#alice'); el.textContent=text; el.classList.add('show'); clearTimeout(aliceTimer);
@@ -1082,7 +1085,7 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
 <!-- ============ COSMOS HUD (interactive flight) ============ -->
 <style>
   /* hero becomes a pilotable surface: drag flies underneath; only interactive bits catch the pointer */
-  #hero3d{pointer-events:auto;cursor:grab}
+  #hero3d{pointer-events:auto;cursor:grab;touch-action:pan-y}
   #hero3d:active{cursor:grabbing}
   .hero-art,.hero-grad,.scroll-hint{pointer-events:none}
   header .wrap{pointer-events:none}
@@ -1117,7 +1120,17 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
   .sc-enter:hover{gap:14px;box-shadow:0 0 28px -6px var(--teal)}
   #thrustBtn{position:absolute;right:22px;bottom:96px;width:82px;height:82px;border-radius:50%;background:rgba(51,231,200,.1);border:1px solid rgba(51,231,200,.5);color:var(--teal);font-family:var(--mono);font-size:11px;letter-spacing:.1em;line-height:1.35;pointer-events:auto;backdrop-filter:blur(6px);-webkit-user-select:none;user-select:none;touch-action:none}
   #thrustBtn:active{background:rgba(51,231,200,.22)}
-  @media(max-width:560px){ #stationCard{right:50%;left:auto;top:auto;bottom:118px;transform:translateX(50%) translateY(22px)} #stationCard.show{transform:translateX(50%) translateY(0)} }
+  .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+  #warpStreak{position:absolute;inset:0;opacity:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 38%,rgba(51,231,200,.09) 72%,transparent 100%);transition:opacity .18s}
+  #warpStreak.on{opacity:1}
+  #audioToggle{position:absolute;top:84px;right:20px;pointer-events:auto;font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:8px 12px;border-radius:99px;border:1px solid var(--line);background:rgba(4,6,11,.55);color:var(--muted);cursor:pointer;backdrop-filter:blur(6px)}
+  #audioToggle.on{color:var(--teal);border-color:rgba(51,231,200,.45)}
+  #pilotHud{position:absolute;left:22px;bottom:90px;display:flex;gap:12px;align-items:flex-end;pointer-events:none}
+  #compass{width:50px;height:50px;border:1px solid rgba(51,231,200,.32);border-radius:50%;position:relative;background:rgba(4,6,11,.45);backdrop-filter:blur(4px)}
+  #compassNeedle{position:absolute;left:50%;top:50%;width:2px;height:38%;background:var(--teal);transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(0deg);box-shadow:0 0 8px var(--teal)}
+  #compassN{position:absolute;top:4px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:8px;color:var(--muted)}
+  #miniMap{border-radius:50%;border:1px solid rgba(51,231,200,.22);background:rgba(4,6,11,.5);backdrop-filter:blur(4px)}
+  @media(max-width:560px){ #pilotHud{left:14px;bottom:150px} #miniMap{width:72px;height:72px} #audioToggle{top:76px;right:14px} #stationCard{right:50%;left:auto;top:auto;bottom:118px;transform:translateX(50%) translateY(22px)} #stationCard.show{transform:translateX(50%) translateY(0)} }
 </style>
 <!-- ============ 3D HERO — Three.js interactive cosmos (pilotable) ============ -->
 <script type="module">
@@ -1140,7 +1153,7 @@ import * as THREE from 'three';
   const CALM = RM;
 
   const LOW = W0 < 760 || TOUCH;
-  const COUNT = LOW ? 5000 : 16000;
+  const COUNT = (CALM && !LOW) ? 8000 : LOW ? 5000 : 16000;   // reduced-motion desktop: lighter GPU load
   const MAXDPR = LOW ? 1.5 : 2;
   const USE_BLOOM = !LOW;
 
@@ -1166,7 +1179,7 @@ import * as THREE from 'three';
 
   // deep parallax starfield — sells the sense of motion while flying
   (function(){
-    const SN = LOW?1400:3200; const sp=new Float32Array(SN*3), sc=new Float32Array(SN*3); const cc=new THREE.Color();
+    const SN = (CALM && !LOW) ? 2000 : LOW?1400:3200; const sp=new Float32Array(SN*3), sc=new Float32Array(SN*3); const cc=new THREE.Color();
     for(let i=0;i<SN;i++){ const th=Math.random()*6.283, ph=Math.acos(2*Math.random()-1), rad=55+Math.random()*200;
       sp[i*3]=rad*Math.sin(ph)*Math.cos(th); sp[i*3+1]=rad*Math.sin(ph)*Math.sin(th); sp[i*3+2]=rad*Math.cos(ph);
       cc.setHSL(0.5+Math.random()*0.13, 0.55, 0.5+Math.random()*0.4); sc[i*3]=cc.r; sc[i*3+1]=cc.g; sc[i*3+2]=cc.b; }
@@ -1174,11 +1187,16 @@ import * as THREE from 'three';
     scene.add(new THREE.Points(sg, new THREE.PointsMaterial({size:0.8,sizeAttenuation:true,vertexColors:true,transparent:true,opacity:.9,depthWrite:false,blending:THREE.AdditiveBlending})));
   })();
 
-  // ---- nebula backdrop dome — cosmic depth (Codex art if present, else procedural) ----
-  let nebula=null;
+  // ---- nebula backdrop domes (dual-layer parallax) — cosmic depth (Codex art if present, else procedural) ----
+  let nebula=null, nebula2=null;
   (function(){
     const mat=new THREE.MeshBasicMaterial({side:THREE.BackSide, transparent:true, opacity:0.5, depthWrite:false, blending:THREE.AdditiveBlending, fog:false, color:0x8090c0});
     nebula=new THREE.Mesh(new THREE.SphereGeometry(180,40,24), mat); nebula.renderOrder=-1; scene.add(nebula);
+    // inner violet layer (parallax depth) — uses the 2nd Codex nebula, silently absent if missing
+    const mat2=new THREE.MeshBasicMaterial({side:THREE.BackSide, transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false, color:0x9a78d8});
+    nebula2=new THREE.Mesh(new THREE.SphereGeometry(120,36,22), mat2); nebula2.renderOrder=-1; nebula2.rotation.y=2.1; scene.add(nebula2);
+    new THREE.TextureLoader().load('assets/cosmos-nebula-2.jpg',
+      tex=>{ tex.colorSpace=THREE.SRGBColorSpace; mat2.map=tex; mat2.opacity=0.34; mat2.needsUpdate=true; }, undefined, ()=>{});
     function procedural(){ const c=document.createElement('canvas'); c.width=1024; c.height=512; const x=c.getContext('2d');
       x.fillStyle='#04060b'; x.fillRect(0,0,1024,512);
       const cols=['#1d7d77','#3a2e84','#0e4a55','#5a2a6e','#2461a8'];
@@ -1223,10 +1241,10 @@ import * as THREE from 'three';
 
   const gMat=new THREE.ShaderMaterial({
     uniforms:{ uTime:{value:0}, uSize:{value: LOW?34:30}, uPixelRatio:{value:renderer.getPixelRatio()},
-      uMap:{value:null}, uUseMap:{value:0} },
+      uMap:{value:null}, uUseMap:{value:0}, uWarp:{value:0} },
     transparent:true, depthWrite:false, blending:THREE.AdditiveBlending,
     vertexShader:`
-      uniform float uTime,uSize,uPixelRatio;
+      uniform float uTime,uSize,uPixelRatio,uWarp;
       attribute vec3 aColor; attribute float aScale,aSeed;
       varying vec3 vColor; varying float vTw;
       void main(){
@@ -1237,6 +1255,7 @@ import * as THREE from 'three';
         vec4 mv=modelViewMatrix*vec4(p,1.0);
         gl_Position=projectionMatrix*mv;
         gl_PointSize=uSize*aScale*uPixelRatio*(1.0/max(-mv.z,0.001));
+        gl_PointSize*=1.0+uWarp*2.5;
         vColor=aColor;
         float tw=0.55+0.45*sin(uTime*2.0+aSeed*3.0);
         vTw=tw*smoothstep(34.0,6.0,-mv.z);
@@ -1296,6 +1315,15 @@ import * as THREE from 'three';
     composer.addPass(new RenderPass(scene,cam));
     const bloom=new UnrealBloomPass(new THREE.Vector2(W,H), 1.15, 0.62, 0.08);
     composer.addPass(bloom);
+    // cinematic grade: subtle chromatic aberration + gentle vignette
+    const { ShaderPass } = await import('three/addons/postprocessing/ShaderPass.js');
+    composer.addPass(new ShaderPass({ uniforms:{ tDiffuse:{value:null} },
+      vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+      fragmentShader:`uniform sampler2D tDiffuse; varying vec2 vUv;
+        void main(){ vec2 o=(vUv-0.5)*0.0016;
+          float r=texture2D(tDiffuse,vUv+o).r, g=texture2D(tDiffuse,vUv).g, b=texture2D(tDiffuse,vUv-o).b;
+          vec3 c=vec3(r,g,b); float d=distance(vUv,vec2(0.5)); c*=smoothstep(1.25,0.35,d);
+          gl_FragColor=vec4(c,1.0); }` }));
     composer.addPass(new OutputPass());
   }
 
@@ -1324,7 +1352,7 @@ import * as THREE from 'three';
     if(d.thumb) texLoader.load(d.thumb, tex=>{ tex.colorSpace=THREE.SRGBColorSpace; try{tex.anisotropy=renderer.capabilities.getMaxAnisotropy();}catch(_){ } panelMat.color.set(0xffffff); panelMat.map=tex; panelMat.needsUpdate=true; }, undefined, ()=>{});
     const frame=new THREE.Mesh(new THREE.PlaneGeometry(4.62,3.02), new THREE.MeshBasicMaterial({color:0x33e7c8, transparent:true, opacity:.12, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
     frame.position.z=-0.03; st.add(frame);
-    const cr=new THREE.Mesh(sGeo, sMat.clone()); cr.scale.set(0.42,1.0,0.42); cr.position.set(0,2.2,0.2); st.add(cr);
+    const cr=new THREE.Mesh(sGeo, sMat); cr.scale.set(0.42,1.0,0.42); cr.position.set(0,2.2,0.2); st.add(cr);
     panel.userData.station=st; frame.userData.station=st;
     st.userData={meta:d, frame, cr, baseY:pos.y, seed:i*1.7, hover:0};
     stations.push(st); pickables.push(panel, frame);
@@ -1338,6 +1366,10 @@ import * as THREE from 'three';
   // ---- HUD ----
   const hud=document.createElement('div'); hud.id='cosmosHud';
   hud.innerHTML='<div id="reticle"></div><div id="cosmosIntro">DRAG · FLY · CLICK A SIGNAL</div><div id="cosmosHint"></div><div id="stationTag"></div>'+
+    '<div id="warpStreak" aria-hidden="true"></div>'+
+    '<button id="audioToggle" type="button" aria-label="アンビエント音 ON/OFF" aria-pressed="false">🔇 PAD</button>'+
+    '<div id="pilotHud"><div id="compass"><span id="compassNeedle"></span><span id="compassN">N</span></div><canvas id="miniMap" width="92" height="92" aria-hidden="true"></canvas></div>'+
+    '<div id="cosmosLive" class="vh" aria-live="polite"></div>'+
     '<div id="stationCard"><button class="sc-x" aria-label="back to flight">✕ FLIGHT</button>'+
     '<div class="sc-tag" id="scTag"></div><h3 id="scTitle"></h3><p id="scDesc"></p><div id="scTags"></div>'+
     '<a id="scEnter" class="sc-enter">ENTER ◈</a></div>'+
@@ -1350,6 +1382,33 @@ import * as THREE from 'three';
     : '✦ DRAG to look · <b>W A S D</b> to fly · CLICK a signal to travel · SCROLL ↓ archive';
   hud.querySelector('.sc-x').addEventListener('click',()=>cancelFocus());
 
+  // ---- a11y live region ----
+  const live=hud.querySelector('#cosmosLive'); const announce=m=>{ if(live) live.textContent=m; };
+
+  // ---- ambient pad (muted by default; opt-in, no autoplay) ----
+  let padNodes=null;
+  function startPad(){ const a=window.ac&&window.ac(); if(!a)return; if(a.state==='suspended')a.resume();
+    const g=a.createGain(); g.gain.value=0.0001; g.connect(a.destination);
+    const o1=a.createOscillator(); o1.type='sine'; o1.frequency.value=55;
+    const o2=a.createOscillator(); o2.type='triangle'; o2.frequency.value=82.5;
+    o1.connect(g); o2.connect(g); o1.start(); o2.start();
+    try{ g.gain.exponentialRampToValueAtTime(0.038, a.currentTime+2.5); }catch(_){} padNodes={g,o1,o2}; }
+  function stopPad(){ if(!padNodes)return; const a=window.ac&&window.ac(); const {g,o1,o2}=padNodes;
+    try{ g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime+0.6); }catch(_){}
+    setTimeout(()=>{ try{o1.stop();o2.stop();g.disconnect();}catch(_){} padNodes=null; },700); }
+  const audioBtn=hud.querySelector('#audioToggle');
+  if(audioBtn) audioBtn.addEventListener('click',()=>{ const on=!padNodes; audioBtn.classList.toggle('on',on);
+    audioBtn.setAttribute('aria-pressed',String(on)); audioBtn.textContent=on?'🔊 PAD':'🔇 PAD'; on?startPad():stopPad(); });
+
+  // ---- compass + minimap (orientation) ----
+  const needle=hud.querySelector('#compassNeedle'), mini=hud.querySelector('#miniMap'), mmx=mini?mini.getContext('2d'):null, warpEl=hud.querySelector('#warpStreak');
+  function drawMini(){ if(!mmx)return; const S=mini.width, c=S/2, sc=(S*0.5)/BOUND;
+    mmx.clearRect(0,0,S,S);
+    mmx.strokeStyle='rgba(51,231,200,0.2)'; mmx.beginPath(); mmx.arc(c,c,BOUND*sc-1,0,6.283); mmx.stroke();
+    for(const st of stations){ const px=c+st.position.x*sc, py=c-st.position.z*sc; const hot=(st===hovered||st===focused);
+      mmx.fillStyle=hot?'#7b4dff':'rgba(51,231,200,0.55)'; mmx.beginPath(); mmx.arc(px,py,hot?3.5:2,0,6.283); mmx.fill(); }
+    mmx.fillStyle='#eafff9'; mmx.beginPath(); mmx.arc(c+camPos.x*sc, c-camPos.z*sc, 2.6,0,6.283); mmx.fill(); }
+
   // ---- focus / travel ----
   let hovered=null, focused=null, focusing=null;
   const _o=new THREE.Object3D(); _o.up.set(0,1,0);
@@ -1359,18 +1418,19 @@ import * as THREE from 'three';
     _o.position.copy(tp); _o.lookAt(sp.x, sp.y+0.7, sp.z);
     focusing={pos:tp, quat:_o.quaternion.clone()};
     if(!CALM && window.tone){ window.tone(420,0.18,'sine',0.03); setTimeout(()=>{try{window.tone(760,0.22,'sine',0.025);}catch(_){}},80); }
-    const m=st.userData.meta; scTitle.textContent=m.title; scDesc.textContent=m.desc||'';
+    const m=st.userData.meta; announce('信号へ移動: '+m.title); if(padNodes) padNodes.g.gain.value=0.016;
+    scTitle.textContent=m.title; scDesc.textContent=m.desc||'';
     scTag.textContent=(/youtu|vimeo|videos/.test(m.url))?'VIDEO':'GAME';
     scTags.innerHTML=(m.tags||[]).map(t=>'<span>'+t+'</span>').join('');
     if(m.url){ scEnter.style.display=''; scEnter.href=m.url;
       const ext=/^https?:/.test(m.url); if(m.target||ext){ scEnter.target='_blank'; scEnter.rel='noopener'; } else { scEnter.removeAttribute('target'); scEnter.removeAttribute('rel'); }
     } else scEnter.style.display='none';
   }
-  function cancelFocus(){ if(focusing) syncAngles(); focusing=null; focused=null; elCard.classList.remove('show'); }
+  function cancelFocus(){ if(focusing) syncAngles(); focusing=null; focused=null; elCard.classList.remove('show'); if(padNodes) padNodes.g.gain.value=0.038; }
   function flyKick(){ if(!header.classList.contains('flying')){ header.classList.add('flying'); const intro=document.getElementById('cosmosIntro'); if(intro) intro.classList.add('hide'); } }
   setTimeout(()=>{ const intro=document.getElementById('cosmosIntro'); if(intro) intro.classList.add('hide'); }, 8000);
   canvas.removeAttribute('aria-hidden'); canvas.setAttribute('role','img');
-  canvas.setAttribute('aria-label','Interactive 3D star map of the games — drag to look, W/A/S/D to fly, click a signal to open it. Scroll down for the full list.');
+  canvas.setAttribute('aria-label','ゲーム作品の3D星図。ドラッグで視点、W/A/S/Dで飛行、信号をクリックで起動。下にスクロールで一覧。');
 
   // ---- pointer: drag = look, quick tap = travel/defocus, hover = highlight ----
   let dragging=false, lastX=0, lastY=0, downX=0, downY=0, downT=0, dragYaw=0, dragPitch=0;
@@ -1380,7 +1440,11 @@ import * as THREE from 'three';
     if(dragging){ const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
       if(Math.abs(dx)+Math.abs(dy)>2) flyKick();
       dragYaw -= dx*0.0026; dragPitch -= dy*0.0026;       // accumulate → applied + damped each frame (inertial glide)
-    } else if(!focused){ const h=pick(e.clientX,e.clientY); if(h!==hovered){ hovered=h; if(h&&!CALM&&window.tone) window.tone(960,0.10,'sine',0.022); } canvas.style.cursor=hovered?'pointer':'grab'; }
+    } else if(!focused){
+      const r=canvas.getBoundingClientRect();
+      if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){ if(hovered){ hovered=null; elTag.classList.remove('show'); } return; }
+      const h=pick(e.clientX,e.clientY); if(h!==hovered){ hovered=h; if(h&&!CALM&&window.tone) window.tone(960,0.10,'sine',0.022); } canvas.style.cursor=hovered?'pointer':'grab';
+    }
   },{passive:true});
   addEventListener('pointerup',e=>{ if(!dragging) return; dragging=false;
     const moved=Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY);
@@ -1413,17 +1477,17 @@ import * as THREE from 'three';
   const clock=new THREE.Clock(); let uT=0, rafId=null, onScreen=true, pageVisible=true;
   function frame(){
     rafId=requestAnimationFrame(frame);
-    const dt=Math.min(clock.getDelta(),0.05); uT+=dt;
+    const dt=Math.min(clock.getDelta(),0.05); uT+=dt; let warp=0;
     if(!CALM){
       gMat.uniforms.uTime.value=uT;
       group.rotation.y += dt*0.01;
-      if(nebula) nebula.rotation.y += dt*0.003;
+      if(nebula) nebula.rotation.y += dt*0.003; if(nebula2) nebula2.rotation.y -= dt*0.0022;
       shard.rotation.y += dt*0.18; core.scale.setScalar(1+0.18*Math.sin(uT*2)); core.material.opacity=0.55+0.35*Math.sin(uT*2);
     }
 
     if(focusing){
       camPos.lerp(focusing.pos, 0.08); cam.position.copy(camPos); cam.quaternion.slerp(focusing.quat, 0.11);
-      if(camPos.distanceTo(focusing.pos)<0.35){ syncAngles(); const wasFocused=!!focused; focusing=null; if(wasFocused) elCard.classList.add('show'); }
+      if(camPos.distanceTo(focusing.pos)<0.35){ syncAngles(); const wasFocused=!!focused; focusing=null; if(wasFocused){ elCard.classList.add('show'); if(focused) announce(focused.userData.meta.title+' 起動準備完了'); } }
     } else {
       _fwd.set(0,0,-1).applyQuaternion(cam.quaternion); _right.set(1,0,0).applyQuaternion(cam.quaternion); _acc.set(0,0,0);
       const s=(keys['shift']?2.0:1.0)*SPEED;
@@ -1436,6 +1500,7 @@ import * as THREE from 'three';
       // inertial look: apply accumulated drag, then damp for a smooth glide
       yaw += dragYaw; pitch = THREE.MathUtils.clamp(pitch + dragPitch, -1.15, 1.15);
       dragYaw *= 0.86; dragPitch *= 0.86;
+      warp = (!CALM && keys['shift'] && (keys['w']||thrusting) && camVel.length()>8)?1:0;
       applyCam();
     }
 
@@ -1446,8 +1511,16 @@ import * as THREE from 'three';
       const h=st.userData.hover; st.scale.setScalar(1+h*0.13); st.userData.frame.material.opacity=0.1+h*0.62;
     }
     if(!CALM){ galaxyDim += ((focused?0.8:1)-galaxyDim)*0.08; gMat.uniforms.uSize.value=baseU*galaxyDim; }
+    // warp boost (point-size streak + FOV kick) + compass/minimap orientation
+    gMat.uniforms.uWarp.value += (warp - gMat.uniforms.uWarp.value)*0.12;
+    cam.fov += (((!CALM&&warp>0.5)?62:55) - cam.fov)*0.08; cam.updateProjectionMatrix();
+    if(warpEl) warpEl.classList.toggle('on', gMat.uniforms.uWarp.value>0.35);
+    if(needle) needle.style.transform='translate(-50%,-100%) rotate('+(-yaw*180/Math.PI)+'deg)';
+    drawMini();
     if(hovered && !focused){ _pv.copy(hovered.position).project(cam);
-      if(_pv.z<1){ const r=canvas.getBoundingClientRect(); elTag.style.left=(r.left+(_pv.x*0.5+0.5)*r.width)+'px';
+      const onS=_pv.x>=-0.92&&_pv.x<=0.92&&_pv.y>=-0.92&&_pv.y<=0.92&&_pv.z<1;
+      let vis=onS; if(vis){ _fwd.copy(hovered.position).sub(camPos).normalize(); _right.set(0,0,-1).applyQuaternion(cam.quaternion); vis=_fwd.dot(_right)>0.2; }
+      if(vis){ const r=canvas.getBoundingClientRect(); elTag.style.left=(r.left+(_pv.x*0.5+0.5)*r.width)+'px';
         elTag.style.top=(r.top+(-_pv.y*0.5+0.5)*r.height-78)+'px'; elTag.textContent=hovered.userData.meta.title; elTag.classList.add('show'); }
       else elTag.classList.remove('show');
     } else elTag.classList.remove('show');
@@ -1459,11 +1532,17 @@ import * as THREE from 'three';
   const io=new IntersectionObserver(es=>{ onScreen=es[0].isIntersecting; onScreen?startLoop():stopLoop(); },{threshold:0});
   io.observe(header);
   document.addEventListener('visibilitychange',()=>{ pageVisible=!document.hidden; pageVisible?startLoop():stopLoop(); });
+  function syncDpr(){ const dpr=Math.min(devicePixelRatio||1, MAXDPR); renderer.setPixelRatio(dpr);
+    gMat.uniforms.uPixelRatio.value=dpr; if(composer) composer.setPixelRatio(dpr); }
   const ro=new ResizeObserver(()=>{ const r=header.getBoundingClientRect(); W=r.width; H=r.height;
-    cam.aspect=W/H; cam.updateProjectionMatrix(); renderer.setSize(W,H,false);
-    gMat.uniforms.uPixelRatio.value=renderer.getPixelRatio(); if(composer) composer.setSize(W,H); });
+    cam.aspect=W/H; cam.updateProjectionMatrix(); syncDpr(); renderer.setSize(W,H,false); if(composer) composer.setSize(W,H); });
   ro.observe(header);
   canvas.addEventListener('webglcontextlost',e=>{ e.preventDefault(); stopLoop(); });
+  canvas.addEventListener('webglcontextrestored',()=>{ const r=header.getBoundingClientRect(); W=r.width; H=r.height;
+    cam.aspect=W/H; cam.updateProjectionMatrix(); syncDpr(); renderer.setSize(W,H,false); if(composer) composer.setSize(W,H); startLoop(); });
+  addEventListener('pagehide',()=>{ stopLoop(); try{ gGeo.dispose(); gMat.dispose(); sGeo.dispose(); sMat.dispose(); if(composer) composer.dispose();
+    if(nebula){ nebula.geometry.dispose(); nebula.material.dispose(); if(nebula.material.map) nebula.material.map.dispose(); }
+    if(nebula2){ nebula2.geometry.dispose(); nebula2.material.dispose(); if(nebula2.material.map) nebula2.material.map.dispose(); } }catch(_){ } });
 
   startLoop();
   requestAnimationFrame(()=>canvas.classList.add('ready'));
