@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AlicE sYsTeM</title>
-<meta name="description" content="AlicE sYsTeM — AIで生成したゲームと映像。静かな表層の、さらに奥へ。隠された信号を辿れ。">
+<title>AlicE sYsTeM // 宇宙探索 SPACE EXPLORATION</title>
+<meta name="description" content="AlicE sYsTeM — AIで生成した7つのゲームを巡る、操縦可能な全画面の宇宙探索。惑星を訪れて遊び、信号の源(シンセCORE)へ。隠された信号を辿れ。">
 <meta name="theme-color" content="#04060b">
 <link rel="canonical" href="https://xenithone.github.io/alice-system/">
 <!-- favicons -->
@@ -14,22 +14,22 @@
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="manifest" href="site.webmanifest">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebSite","name":"AlicE sYsTeM","alternateName":"AlicE","url":"https://xenithone.github.io/alice-system/","description":"AIで生成したゲームと映像のポートフォリオ。静かな表層は、探索する者に深淵を開く。","inLanguage":"ja","image":"https://xenithone.github.io/alice-system/assets/og.jpg"}
+{"@context":"https://schema.org","@type":"WebSite","name":"AlicE sYsTeM","alternateName":"AlicE","url":"https://xenithone.github.io/alice-system/","description":"AIで生成した7つのゲームを巡る、操縦可能な全画面の宇宙探索。惑星を訪れて遊ぶ。","inLanguage":"ja","image":"https://xenithone.github.io/alice-system/assets/og.jpg"}
 </script>
 <!-- social / open graph -->
 <meta property="og:type" content="website">
 <meta property="og:locale" content="ja_JP">
 <meta property="og:locale:alternate" content="en_US">
 <meta property="og:site_name" content="AlicE sYsTeM">
-<meta property="og:title" content="AlicE sYsTeM // AI GAMES & VIDEOS">
-<meta property="og:description" content="AIが生成したゲームと映像。静かな表層は、探索する者だけに深淵を開く。">
+<meta property="og:title" content="AlicE sYsTeM // SPACE EXPLORATION — AI GAMES">
+<meta property="og:description" content="操縦可能な全画面の宇宙を探索し、AIで作った7つのゲームの惑星を巡れ。隠された信号は、その宇宙の中に。">
 <meta property="og:url" content="https://xenithone.github.io/alice-system/">
 <meta property="og:image" content="https://xenithone.github.io/alice-system/assets/og.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="AlicE sYsTeM // AI GAMES & VIDEOS">
-<meta name="twitter:description" content="AIが生成したゲームと映像。静かな表層は、探索する者だけに深淵を開く。">
+<meta name="twitter:title" content="AlicE sYsTeM // SPACE EXPLORATION — AI GAMES">
+<meta name="twitter:description" content="操縦可能な全画面の宇宙を探索し、AIで作った7つのゲームの惑星を巡れ。隠された信号は、その宇宙の中に。">
 <meta name="twitter:image" content="https://xenithone.github.io/alice-system/assets/og.jpg">
 <link rel="preload" as="image" href="assets/hero2.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -227,7 +227,7 @@
 </style>
 </head>
 <body>
-<a class="skip" href="#works">本編へスキップ</a>
+<a class="skip" href="#hero3d">宇宙へスキップ</a>
 <div id="boot" aria-hidden="true">
   <div class="bw">AlicE sYsTeM</div>
   <div class="bbar"><i></i></div>
@@ -236,6 +236,41 @@
 <div id="prog" aria-hidden="true"></div>
 <canvas id="stars" aria-hidden="true"></canvas>
 <div class="grain" aria-hidden="true"></div><div class="vig" aria-hidden="true"></div>
+
+<!-- ============ v2 SPACE-EXPLORATION: full-screen cosmos, scroll portfolio retired ============ -->
+<style>
+  html,body{height:100%;overflow:hidden}
+  header#top{position:fixed;inset:0;height:100dvh;min-height:0;z-index:1}
+  /* games-only: hide the retired scroll portfolio + chrome (kept in DOM for renderAll / aftermath hooks / no-JS) */
+  #works,#videos,#void,footer,.scroll-hint,.nav-links a,#menuBtn,#prog{display:none!important}
+  /* canonical accessible fallback — revealed only when the cosmos can't run (no-webgl / init fail) */
+  #fallback[hidden]{display:none}
+  #fallback{position:fixed;inset:0;z-index:60;overflow:auto;padding:64px 24px;background:var(--bg);color:var(--text);font-family:var(--ui)}
+  #fallback .fb-wrap{max-width:620px;margin:0 auto}
+  #fallback h1{font-family:var(--ui);font-weight:600;font-size:clamp(28px,6vw,54px);letter-spacing:-.02em;margin-bottom:14px}
+  #fallback p{color:var(--muted);margin-bottom:26px;line-height:1.7;font-size:15px}
+  #fallback ul{list-style:none;display:grid;gap:8px}
+  #fallback a{color:var(--teal);text-decoration:none;font-family:var(--mono);font-size:15px;border-bottom:1px solid var(--line);padding:10px 2px;display:block;transition:.2s}
+  #fallback a:hover{color:#fff;border-color:var(--teal);padding-left:10px}
+</style>
+<main id="fallback" hidden>
+  <div class="fb-wrap">
+    <h1>AlicE sYsTeM — 宇宙探索 / Space Exploration</h1>
+    <p>AIで生成した7つのゲームを巡る、操縦可能な全画面の宇宙探索。虚空を飛び、惑星に降り、隠された信号を辿れ。WebGLが使えない環境では、この一覧から各作品へ。</p>
+    <nav aria-label="ゲーム一覧">
+      <ul>
+        <li><a href="games/the-eidolon.html">THE EIDOLON — 一人称ホラー探索</a></li>
+        <li><a href="games/rift-courier.html">RIFT COURIER — 3Dリフト飛行</a></li>
+        <li><a href="games/iwbtg/">I WANNA BE THE SIGNAL — 高難度2D死にゲー</a></li>
+        <li><a href="games/locker-hunt.html">LOCKER HUNT — コメディホラー探索</a></li>
+        <li><a href="games/signal-runner.html">SIGNAL RUNNER — アーケード回避</a></li>
+        <li><a href="games/constellation.html">CONSTELLATION — 記憶パズル</a></li>
+        <li><a href="games/dragons-keep.html">DRAGON'S KEEP — ファンタジーピンボール</a></li>
+        <li><a href="sy.html">◈ THE CORE — シンセ・スタジオ (R'LYEH ENGINE)</a></li>
+      </ul>
+    </nav>
+  </div>
+</main>
 
 <nav id="nav"><div class="wrap">
   <div class="logo" id="logo"><b>AlicE</b> sYsTeM</div>
@@ -250,14 +285,12 @@
   <div class="hero-art"></div>
   <canvas id="hero3d" aria-hidden="true"></canvas>
   <div class="hero-grad"></div>
-  <div class="side-index"><span class="on">01 — SURFACE</span><span>02 — ARCHIVE</span><span>03 — ??? </span></div>
+  <div class="side-index"><span class="on">01 — VOID</span><span>02 — SIGNALS</span><span>03 — ??? </span></div>
   <div class="wrap">
-    <div class="kicker" id="kicker">AI-GENERATED WORLDS</div>
-    <h1 class="hero">GAMES.<br>VIDEOS.<br><span class="dim">BEYOND IMAGINATION<span class="dot" id="dotSecret">.</span></span></h1>
-    <p class="lead" id="lead">虚空の奥から届いた、AI生成のゲームと映像。<br>この表層の、さらに奥へ。</p>
-    <a href="#works" class="cta">EXPLORE THE SIGNAL <span>→</span></a>
+    <div class="kicker" id="kicker">AI-GENERATED UNIVERSE</div>
+    <h1 class="hero" aria-hidden="true">FLY.<br>EXPLORE.<br><span class="dim">PLAY THE VOID<span class="dot" id="dotSecret">.</span></span></h1>
+    <p class="lead" id="lead">操縦して惑星へ。AIで作った7つのゲームと、信号の源——音の世界(CORE)を巡る宇宙。</p>
   </div>
-  <div class="scroll-hint">SCROLL ↓</div>
 </header>
 
 <section class="block" id="works">
@@ -386,6 +419,8 @@ function tone(f,d=0.12,type='sine',g=0.05){ const a=ac(); if(!a||!soundOn)return
   o.type=type;o.frequency.value=f;o.connect(gn);gn.connect(a.destination);const t=a.currentTime;
   gn.gain.setValueAtTime(0,t);gn.gain.linearRampToValueAtTime(g,t+0.01);gn.gain.exponentialRampToValueAtTime(0.0001,t+d);o.start(t);o.stop(t+d); }
 window.tone=tone; window.ac=ac;   // expose for the 3D cosmos module (hover/travel SFX + ambient pad)
+// v2 space-exploration: expose meta-game fns so the (module-scoped) cosmos can relocate secrets into space
+window.collect=collect; window.alice=alice; window.openTerm=openTerm; window.openRift=openRift; window.unlockAccord=unlockAccord;
 
 let aliceTimer;
 function alice(text,hold=3400){ const el=$('#alice'); el.textContent=text; el.classList.add('show'); clearTimeout(aliceTimer);
@@ -884,7 +919,8 @@ console.log('%c// hint: ↑↑↓↓←→←→ b a  ·  triple-click the logo 
     /* cipher puzzle */
     if(CMDS){ CMDS.cipher=()=>{ try{termPrint('intercepted transmission // cipher: ATBASH',1);termPrint('  LYHVIEVI');termPrint("  solve it:  decode <word>");}catch(e){} };
       const od=CMDS.decode; CMDS.decode=(a)=>{ const w=(a||'').toLowerCase().trim();
-        if(w==='observer'){ try{termPrint('decoded: “you were the observer all along.”',1);}catch(e){} markD('cipher'); }
+        if(w==='observer'){ try{termPrint('decoded: “you were the observer all along.”',1);}catch(e){} markD('cipher');
+          try{ if(window.__cosmos&&window.__cosmos.revealPlanet){ window.__cosmos.revealPlanet(); termPrint('// a hidden world surfaces in the void. find it.',1);} }catch(e){} }
         else if(od) od(a); }; }
   }catch(e){}
   addEventListener('contextmenu',()=>markD('ctx'));
@@ -1310,7 +1346,7 @@ import * as THREE from 'three';
 
   // ---- capability gate: only tiny / no-webgl → static hero2.jpg ----
   // reduced-motion still gets the cosmos, but CALM (no autonomous motion; moves only on user input)
-  if(W0 < 360 || !webglOK()){ canvas.style.display='none'; return; }
+  if(W0 < 360 || !webglOK()){ canvas.style.display='none'; const fb=document.getElementById('fallback'); if(fb) fb.hidden=false; return; }
   const CALM = RM;
 
   const LOW = W0 < 760 || TOUCH;
@@ -1338,6 +1374,10 @@ import * as THREE from 'three';
   group.rotation.x = -0.5;          // look onto the galactic disc
   scene.add(group);
 
+  // v2: lighting so textured planets read as 3D against the void (emissive maps carry legibility + bloom)
+  const sun = new THREE.DirectionalLight(0xfff0e0, 2.2); sun.position.set(40, 60, 30); scene.add(sun);
+  scene.add(new THREE.AmbientLight(0x223044, 0.55));
+
   // deep parallax starfield — sells the sense of motion while flying
   (function(){
     const SN = (CALM && !LOW) ? 2000 : LOW?1400:3200; const sp=new Float32Array(SN*3), sc=new Float32Array(SN*3); const cc=new THREE.Color();
@@ -1352,7 +1392,7 @@ import * as THREE from 'three';
   let nebula=null, nebula2=null, nebula3=null;
   (function(){
     const mat=new THREE.MeshBasicMaterial({side:THREE.BackSide, transparent:true, opacity:0.5, depthWrite:false, blending:THREE.AdditiveBlending, fog:false, color:0x8090c0});
-    nebula=new THREE.Mesh(new THREE.SphereGeometry(180,40,24), mat); nebula.renderOrder=-1; scene.add(nebula);
+    nebula=new THREE.Mesh(new THREE.SphereGeometry(180,64,32), mat); nebula.renderOrder=-1; scene.add(nebula);
     // inner violet layer (parallax depth) — uses the 2nd Codex nebula, silently absent if missing
     const mat2=new THREE.MeshBasicMaterial({side:THREE.BackSide, transparent:true, opacity:0.0, depthWrite:false, blending:THREE.AdditiveBlending, fog:false, color:0x9a78d8});
     nebula2=new THREE.Mesh(new THREE.SphereGeometry(120,36,22), mat2); nebula2.renderOrder=-1; nebula2.rotation.y=2.1; scene.add(nebula2);
@@ -1368,9 +1408,10 @@ import * as THREE from 'three';
         const g=x.createRadialGradient(cx,cy,0,cx,cy,r); g.addColorStop(0,cols[i%cols.length]); g.addColorStop(1,'rgba(4,6,11,0)');
         x.globalAlpha=0.16; x.fillStyle=g; x.beginPath(); x.arc(cx,cy,r,0,6.28); x.fill(); }
       x.globalAlpha=1; const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t; }
-    new THREE.TextureLoader().load('assets/cosmos-nebula.jpg',
-      tex=>{ tex.colorSpace=THREE.SRGBColorSpace; mat.map=tex; mat.color.set(0xaab4dd); mat.opacity=0.6; mat.needsUpdate=true; },
-      undefined, ()=>{ mat.map=procedural(); mat.opacity=0.85; mat.needsUpdate=true; });
+    const onSky=tex=>{ tex.colorSpace=THREE.SRGBColorSpace; mat.map=tex; mat.color.set(0xaab4dd); mat.opacity=0.62; mat.needsUpdate=true; };
+    new THREE.TextureLoader().load('assets/cosmos-skybox.jpg', onSky, undefined,
+      ()=> new THREE.TextureLoader().load('assets/cosmos-nebula.jpg', onSky, undefined,
+        ()=>{ mat.map=procedural(); mat.opacity=0.85; mat.needsUpdate=true; }) );
   })();
 
   const TEAL = new THREE.Color(0x33e7c8);
@@ -1520,38 +1561,132 @@ import * as THREE from 'three';
   }
 
   // ================= INTERACTIVE FLIGHT — pilot the void =================
-  const SPEED=46, DAMP=0.90, BOUND=72;
+  const SPEED=52, DAMP=0.90, BOUND=120;
   const euler=new THREE.Euler(0,0,0,'YXZ');
-  const camPos=new THREE.Vector3(0,5,56), camVel=new THREE.Vector3();
+  const camPos=new THREE.Vector3(0,16,96), camVel=new THREE.Vector3();
   let yaw=0, pitch=0;
   function applyCam(){ euler.set(pitch,yaw,0); cam.quaternion.setFromEuler(euler); cam.position.copy(camPos); }
   function syncAngles(){ euler.setFromQuaternion(cam.quaternion,'YXZ'); yaw=euler.y; pitch=euler.x; }
 
-  // ---- floating game stations, built from the rendered cards (CONFIG stays the source) ----
-  function readCards(sel){ return [...document.querySelectorAll(sel+' .card')].map(card=>{ const img=card.querySelector('.thumb img');
-    return { title:((card.querySelector('h3')||{}).textContent||'SIGNAL').trim(), desc:((card.querySelector('p')||{}).textContent||'').trim(),
-      url:card.getAttribute('href')||'', target:card.getAttribute('target')||'', thumb: img?img.src:null,
-      tags:[...card.querySelectorAll('.card-b span')].map(s=>s.textContent.trim()).slice(0,4) }; }); }
-  const cardData=[...readCards('#games-grid'), ...readCards('#videos-grid')].filter(c=>c.title);
+  // =================== PLANETS — each game + the synth CORE is a world you fly to ===================
   const stations=[], pickables=[], texLoader=new THREE.TextureLoader();
-  const N=Math.max(1,cardData.length);
-  cardData.forEach((d,i)=>{
-    const y=1-(i/N)*2 - 1/N; const radAt=Math.sqrt(Math.max(0.04,1-y*y)); const th=i*2.39996323; const R=15+((i*3)%5)-2;
-    const pos=new THREE.Vector3(Math.cos(th)*radAt*R, y*R*0.62, Math.sin(th)*radAt*R - 2);
+  const safeLS=k=>{ try{return localStorage.getItem(k);}catch(_){return null;} };
+  function fragHas(id){ try{ return (JSON.parse(localStorage.getItem('alice_eidolon')||'[]')).indexOf(id)>=0; }catch(_){ return false; } }
+  let conqueredSet=new Set();
+  try{ if(window.__seven && window.__seven.get) conqueredSet=new Set(window.__seven.get()); }catch(_){}
+  const isConquered=meta=> !!(meta.key && (conqueredSet.has(meta.id) || safeLS(meta.key)));
+  const trueend=document.body.classList.contains('trueend');
+
+  // ids MUST match alice_bonus_<id> (eidolon→alice_bonus_the_eidolon); 'core' = synth, never conquered
+  const PLANETS=[
+    {id:'eidolon',title:'THE EIDOLON',url:'games/the-eidolon.html',key:'alice_bonus_the_eidolon',texture:'assets/planet-eidolon.jpg',color:0x6f7bb0,size:3.1,ring:false,cloud:true,cloudTint:0x223044,tags:['Three.js','3D','Horror'],desc:'Three.jsの一人称ホラー探索。暗い虚空を懐中電灯で進み、信号の断片を5個集めて脱出せよ。眼の怪物に光を当てるな——見つめ返してくる。'},
+    {id:'rift_courier',title:'RIFT COURIER',url:'games/rift-courier.html',key:'alice_bonus_rift_courier',texture:'assets/planet-rift.jpg',color:0x33e7c8,size:2.6,ring:true,cloud:false,tags:['Three.js','3D','Arcade'],desc:'Three.jsで描く3Dリフト飛行ゲーム。光のキーを集め、赤いノイズを避け、最後のゲート中心を抜ける。'},
+    {id:'iwbtg',title:'I WANNA BE THE SIGNAL',url:'games/iwbtg/',key:'alice_bonus_iwbtg',texture:'assets/planet-iwbtg.jpg',color:0xff5c9d,size:2.3,ring:false,cloud:true,cloudTint:0xff3060,tags:['HTML5','Canvas','死にゲー'],desc:'即死トラップだらけの高難度2Dアクション。偽の床、見えない壁、嘘のセーブ——この世界は全力であなたを騙す。全4ステージ。'},
+    {id:'locker_hunt',title:'LOCKER HUNT',url:'games/locker-hunt.html',key:'alice_bonus_locker_hunt',texture:'assets/planet-locker.jpg',color:0x6fae7e,size:2.7,ring:false,cloud:true,cloudTint:0x2b4a33,tags:['HTML5','Canvas','Horror'],desc:'学校の廊下に並ぶロッカーを開け、ちいさいおじさんを探すコメディホラー探索ゲーム。'},
+    {id:'signal_runner',title:'SIGNAL RUNNER',url:'games/signal-runner.html',key:'alice_bonus_signal_runner',texture:'assets/planet-signal.jpg',color:0x2fd6c0,size:2.5,ring:false,cloud:true,cloudTint:0x163f55,tags:['HTML5','Canvas','Arcade'],desc:'崩れていく信号の隙間を抜け、光る断片を回収するアーケードゲーム。'},
+    {id:'constellation',title:'CONSTELLATION',url:'games/constellation.html',key:'alice_bonus_constellation',texture:'assets/planet-constellation.jpg',color:0xbcd0ff,size:2.8,ring:true,cloud:false,tags:['HTML5','Canvas','Puzzle'],desc:'星を正しい順に結び、沈黙した信号を再同期するパズル。'},
+    {id:'dragons_keep',title:"DRAGON'S KEEP",url:'games/dragons-keep.html',key:'alice_bonus_dragons_keep',texture:'assets/planet-dragons.jpg',color:0xff7a3c,size:3.0,ring:false,cloud:true,cloudTint:0x5a1a10,tags:['HTML5','Canvas','Pinball'],desc:'竜の根城に挑むファンタジー・ピンボール。城門マルチボール、ワームホール、魔の渦、4つの試練の先にウィザードモードが待つ。'},
+    {id:'core',title:'THE CORE',url:'sy.html',key:null,isCore:true,texture:'assets/planet-core.jpg',color:0x9a78d8,size:3.6,ring:true,cloud:true,cloudTint:0x40307a,tags:['Audio','Web Audio','Synth'],desc:'信号の源——音そのものを操るシンセ・スタジオ R\'LYEH ENGINE。波形を紡ぎ、虚空に旋律を奏でよ。'},
+  ];
+
+  function proceduralPlanet(meta){ const c=document.createElement('canvas'); c.width=512; c.height=256; const x=c.getContext('2d');
+    const base=new THREE.Color(meta.color); x.fillStyle='#04060b'; x.fillRect(0,0,512,256);
+    for(let i=0;i<26;i++){ const cx=Math.random()*512, cy=Math.random()*256, r=20+Math.random()*90;
+      const g=x.createRadialGradient(cx,cy,0,cx,cy,r); const cc=base.clone().offsetHSL((Math.random()-0.5)*0.1,0,(Math.random()-0.5)*0.3);
+      g.addColorStop(0,'#'+cc.getHexString()); g.addColorStop(1,'rgba(4,6,11,0)');
+      x.globalAlpha=0.5; x.fillStyle=g; x.beginPath(); x.arc(cx,cy,r,0,6.28); x.fill(); }
+    x.globalAlpha=1; const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t; }
+
+  const SEG=LOW?24:48, SEGV=LOW?16:32;
+  function atmoShell(size,color,boost){ return new THREE.Mesh(new THREE.SphereGeometry(size,SEG,SEGV),
+    new THREE.ShaderMaterial({uniforms:{uColor:{value:new THREE.Color(color)},uBoost:{value:boost||1.0}}, transparent:true, side:THREE.BackSide, depthWrite:false, blending:THREE.AdditiveBlending, fog:false,
+      vertexShader:`varying vec3 vN,vV; void main(){ vec4 mv=modelViewMatrix*vec4(position,1.0); vN=normalize(normalMatrix*normal); vV=normalize(-mv.xyz); gl_Position=projectionMatrix*mv; }`,
+      fragmentShader:`uniform vec3 uColor; uniform float uBoost; varying vec3 vN,vV; void main(){ float f=pow(1.0-max(dot(vV,vN),0.0),2.5); gl_FragColor=vec4(uColor, f*0.9*uBoost); }`})); }
+
+  function makePlanet(meta,pos,i){
     const st=new THREE.Group(); st.position.copy(pos); scene.add(st);
-    // dark backplate so thumbnails read cleanly over bright nebula (non-pickable, sits behind panel)
-    const back=new THREE.Mesh(new THREE.PlaneGeometry(4.9,3.25), new THREE.MeshBasicMaterial({color:0x04060b, transparent:true, opacity:0.55, side:THREE.DoubleSide, depthWrite:false, fog:false}));
-    back.position.z=-0.05; st.add(back);
-    const panelMat=new THREE.MeshBasicMaterial({color:0x0f141f, transparent:true, opacity:1.0, side:THREE.DoubleSide, depthWrite:false, fog:false});
-    const panel=new THREE.Mesh(new THREE.PlaneGeometry(4.2,2.6), panelMat); st.add(panel);
-    if(d.thumb) texLoader.load(d.thumb, tex=>{ tex.colorSpace=THREE.SRGBColorSpace; try{tex.anisotropy=renderer.capabilities.getMaxAnisotropy();}catch(_){ } panelMat.color.set(0xffffff); panelMat.map=tex; panelMat.needsUpdate=true; }, undefined, ()=>{});
-    const frame=new THREE.Mesh(new THREE.PlaneGeometry(4.62,3.02), new THREE.MeshBasicMaterial({color:0x33e7c8, transparent:true, opacity:.12, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
-    frame.position.z=-0.03; st.add(frame);
-    const cr=new THREE.Mesh(sGeo, sMat); cr.scale.set(0.42,1.0,0.42); cr.position.set(0,2.2,0.2); st.add(cr);
-    panel.userData.station=st; frame.userData.station=st;
-    st.userData={meta:d, frame, cr, baseY:pos.y, seed:i*1.7, hover:0};
-    stations.push(st); pickables.push(panel, frame);
-  });
+    const conq=isConquered(meta);
+    const mat=new THREE.MeshStandardMaterial({color:meta.color, roughness:0.85, metalness:0.0, emissive:new THREE.Color(meta.color), emissiveIntensity:LOW?0.12:0.18});
+    const surface=new THREE.Mesh(new THREE.SphereGeometry(meta.size,SEG,SEGV), mat); st.add(surface);
+    texLoader.load(meta.texture, tex=>{ tex.colorSpace=THREE.SRGBColorSpace; try{tex.anisotropy=renderer.capabilities.getMaxAnisotropy();}catch(_){ }
+      mat.map=tex; mat.color.set(0xffffff); if(!LOW) mat.emissiveMap=tex; mat.needsUpdate=true; },
+      undefined, ()=>{ mat.map=proceduralPlanet(meta); mat.color.set(0xffffff); mat.needsUpdate=true; });
+    const atmo=atmoShell(meta.size*1.16, conq?0xffe0a0:meta.color, conq?1.4:1.0); st.add(atmo);
+    let clouds=null;
+    if(meta.cloud && !LOW){ const cmat=new THREE.MeshStandardMaterial({transparent:true, opacity:0.0, depthWrite:false, color:meta.cloudTint||0xffffff, roughness:1, metalness:0});
+      clouds=new THREE.Mesh(new THREE.SphereGeometry(meta.size*1.04,SEG,SEGV), cmat); st.add(clouds);
+      texLoader.load('assets/planet-clouds.png', t=>{ t.colorSpace=THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.RepeatWrapping; cmat.alphaMap=t; cmat.opacity=0.85; cmat.needsUpdate=true; }, undefined, ()=>{}); }
+    let ring=null;
+    if(meta.ring){ const rmat=new THREE.MeshBasicMaterial({color:conq?0xffcf6e:meta.color, transparent:true, opacity:0.0, side:THREE.DoubleSide, depthWrite:false, blending:THREE.AdditiveBlending, fog:false});
+      ring=new THREE.Mesh(new THREE.RingGeometry(meta.size*1.45, meta.size*2.3, 96), rmat); ring.rotation.x=Math.PI/2-0.34; st.add(ring);
+      texLoader.load('assets/planet-ring.png', t=>{ t.colorSpace=THREE.SRGBColorSpace; rmat.map=t; rmat.opacity=0.7; rmat.needsUpdate=true; }, undefined, ()=>{ rmat.opacity=0.22; }); }
+    let marker=null;
+    if(conq){ const pivot=new THREE.Group(); pivot.rotation.x=0.6;
+      const sat=new THREE.Sprite(new THREE.SpriteMaterial({color:0xffe0a0, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+      sat.scale.set(0.9,0.9,1); sat.position.x=meta.size*1.9; pivot.add(sat); st.add(pivot); marker=pivot;
+      texLoader.load('assets/particle.png', t=>{ t.colorSpace=THREE.SRGBColorSpace; sat.material.map=t; sat.material.needsUpdate=true; }, undefined, ()=>{}); }
+    surface.userData.station=st;
+    st.userData={meta, surface, atmo, clouds, ring, marker, baseY:pos.y, seed:i*1.7, hover:0, conquered:conq, kind:'planet'};
+    stations.push(st); pickables.push(surface);
+    return st;
+  }
+
+  // ---- layout: a tilted "solar field" ring around the central galaxy heart (all within BOUND) ----
+  let coreStation=null; const corePos=new THREE.Vector3();
+  (function(){ const GOLDEN=2.39996323, R_BASE=58;
+    PLANETS.forEach((meta,k)=>{ const ang=k*GOLDEN; const rad=R_BASE+((k*7)%16)-8; const yJit=Math.sin(k*1.7)*26;
+      const pos=new THREE.Vector3(Math.cos(ang)*rad, yJit, Math.sin(ang)*rad);
+      const st=makePlanet(meta,pos,k);
+      if(meta.isCore){ coreStation=st; corePos.copy(pos); }
+    });
+  })();
+
+  // ---- WORMHOLE portal marking the CORE/synth (clickable → focuses CORE; ENTER → sy.html) ----
+  let wormhole=null;
+  if(coreStation){ const wp=new THREE.Group();
+    const t1=new THREE.Mesh(new THREE.TorusGeometry(3.2,0.12,16,90), new THREE.MeshBasicMaterial({color:0x9a78d8, transparent:true, opacity:0.8, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+    const t2=new THREE.Mesh(new THREE.TorusGeometry(2.4,0.08,16,90), new THREE.MeshBasicMaterial({color:0x33e7c8, transparent:true, opacity:0.7, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+    wp.add(t1); wp.add(t2); wp.position.copy(corePos).add(new THREE.Vector3(0,0,coreStation.userData.meta.size*2.8)); scene.add(wp);
+    t1.userData.station=coreStation; pickables.push(t1); wormhole={g:wp,t1,t2}; }
+
+  // ---- ANOMALIES: fly near a derelict to claim a SIGNAL FRAGMENT (relocates the accord into space) ----
+  const ANOM=[];
+  const ANOM_MSG={anomaly:'…a flaw in the void.  ◈ FRAGMENT: ANOMALY',terminal:'…a derelict console wakes.  ◈ FRAGMENT: TERMINAL',lantern:'…you carried the light here.  ◈ FRAGMENT: LANTERN',rift:'…a tear in space — you passed through.  ◈ FRAGMENT: RIFT',voice:'…something speaks your name.  ◈ FRAGMENT: VOICE',idle:'…you waited. it noticed.  ◈ FRAGMENT: IDLE'};
+  function shardMat(c){ return new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:0.8,blending:THREE.AdditiveBlending,depthWrite:false,fog:false,side:THREE.DoubleSide}); }
+  function makeAnom(id,pos,builder){ const g=new THREE.Group(); g.position.copy(pos); scene.add(g); builder(g);
+    g.userData={anomId:id, taken:fragHas(id), kind:'anom'};
+    if(g.userData.taken) g.traverse(o=>{ if(o.material){ o.material.transparent=true; o.material.opacity=(o.material.opacity||1)*0.22; } });
+    ANOM.push(g); return g; }
+  makeAnom('anomaly', new THREE.Vector3(24,5,-18), g=>{ const m=new THREE.Mesh(sGeo,sMat); m.scale.set(1.4,3.0,1.4); g.add(m); g.userData.spin=m; });
+  makeAnom('terminal', new THREE.Vector3(-34,9,-12), g=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(1.6,3.2,1.6), new THREE.MeshStandardMaterial({color:0x12203a,emissive:0x2a3f7a,emissiveIntensity:0.6,roughness:0.5})); g.add(m); g.userData.spin=m; });
+  makeAnom('lantern', new THREE.Vector3(12,-16,-38), g=>{ const m=new THREE.Mesh(new THREE.IcosahedronGeometry(0.9,0), shardMat(0xbff7ec)); g.add(m); g.userData.spin=m; });
+  makeAnom('rift', new THREE.Vector3(40,-5,26), g=>{ const m=new THREE.Mesh(new THREE.TorusGeometry(2.0,0.18,16,64), new THREE.MeshBasicMaterial({color:0xff5c9d,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending,depthWrite:false,fog:false})); g.add(m); g.userData.spin=m; });
+  makeAnom('voice', new THREE.Vector3(-18,12,24), g=>{ const m=new THREE.Mesh(new THREE.SphereGeometry(1.1,24,16), shardMat(0x33e7c8)); m.material.opacity=0.5; g.add(m); g.userData.pulse=m; });
+  makeAnom('idle', new THREE.Vector3(0,22,-50), g=>{ const m=new THREE.Mesh(new THREE.OctahedronGeometry(1.0,0), new THREE.MeshBasicMaterial({color:0x9a78d8,transparent:true,opacity:0.6,blending:THREE.AdditiveBlending,depthWrite:false,fog:false})); g.add(m); g.userData.spin=m; });
+
+  // ---- HIDDEN PLANET: invisible until you fly near, or after the 'observer' cipher / a command ----
+  let hiddenPlanet=null;
+  (function(){ const pos=new THREE.Vector3(-50,18,-54); const g=new THREE.Group(); g.position.copy(pos);
+    const mat=new THREE.MeshStandardMaterial({color:0x143a4a, roughness:0.8, emissive:0x0a2230, emissiveIntensity:0.35});
+    const m=new THREE.Mesh(new THREE.SphereGeometry(2.4,SEG,SEGV), mat); g.add(m); g.add(atmoShell(2.4*1.18,0x33e7c8,1.0));
+    g.visible=false; scene.add(g);
+    texLoader.load('assets/planet-eidolon.jpg', t=>{ t.colorSpace=THREE.SRGBColorSpace; mat.map=t; mat.color.set(0x99bccc); mat.needsUpdate=true; }, undefined, ()=>{ mat.map=proceduralPlanet({color:0x143a4a}); mat.needsUpdate=true; });
+    hiddenPlanet={g, revealed:false, pos};
+    if(safeLS('alice_planet_hint')==='1'){ g.visible=true; hiddenPlanet.revealed=true; }
+  })();
+
+  // ---- DEEP-SPACE TRUE-ENDING STAR: appears only when all 7 conquered + accord; fly to it → ending ----
+  let trueStar=null;
+  (function(){ const pos=new THREE.Vector3(54,26,-46); const g=new THREE.Group(); g.position.copy(pos);
+    const m=new THREE.Mesh(new THREE.IcosahedronGeometry(2.2,1), new THREE.MeshBasicMaterial({color:0xffd98a, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending, depthWrite:false, fog:false}));
+    const halo=new THREE.Sprite(new THREE.SpriteMaterial({color:0xffe9b0, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending, depthWrite:false, fog:false})); halo.scale.set(13,13,1);
+    g.add(m); g.add(halo); g.visible=false; scene.add(g);
+    texLoader.load('assets/particle.png', t=>{ t.colorSpace=THREE.SRGBColorSpace; halo.material.map=t; halo.material.needsUpdate=true; }, undefined, ()=>{});
+    trueStar={g, m, pos, fired:false}; }
+  )();
+
+  // expose for the classic cipher/terminal layers to reveal the hidden planet from outside the module
+  window.__cosmos={ revealPlanet(){ if(hiddenPlanet && !hiddenPlanet.revealed){ hiddenPlanet.revealed=true; hiddenPlanet.g.visible=true; try{localStorage.setItem('alice_planet_hint','1');}catch(_){ } try{window.alice&&window.alice('◈ 隠された惑星が観測された。座標を辿れ。',4200);}catch(_){ } } } };
 
   // ---- raycast ----
   const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
@@ -1580,8 +1715,8 @@ import * as THREE from 'three';
   const elHint=hud.querySelector('#cosmosHint'), elTag=hud.querySelector('#stationTag'), elCard=hud.querySelector('#stationCard'),
         scTitle=hud.querySelector('#scTitle'), scDesc=hud.querySelector('#scDesc'), scEnter=hud.querySelector('#scEnter'),
         scTags=hud.querySelector('#scTags'), scTag=hud.querySelector('#scTag');
-  elHint.innerHTML = TOUCH ? '✦ DRAG to look · TAP a signal to travel · SCROLL ↓ archive'
-    : '✦ DRAG to look · <b>W A S D</b> to fly · CLICK a signal to travel · SCROLL ↓ archive';
+  elHint.innerHTML = TOUCH ? '✦ DRAG to look · TAP a planet to travel · approach anomalies'
+    : '✦ DRAG to look · <b>W A S D</b> to fly · CLICK a planet · explore for anomalies';
   hud.querySelector('.sc-x').addEventListener('click',()=>cancelFocus());
 
   // ---- a11y live region ----
@@ -1616,13 +1751,14 @@ import * as THREE from 'three';
   const _o=new THREE.Object3D(); _o.up.set(0,1,0);
   function focusStation(st){ focused=st;
     const sp=st.position, dir=new THREE.Vector3().subVectors(camPos,sp); if(dir.lengthSq()<0.01) dir.set(0,0,1); dir.normalize();
-    const tp=new THREE.Vector3().copy(sp).addScaledVector(dir, 7.8); tp.y += 1.2;   // sit slightly above for headroom under the card
-    _o.position.copy(tp); _o.lookAt(sp.x, sp.y+0.9, sp.z);   // rule-of-thirds framing
+    const ssz=(st.userData.meta && st.userData.meta.size)||2.6;
+    const tp=new THREE.Vector3().copy(sp).addScaledVector(dir, ssz*3.4+4); tp.y += ssz*0.5;   // standoff ∝ planet radius
+    _o.position.copy(tp); _o.lookAt(sp.x, sp.y+ssz*0.25, sp.z);   // frame the upper third of the planet
     focusing={pos:tp, quat:_o.quaternion.clone(), t:0};
     if(!CALM && window.tone){ window.tone(420,0.18,'sine',0.03); setTimeout(()=>{try{window.tone(760,0.22,'sine',0.025);}catch(_){}},80); }
     const m=st.userData.meta; announce('信号へ移動: '+m.title); if(padNodes) padNodes.g.gain.value=0.016;
     scTitle.textContent=m.title; scDesc.textContent=m.desc||'';
-    scTag.textContent=(/youtu|vimeo|videos/.test(m.url))?'VIDEO':'GAME';
+    scTag.textContent=(st.userData.conquered?'◈ CONQUERED · ':'')+(m.isCore?'SYNTH':'GAME');
     scTags.innerHTML=(m.tags||[]).map(t=>'<span>'+t+'</span>').join('');
     if(m.url){ scEnter.style.display=''; scEnter.href=m.url;
       const ext=/^https?:/.test(m.url); if(m.target||ext){ scEnter.target='_blank'; scEnter.rel='noopener'; } else { scEnter.removeAttribute('target'); scEnter.removeAttribute('rel'); }
@@ -1631,8 +1767,8 @@ import * as THREE from 'three';
   function cancelFocus(){ if(focusing) syncAngles(); focusing=null; focused=null; elCard.classList.remove('show'); if(padNodes) padNodes.g.gain.value=0.038; announce('飛行に戻りました'); }
   function flyKick(){ if(!header.classList.contains('flying')){ header.classList.add('flying'); const intro=document.getElementById('cosmosIntro'); if(intro) intro.classList.add('hide'); const dc=document.getElementById('dragCue'); if(dc) dc.remove(); } }
   setTimeout(()=>{ const intro=document.getElementById('cosmosIntro'); if(intro) intro.classList.add('hide'); }, 8000);
-  canvas.removeAttribute('aria-hidden'); canvas.setAttribute('role','img');
-  canvas.setAttribute('aria-label','ゲーム作品の3D星図。ドラッグで視点、W/A/S/Dで飛行、信号をクリックで起動。下にスクロールで一覧。');
+  canvas.removeAttribute('aria-hidden'); canvas.setAttribute('role','img'); canvas.setAttribute('tabindex','-1');
+  canvas.setAttribute('aria-label','AIゲームの3D星図。ドラッグで視点、W/A/S/Dで飛行、惑星をクリックして起動。');
 
   // ---- pointer: drag = look, quick tap = travel/defocus, hover = highlight ----
   let dragging=false, lastX=0, lastY=0, downX=0, downY=0, downT=0, dragYaw=0, dragPitch=0;
@@ -1669,13 +1805,13 @@ import * as THREE from 'three';
     tb.addEventListener('pointerdown',on); tb.addEventListener('pointerup',off); tb.addEventListener('pointerleave',off); tb.addEventListener('pointercancel',off); }
 
   // intro: gentle cinematic glide to the home vantage (skipped under reduced-motion → snap home)
-  if(CALM){ camPos.set(0,0,34); yaw=0; pitch=0; }
-  else { _o.position.set(0,0,34); _o.lookAt(0,0,0); focusing={pos:new THREE.Vector3(0,0,34), quat:_o.quaternion.clone()}; }
+  if(CALM){ camPos.set(0,16,96); yaw=0; pitch=0; }
+  else { _o.position.set(0,16,96); _o.lookAt(0,0,0); focusing={pos:new THREE.Vector3(0,16,96), quat:_o.quaternion.clone()}; }
   applyCam();
 
   // ---- loop ----
   const _fwd=new THREE.Vector3(), _right=new THREE.Vector3(), _acc=new THREE.Vector3(), _pv=new THREE.Vector3();
-  let galaxyDim=1; const baseU=gMat.uniforms.uSize.value;
+  let galaxyDim=1, _lastAuto=null; const baseU=gMat.uniforms.uSize.value;
   const clock=new THREE.Clock(); let uT=0, rafId=null, onScreen=true, pageVisible=true;
   function frame(){
     rafId=requestAnimationFrame(frame);
@@ -1708,12 +1844,46 @@ import * as THREE from 'three';
       applyCam();
     }
 
-    for(const st of stations){
-      st.quaternion.copy(cam.quaternion);
-      if(!CALM){ st.position.y = st.userData.baseY + Math.sin(uT*0.6+st.userData.seed)*0.5; st.userData.cr.rotation.y += dt*0.6; }
-      const want=(st===hovered||st===focused)?1:0; st.userData.hover += (want-st.userData.hover)*0.15;
-      const h=st.userData.hover; st.scale.setScalar(1+h*0.13); st.userData.frame.material.opacity=0.1+h*0.62;
+    // planets: self-rotate (real spheres, no billboard), gentle drift, hover pop, conquered marker orbit
+    for(const st of stations){ const u=st.userData;
+      if(!CALM){ u.surface.rotation.y += dt*0.05; if(u.clouds) u.clouds.rotation.y += dt*0.08; if(u.marker) u.marker.rotation.z += dt*0.5;
+        st.position.y = u.baseY + Math.sin(uT*0.25+u.seed)*0.4; }
+      const want=(st===hovered||st===focused)?1:0; u.hover += (want-u.hover)*0.15;
+      st.scale.setScalar(1+u.hover*0.08);
     }
+    // proximity "docking": surface the nearest planet's label, auto-focus when you fly right up to it
+    if(!focused && !focusing){
+      let near=null, nd=1e9; for(const st of stations){ const d=camPos.distanceTo(st.position); if(d<nd){ nd=d; near=st; } }
+      if(near){ const sz=near.userData.meta.size, labelR=sz*7, autoR=sz*3.6;
+        if(nd<labelR) hovered=near;
+        if(nd<autoR && near!==_lastAuto){ _lastAuto=near; focusStation(near); }
+        if(nd>labelR*1.3 && _lastAuto===near) _lastAuto=null;
+      }
+    }
+    // anomalies: spin + claim a SIGNAL FRAGMENT on approach (relocated accord; works while flying incl. CALM)
+    for(const g of ANOM){ const u=g.userData;
+      if(!CALM){ if(u.spin) u.spin.rotation.y += dt*0.8; if(u.pulse) u.pulse.scale.setScalar(1+0.18*Math.sin(uT*2.2)); }
+      if(u.taken) continue;
+      const d=camPos.distanceTo(g.position), need=(u.anomId==='idle')?2.2:0;
+      if(d<6){ u.dwell=(u.dwell||0)+dt; if(u.dwell>=need){ u.taken=true;
+        g.traverse(o=>{ if(o.material){ o.material.transparent=true; o.material.opacity=(o.material.opacity||1)*0.22; } });
+        try{ if(window.collect) window.collect(u.anomId); }catch(_){}
+        try{ if(window.alice) window.alice(ANOM_MSG[u.anomId]||'◈ FRAGMENT',3600); }catch(_){}
+        if(!CALM&&window.tone){ try{ window.tone(520,0.18,'sine',0.04); setTimeout(()=>{try{window.tone(820,0.2,'sine',0.03);}catch(_){}},90); }catch(_){} }
+        announce('信号の断片を取得'); } }
+      else u.dwell=0;
+    }
+    // hidden planet: reveal on approach
+    if(hiddenPlanet && !hiddenPlanet.revealed && camPos.distanceTo(hiddenPlanet.pos)<30){ hiddenPlanet.revealed=true; hiddenPlanet.g.visible=true;
+      try{localStorage.setItem('alice_planet_hint','1');}catch(_){}
+      try{ if(window.alice) window.alice('◈ 観測されざる惑星が姿を現した。',4000);}catch(_){}
+      try{ if(window.__markD) window.__markD('planet'); }catch(_){} }
+    if(hiddenPlanet && hiddenPlanet.g.visible && !CALM) hiddenPlanet.g.rotation.y += dt*0.06;
+    // deep-space TRUE-ENDING star: visible only when 7/7 + accord (+ not yet true); fly to it → ending
+    if(trueStar){ var _tr=false; try{ _tr=(JSON.parse(localStorage.getItem('alice_seven')||'[]').length>=7) && localStorage.getItem('alice_accord')==='1' && localStorage.getItem('alice_true')!=='1'; }catch(_){ _tr=false; }
+      trueStar.g.visible=_tr;   // cheap per-frame read (no localStorage WRITE — the original churn fix)
+      if(_tr){ if(!CALM){ trueStar.g.rotation.y+=dt*0.4; trueStar.m.scale.setScalar(1+0.12*Math.sin(uT*2.4)); }
+        if(!trueStar.fired && camPos.distanceTo(trueStar.pos)<22){ trueStar.fired=true; try{ window.__seven.show(); }catch(_){} } } }
     if(!CALM){ galaxyDim += ((focused?0.8:1)-galaxyDim)*0.08; gMat.uniforms.uSize.value=baseU*galaxyDim; }
     // warp boost (point-size streak + FOV kick) + compass/minimap orientation
     gMat.uniforms.uWarp.value += (warp - gMat.uniforms.uWarp.value)*0.12;
@@ -1741,21 +1911,29 @@ import * as THREE from 'three';
   const ro=new ResizeObserver(()=>{ const r=header.getBoundingClientRect(); W=r.width; H=r.height;
     cam.aspect=W/H; cam.updateProjectionMatrix(); syncDpr(); renderer.setSize(W,H,false); if(composer) composer.setSize(W,H); });
   ro.observe(header);
-  canvas.addEventListener('webglcontextlost',e=>{ e.preventDefault(); stopLoop(); });
+  canvas.addEventListener('webglcontextlost',e=>{ e.preventDefault(); stopLoop(); try{ canvas.style.display='none'; const fb=document.getElementById('fallback'); if(fb) fb.hidden=false; }catch(_){ } });
   canvas.addEventListener('webglcontextrestored',()=>{ const r=header.getBoundingClientRect(); W=r.width; H=r.height;
     cam.aspect=W/H; cam.updateProjectionMatrix(); syncDpr(); renderer.setSize(W,H,false); if(composer) composer.setSize(W,H); startLoop(); });
   addEventListener('pagehide',()=>{ stopLoop(); try{ gGeo.dispose(); gMat.dispose(); sGeo.dispose(); sMat.dispose(); if(composer) composer.dispose();
     if(nebula){ nebula.geometry.dispose(); nebula.material.dispose(); if(nebula.material.map) nebula.material.map.dispose(); }
     if(nebula2){ nebula2.geometry.dispose(); nebula2.material.dispose(); if(nebula2.material.map) nebula2.material.map.dispose(); }
     if(nebula3){ nebula3.geometry.dispose(); nebula3.material.dispose(); }
-    ring.geometry.dispose(); ring.material.dispose(); glowMat.dispose(); if(glowMat.map) glowMat.map.dispose(); }catch(_){ } });
+    ring.geometry.dispose(); ring.material.dispose(); glowMat.dispose(); if(glowMat.map) glowMat.map.dispose();
+    const _disp=o=>{ if(!o)return; o.traverse(n=>{ if(n.geometry)n.geometry.dispose(); const m=n.material; if(!m)return; (Array.isArray(m)?m:[m]).forEach(mm=>{ ['map','emissiveMap','alphaMap'].forEach(k=>{ if(mm[k]) mm[k].dispose(); }); mm.dispose(); }); }); };
+    for(const st of stations){ const u=st.userData; [u.surface,u.atmo,u.clouds,u.ring].forEach(m=>{ if(!m)return; if(m.geometry)m.geometry.dispose(); const mm=m.material; if(mm){ ['map','emissiveMap','alphaMap'].forEach(k=>{ if(mm[k]) mm[k].dispose(); }); mm.dispose(); } }); _disp(u.marker); }
+    ANOM.forEach(_disp); _disp(wormhole&&wormhole.g); _disp(hiddenPlanet&&hiddenPlanet.g); _disp(trueStar&&trueStar.g); }catch(_){ } });
 
   startLoop();
   requestAnimationFrame(()=>canvas.classList.add('ready'));
   if(location.hash==='#debug') window.__hero3d={scene,cam,renderer,stations,camPos, frame, focusStation,
+    planets: stations.map(st=>({id:st.userData.meta.id, pos:st.position, conquered:!!st.userData.conquered, hasRing:!!st.userData.ring, hasClouds:!!st.userData.clouds})),
+    focusById:(id)=>{ const st=stations.find(s=>s.userData.meta.id===id); if(st) focusStation(st); return !!st; },
+    anomalies: ANOM.map(g=>({id:g.userData.anomId, pos:g.position, taken:!!g.userData.taken})),
+    hiddenVisible:()=>!!(hiddenPlanet&&hiddenPlanet.g.visible), trueStarVisible:()=>!!(trueStar&&trueStar.g.visible),
+    setCam:(x,y,z)=>{ camPos.set(x,y,z); }, enterHref:()=>scEnter.getAttribute('href'),
     get focused(){return focused}, get focusing(){return !!focusing}, cardShown:()=>elCard.classList.contains('show'),
     cardTitle:()=>scTitle.textContent};
-})().catch(e=>{ console.error('HERO3D init failed:', e&&e.stack||e); });
+})().catch(e=>{ console.error('HERO3D init failed:', e&&e.stack||e); try{ const fb=document.getElementById('fallback'); if(fb) fb.hidden=false; const c=document.getElementById('hero3d'); if(c) c.style.display='none'; }catch(_){ } });
 </script>
 </body>
 </html>
