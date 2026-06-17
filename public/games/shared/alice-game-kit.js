@@ -244,6 +244,18 @@
       emit(innerWidth/2,innerHeight/2,80,'#ffd166','ring');
       emit(innerWidth/2,innerHeight/2,60,this.opts.accent,'streak');
       this.renderProgress();
+      // v1.1: clearing a game feeds the cross-app stardust score the cosmos reads (same-origin).
+      try{
+        const k='alice_stardust_total';
+        localStorage.setItem(k,String((parseInt(localStorage.getItem(k)||'0',10)||0)+25));
+      }catch(e){}
+    }
+    reportBest(v){
+      try{
+        const key='alice_game_best_'+this.opts.id;
+        const prev=parseFloat(localStorage.getItem(key)||'NaN');
+        if(isNaN(prev) || v<prev) localStorage.setItem(key,String(v));
+      }catch(e){}
     }
   }
 
@@ -268,6 +280,7 @@
     install,
     spark:(x,y,n,color,kind)=>emit(x,y,n,color,kind),
     toast:(text,kind)=>instances[0]&&instances[0].toast(text,kind),
-    complete:(text)=>instances[0]&&instances[0].complete(text)
+    complete:(text)=>instances[0]&&instances[0].complete(text),
+    reportBest:(v)=>instances[0]&&instances[0].reportBest(v)
   };
 })();

@@ -1,5 +1,5 @@
 import { SIGNAL_FRAGMENTS, WORLDS, assetPath, routePath, type World } from "../data/worlds";
-import type { CosmosInfo } from "../lib/cosmosEngine";
+import type { CosmosInfo, TimeTrialEvent } from "../lib/cosmosEngine";
 import type { ProgressState } from "../lib/storage";
 
 interface HudProps {
@@ -8,13 +8,16 @@ interface HudProps {
   progress: ProgressState;
   info: CosmosInfo | null;
   aliceLine: string;
+  trial: TimeTrialEvent | null;
   onLaunch: (world: World) => void;
   onFocus: (id: string) => void;
   onReset: () => void;
   onTerminal: () => void;
+  onMissions: () => void;
+  onStartTrial: () => void;
 }
 
-export function Hud({ selected, nearest, progress, info, aliceLine, onLaunch, onFocus, onReset, onTerminal }: HudProps) {
+export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLaunch, onFocus, onReset, onTerminal, onMissions, onStartTrial }: HudProps) {
   const active = selected ?? nearest;
   const completed = WORLDS.filter((world) => world.kind === "game" && progress.completedWorlds.has(world.id)).length;
   const visibleWorlds = WORLDS.filter((world) => !world.hidden || progress.hiddenPlanet);
@@ -29,8 +32,16 @@ export function Hud({ selected, nearest, progress, info, aliceLine, onLaunch, on
           <span>GRAPHICS {info?.quality ?? "..."}</span>
           <span>SPARK {info?.spark ? "ON" : "READY"}</span>
           <span>{progress.trueEnding ? "TRUE SIGNAL" : progress.accord ? "ACCORD" : "SEEKING"}</span>
+          {progress.loop > 0 && <span>LOOP {progress.loop}</span>}
+          <span>v{__APP_VERSION__}</span>
         </div>
         <div className="top-actions">
+          <button type="button" className="icon-button" onClick={onMissions} title="Missions / achievements">
+            MSN
+          </button>
+          <button type="button" className="icon-button" onClick={onStartTrial} title="Start ring run">
+            RUN
+          </button>
           <button type="button" className="icon-button" onClick={onTerminal} title="Terminal">
             TTY
           </button>
@@ -99,6 +110,10 @@ export function Hud({ selected, nearest, progress, info, aliceLine, onLaunch, on
           <span>WORLDS CONQUERED</span>
           <strong>{completed}/7</strong>
         </div>
+        <div className="world-row">
+          <span>STARDUST</span>
+          <strong>{progress.stardustTotal}</strong>
+        </div>
       </aside>
 
       <nav className="radar" aria-label="world navigation">
@@ -127,6 +142,13 @@ export function Hud({ selected, nearest, progress, info, aliceLine, onLaunch, on
       <div className={`alice-line ${aliceLine ? "show" : ""}`} role="status" aria-live="polite">
         {aliceLine}
       </div>
+
+      {trial && (
+        <div className="timetrial-hud" role="status" aria-live="polite">
+          <span>RING {Math.min(trial.index + 1, trial.total)}/{trial.total}</span>
+          <strong>{(trial.ms / 1000).toFixed(2)}s</strong>
+        </div>
+      )}
     </>
   );
 }

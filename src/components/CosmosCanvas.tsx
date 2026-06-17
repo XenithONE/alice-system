@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { WORLDS } from "../data/worlds";
 import type { FragmentId, World } from "../data/worlds";
-import { CosmosEngine, type CosmosInfo } from "../lib/cosmosEngine";
+import { CosmosEngine, type CosmosInfo, type TimeTrialEvent } from "../lib/cosmosEngine";
 import type { ProgressState } from "../lib/storage";
 import { detectQuality, hasWebGL } from "../lib/webgl";
 
@@ -13,6 +13,9 @@ interface CosmosCanvasProps {
   onRevealHiddenPlanet: () => void;
   onReady: (info: CosmosInfo) => void;
   onError: (message: string) => void;
+  onCollectStardust: (id: string) => void;
+  onFlyDistance: (units: number) => void;
+  onTimeTrial: (event: TimeTrialEvent) => void;
   onEngine: (engine: CosmosEngine | null) => void;
 }
 
@@ -24,6 +27,9 @@ export function CosmosCanvas({
   onRevealHiddenPlanet,
   onReady,
   onError,
+  onCollectStardust,
+  onFlyDistance,
+  onTimeTrial,
   onEngine
 }: CosmosCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -44,7 +50,10 @@ export function CosmosCanvas({
       onCollectFragment,
       onRevealHiddenPlanet,
       onReady,
-      onError
+      onError,
+      onCollectStardust,
+      onFlyDistance,
+      onTimeTrial
     });
     engineRef.current = engine;
     onEngine(engine);

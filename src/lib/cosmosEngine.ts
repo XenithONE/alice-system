@@ -5,6 +5,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { assetPath, type FragmentId, type World } from "../data/worlds";
 import type { ProgressState } from "./storage";
+import { dailySeed, mulberry32 } from "./seed";
 import { type QualityTier } from "./webgl";
 
 interface PlanetNode {
@@ -33,6 +34,13 @@ export interface CosmosInfo {
   webgl2: boolean;
 }
 
+export interface TimeTrialEvent {
+  phase: "start" | "tick" | "checkpoint" | "finish" | "cancel";
+  index: number;
+  total: number;
+  ms: number;
+}
+
 export interface CosmosCallbacks {
   onSelectWorld: (world: World) => void;
   onNearestWorld: (world: World | null) => void;
@@ -40,6 +48,9 @@ export interface CosmosCallbacks {
   onRevealHiddenPlanet: () => void;
   onReady: (info: CosmosInfo) => void;
   onError: (message: string) => void;
+  onCollectStardust: (id: string) => void;
+  onFlyDistance: (units: number) => void;
+  onTimeTrial: (event: TimeTrialEvent) => void;
 }
 
 interface FocusState {
@@ -113,6 +124,22 @@ export class CosmosEngine {
   private progress: ProgressState;
   private sparkActive = false;
   private disposed = false;
+  // v1.1 gameplay + perf
+  private readonly textureCache = new Map<string, THREE.Texture>();
+  private readonly lastCamPos = new THREE.Vector3(0, 14, 82);
+  private distanceAccum = 0;
+  private stardust: THREE.Points | null = null;
+  private stardustPos: Float32Array | null = null;
+  private stardustIds: string[] = [];
+  private stardustTaken = new Set<string>();
+  private sparkRoot: THREE.Object3D | null = null;
+  private sparkClouds: THREE.Object3D[] = [];
+  private trialActive = false;
+  private trialGroup: THREE.Group | null = null;
+  private trialRings: THREE.Mesh[] = [];
+  private trialIndex = 0;
+  private trialStart = 0;
+  private trialLastTick = 0;
 
   constructor(canvas: HTMLCanvasElement, worlds: World[], progress: ProgressState, quality: QualityTier, callbacks: CosmosCallbacks) {
     this.canvas = canvas;
@@ -142,6 +169,7 @@ export class CosmosEngine {
     this.createBackground();
     this.createWorlds();
     this.createAnomalies();
+    this.createStardust();
     this.createComposer();
     this.attachEvents();
     this.syncProgress(progress);
@@ -153,7 +181,9 @@ export class CosmosEngine {
   }
 
   syncProgress(progress: ProgressState): void {
+    const loopChanged = this.progress.loop !== progress.loop;
     this.progress = progress;
+    if (loopChanged) this.rebuildStardust(); // NG+ remix
     for (const node of this.planets.values()) {
       const completed = node.world.statusKey ? progress.completedWorlds.has(node.world.id) : false;
       node.completed = completed;
@@ -181,7 +211,7 @@ export class CosmosEngine {
   }
 
   revealHiddenPlanet(): void {
-    if (!this.hiddenPlanet) return;
+    if (!this.hiddenPlanet || this.hiddenPlanet.group.visible) return; // idempotent: no double-fire
     this.hiddenPlanet.group.visible = true;
     this.callbacks.onRevealHiddenPlanet();
     this.focusPlanet(this.hiddenPlanet, false);
@@ -212,6 +242,17 @@ export class CosmosEngine {
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
     this.canvas.removeEventListener("pointercancel", this.onPointerUp);
+    for (const cloud of this.sparkClouds) {
+      this.scene.remove(cloud);
+      (cloud as { dispose?: () => void }).dispose?.();
+    }
+    this.sparkClouds = [];
+    if (this.sparkRoot) {
+      this.scene.remove(this.sparkRoot);
+      (this.sparkRoot as { dispose?: () => void }).dispose?.();
+      this.sparkRoot = null;
+    }
+    this.teardownTrialRings();
     this.scene.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
@@ -219,8 +260,13 @@ export class CosmosEngine {
     });
     this.composer?.dispose();
     this.renderer.dispose();
-    const w = window as Window & { __cosmos?: unknown };
-    if (w.__cosmos) delete w.__cosmos;
+    for (const texture of this.textureCache.values()) texture.dispose();
+    this.textureCache.clear();
+    this.planets.clear();
+    this.pickables.length = 0;
+    this.anomalies.length = 0;
+    this.keys.clear();
+    if (window.__cosmos) delete window.__cosmos;
   }
 
   private setupLights(): void {
@@ -234,6 +280,26 @@ export class CosmosEngine {
     violet.position.set(34, -18, -44);
     this.scene.add(violet);
     this.scene.add(new THREE.AmbientLight(0x28344d, 0.58));
+  }
+
+  // Shared, de-duplicated texture loader (one Texture/GPU upload per URL) with quiet error degrade.
+  private loadTexture(path: string, onReady: (texture: THREE.Texture) => void): void {
+    const url = assetPath(path);
+    const cached = this.textureCache.get(url);
+    if (cached) {
+      onReady(cached);
+      return;
+    }
+    this.loader.load(
+      url,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.textureCache.set(url, texture);
+        onReady(texture);
+      },
+      undefined,
+      () => undefined
+    );
   }
 
   private createBackground(): void {
@@ -299,8 +365,7 @@ export class CosmosEngine {
 
     const galaxy = this.createGalaxy();
     this.scene.add(galaxy);
-    this.loader.load(assetPath("assets/particle.png"), (texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
+    this.loadTexture("assets/particle.png", (texture) => {
       this.galaxyUniforms.uMap.value = texture;
       this.galaxyUniforms.uUseMap.value = 1;
     });
@@ -446,8 +511,7 @@ export class CosmosEngine {
         cloudMaterial
       );
       group.add(clouds);
-      this.loader.load(assetPath("assets/planet-clouds.png"), (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
+      this.loadTexture("assets/planet-clouds.png", (texture) => {
         texture.wrapS = THREE.RepeatWrapping;
         texture.wrapT = THREE.RepeatWrapping;
         cloudMaterial.alphaMap = texture;
@@ -470,8 +534,7 @@ export class CosmosEngine {
       ring = new THREE.Mesh(new THREE.RingGeometry(world.size * 1.45, world.size * 2.26, 128), ringMaterial);
       ring.rotation.x = Math.PI / 2 - 0.34;
       group.add(ring);
-      this.loader.load(assetPath("assets/planet-ring.png"), (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
+      this.loadTexture("assets/planet-ring.png", (texture) => {
         ringMaterial.map = texture;
         ringMaterial.needsUpdate = true;
       });
@@ -540,8 +603,7 @@ export class CosmosEngine {
     const sprite = new THREE.Sprite(material);
     sprite.position.set(0, 0, 0);
     sprite.scale.set(10, 10, 1);
-    this.loader.load(assetPath("assets/particle.png"), (texture) => {
-      texture.colorSpace = THREE.SRGBColorSpace;
+    this.loadTexture("assets/particle.png", (texture) => {
       material.map = texture;
       material.needsUpdate = true;
     });
@@ -607,10 +669,13 @@ export class CosmosEngine {
       const spark = await import("@sparkjsdev/spark");
       if (this.disposed) return;
       const sparkRoot = new (spark as any).SparkRenderer({ renderer: this.renderer });
+      this.sparkRoot = sparkRoot;
       this.scene.add(sparkRoot);
-      this.scene.add(this.createSparkCloud(spark, new THREE.Vector3(0, 4, -10), 0x33e7c8, 900, 42, 0.024));
-      this.scene.add(this.createSparkCloud(spark, new THREE.Vector3(42, -4, 26), 0xff5c9d, 700, 73, 0.032));
-      this.scene.add(this.createSparkCloud(spark, new THREE.Vector3(-52, 20, -54), 0x33e7c8, 650, 91, 0.028));
+      const c1 = this.createSparkCloud(spark, new THREE.Vector3(0, 4, -10), 0x33e7c8, 900, 42, 0.024);
+      const c2 = this.createSparkCloud(spark, new THREE.Vector3(42, -4, 26), 0xff5c9d, 700, 73, 0.032);
+      const c3 = this.createSparkCloud(spark, new THREE.Vector3(-52, 20, -54), 0x33e7c8, 650, 91, 0.028);
+      this.sparkClouds.push(c1, c2, c3);
+      this.scene.add(c1, c2, c3);
       this.sparkActive = true;
       this.callbacks.onReady({ quality: this.quality.label, spark: true, webgl2: this.renderer.capabilities.isWebGL2 });
     } catch (error) {
@@ -735,8 +800,16 @@ export class CosmosEngine {
     this.lastFrameTime = time;
     this.galaxyUniforms.uTime.value = time * 0.001;
     this.updateCamera(dt, time);
+    this.distanceAccum += this.lastCamPos.distanceTo(this.camera.position);
+    this.lastCamPos.copy(this.camera.position);
+    if (this.distanceAccum > 25) {
+      this.callbacks.onFlyDistance(this.distanceAccum);
+      this.distanceAccum = 0;
+    }
     this.updatePlanets(dt, time);
     this.updateAnomalies(dt, time);
+    this.updateStardust();
+    this.updateTimeTrial();
     this.updateNearest();
 
     if (this.composer) this.composer.render();
@@ -817,6 +890,163 @@ export class CosmosEngine {
     }
   }
 
+  // ---- v1.1: stardust collectibles (pooled Points, static so proximity is world-accurate) ----
+  private createStardust(): void {
+    const count = this.quality.label === "HIGH" ? 220 : this.quality.label === "BALANCED" ? 140 : 40;
+    const rand = mulberry32(dailySeed(this.progress.loop));
+    const positions = new Float32Array(count * 3);
+    this.stardustIds = [];
+    this.stardustTaken = new Set(this.progress.stardustToday);
+    for (let i = 0; i < count; i += 1) {
+      const id = `s${i}`;
+      this.stardustIds.push(id);
+      const r = 26 + rand() * 70;
+      const theta = rand() * Math.PI * 2;
+      const phi = Math.acos(rand() * 2 - 1);
+      positions[i * 3] = Math.sin(phi) * Math.cos(theta) * r;
+      positions[i * 3 + 1] = this.stardustTaken.has(id) ? 9999 : (rand() - 0.5) * 62;
+      positions[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * r;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.PointsMaterial({
+      color: 0xffe6a3,
+      size: 1.6,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.96,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    this.loadTexture("assets/particle.png", (texture) => {
+      material.map = texture;
+      material.needsUpdate = true;
+    });
+    this.stardust = new THREE.Points(geometry, material);
+    this.stardustPos = positions;
+    this.scene.add(this.stardust);
+  }
+
+  private rebuildStardust(): void {
+    if (this.stardust) {
+      this.scene.remove(this.stardust);
+      this.stardust.geometry.dispose();
+      disposeMaterial(this.stardust.material);
+      this.stardust = null;
+      this.stardustPos = null;
+    }
+    this.createStardust();
+  }
+
+  private updateStardust(): void {
+    if (!this.stardust || !this.stardustPos) return;
+    const cam = this.camera.position;
+    const pos = this.stardustPos;
+    let collected = false;
+    for (let i = 0; i < this.stardustIds.length; i += 1) {
+      const id = this.stardustIds[i];
+      if (this.stardustTaken.has(id)) continue;
+      const dx = cam.x - pos[i * 3];
+      const dy = cam.y - pos[i * 3 + 1];
+      const dz = cam.z - pos[i * 3 + 2];
+      if (dx * dx + dy * dy + dz * dz < 16) {
+        this.stardustTaken.add(id);
+        pos[i * 3 + 1] = 9999;
+        collected = true;
+        this.callbacks.onCollectStardust(id);
+      }
+    }
+    if (collected) (this.stardust.geometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+  }
+
+  // ---- v1.1: time-trial ring run (coexists with normal flight) ----
+  startTimeTrial(): void {
+    if (this.trialActive) return;
+    this.buildTrialRings();
+    this.focus = null;
+    this.trialActive = true;
+    this.trialIndex = 0;
+    this.trialStart = performance.now();
+    this.trialLastTick = 0;
+    this.highlightNextRing();
+    this.callbacks.onTimeTrial({ phase: "start", index: 0, total: this.trialRings.length, ms: 0 });
+  }
+
+  cancelTimeTrial(): void {
+    if (!this.trialActive) return;
+    this.trialActive = false;
+    this.teardownTrialRings();
+    this.callbacks.onTimeTrial({ phase: "cancel", index: this.trialIndex, total: 0, ms: 0 });
+  }
+
+  private buildTrialRings(): void {
+    this.teardownTrialRings();
+    const group = new THREE.Group();
+    const rand = mulberry32(dailySeed(this.progress.loop, 0x5217));
+    const count = 6;
+    for (let i = 0; i < count; i += 1) {
+      const r = 30 + rand() * 60;
+      const theta = rand() * Math.PI * 2;
+      const y = (rand() - 0.5) * 70;
+      const material = new THREE.MeshBasicMaterial({
+        color: 0x33e7c8,
+        transparent: true,
+        opacity: 0.4,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false
+      });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.22, 14, 56), material);
+      ring.position.set(Math.cos(theta) * r, y, Math.sin(theta) * r);
+      ring.lookAt(0, y, 0);
+      group.add(ring);
+      this.trialRings.push(ring);
+    }
+    this.scene.add(group);
+    this.trialGroup = group;
+  }
+
+  private teardownTrialRings(): void {
+    if (this.trialGroup) {
+      this.scene.remove(this.trialGroup);
+      for (const ring of this.trialRings) {
+        ring.geometry.dispose();
+        disposeMaterial(ring.material);
+      }
+    }
+    this.trialRings = [];
+    this.trialGroup = null;
+  }
+
+  private highlightNextRing(): void {
+    for (let i = 0; i < this.trialRings.length; i += 1) {
+      const material = this.trialRings[i].material as THREE.MeshBasicMaterial;
+      material.opacity = i === this.trialIndex ? 0.95 : i < this.trialIndex ? 0.12 : 0.4;
+      material.color.setHex(i === this.trialIndex ? 0xffe27a : 0x33e7c8);
+    }
+  }
+
+  private updateTimeTrial(): void {
+    if (!this.trialActive) return;
+    const ms = performance.now() - this.trialStart;
+    const ring = this.trialRings[this.trialIndex];
+    if (ring && this.camera.position.distanceTo(ring.position) < 3.4) {
+      this.trialIndex += 1;
+      if (this.trialIndex >= this.trialRings.length) {
+        this.trialActive = false;
+        this.callbacks.onTimeTrial({ phase: "finish", index: this.trialIndex, total: this.trialRings.length, ms });
+        this.teardownTrialRings();
+        return;
+      }
+      this.highlightNextRing();
+      this.callbacks.onTimeTrial({ phase: "checkpoint", index: this.trialIndex, total: this.trialRings.length, ms });
+    } else if (ms - this.trialLastTick > 100) {
+      this.trialLastTick = ms;
+      this.callbacks.onTimeTrial({ phase: "tick", index: this.trialIndex, total: this.trialRings.length, ms });
+    }
+  }
+
   private updateNearest(): void {
     let nearest: PlanetNode | null = null;
     let best = Infinity;
@@ -881,11 +1111,12 @@ export class CosmosEngine {
   }
 
   private publishCosmosApi(): void {
-    const w = window as Window & { __cosmos?: { revealPlanet: () => void; focusWorld: (id: string) => void; resetCamera: () => void } };
-    w.__cosmos = {
+    window.__cosmos = {
       revealPlanet: () => this.revealHiddenPlanet(),
-      focusWorld: (id: string) => this.focusWorld(id),
-      resetCamera: () => this.resetCamera()
+      focusWorld: (id) => this.focusWorld(id),
+      resetCamera: () => this.resetCamera(),
+      startTimeTrial: () => this.startTimeTrial(),
+      cancelTimeTrial: () => this.cancelTimeTrial()
     };
   }
 

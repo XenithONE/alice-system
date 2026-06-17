@@ -10,6 +10,9 @@ interface TerminalPanelProps {
   onCollect: (fragment: FragmentId) => void;
   onRevealHidden: () => void;
   onUnlockTrue: () => void;
+  onMissions: () => void;
+  onStartTrial: () => void;
+  onAdvanceLoop: () => void;
 }
 
 const START_LINES = [
@@ -17,7 +20,7 @@ const START_LINES = [
   "type 'help' for commands."
 ];
 
-export function TerminalPanel({ open, progress, worlds, onClose, onCollect, onRevealHidden, onUnlockTrue }: TerminalPanelProps) {
+export function TerminalPanel({ open, progress, worlds, onClose, onCollect, onRevealHidden, onUnlockTrue, onMissions, onStartTrial, onAdvanceLoop }: TerminalPanelProps) {
   const [lines, setLines] = useState<string[]>(START_LINES);
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -41,7 +44,10 @@ export function TerminalPanel({ open, progress, worlds, onClose, onCollect, onRe
     print(`> ${command}`);
 
     if (command === "help") {
-      print("commands: scan / fragments / atlas / reveal / ascend / clear / exit");
+      print(
+        "commands: scan / fragments / atlas / reveal / ascend",
+        "          missions / run / besttime / loop / version / clear / exit"
+      );
       return;
     }
     if (command === "scan") {
@@ -85,6 +91,33 @@ export function TerminalPanel({ open, progress, worlds, onClose, onCollect, onRe
     if (command === "alice" || command === "who are you") {
       onCollect("voice");
       print("you said my name. that has weight here.", "// FRAGMENT: VOICE");
+      return;
+    }
+    if (command === "missions") {
+      onMissions();
+      print("// mission log opened.");
+      return;
+    }
+    if (command === "run") {
+      onStartTrial();
+      print("// ring run engaged. fly through the gates in order.");
+      return;
+    }
+    if (command === "besttime") {
+      print(progress.timeTrialBest > 0 ? `BEST RING RUN ${(progress.timeTrialBest / 1000).toFixed(2)}s` : "no ring run recorded yet.");
+      return;
+    }
+    if (command === "loop") {
+      if (progress.trueEnding) {
+        onAdvanceLoop();
+        print("// NEW LOOP. the layout is remixed.", "the signal remembers.");
+      } else {
+        print("// loop sealed until the seventh signal.");
+      }
+      return;
+    }
+    if (command === "version" || command === "about") {
+      print(`AlicE sYsTeM // v${__APP_VERSION__}`, "v1.1 — stardust, missions, ring run, NG+ / perf + fixes.");
       return;
     }
     print("unknown command.");
