@@ -11,8 +11,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Cormorant+Garamond:ital@1&display=swap" rel="stylesheet">
 <script type="importmap">
 {"imports":{
-  "three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
-  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+  "three":"../vendor/three/build/three.module.js",
+  "three/addons/":"../vendor/three/examples/jsm/"
 }}
 </script>
 <style>
@@ -156,6 +156,7 @@
 </div>
 <div id="loadError">THREE.JS の読み込みに失敗しました。<br>ネットワーク接続または CDN へのアクセスを確認してください。</div>
 
+<script src="./shared/alice-game-kit.js"></script>
 <script type="module">
 import * as THREE from "three";
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -177,6 +178,14 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const rnd=(a,b)=>a+Math.random()*(b-a);
 const BEST_KEY='alice_the_eidolon_best';
 const BEST_SCORE_KEY='alice_the_eidolon_score';
+const kit=window.AliceGameKit&&window.AliceGameKit.install({
+  id:'the-eidolon',
+  title:'The Eidolon',
+  bonusKey:'alice_bonus_the_eidolon',
+  accent:'#9b7cff',
+  mission:'Collect shards. Every second shard triggers a Silence Veil.'
+});
+let kitT=0;
 const isTouch=matchMedia('(hover:none)').matches || ('ontouchstart' in window);
 if(isTouch) document.body.classList.add('touch');
 const LOW = isTouch && Math.min(innerWidth,innerHeight) < 520;
@@ -213,7 +222,8 @@ const state={
   score:0, combo:1, comboT:0,
   bestScore:Number(localStorage.getItem(BEST_SCORE_KEY)||0),
   // ---- gaze-break juice ----
-  fovKick:0, punchX:0, punchZ:0
+  fovKick:0, punchX:0, punchZ:0,
+  veilT:0
 };
 ui.best.textContent=fmtTime(state.best);
 
@@ -680,7 +690,7 @@ function resetGame(){
   for(const s of shards){ if(s.got){ scene.add(s.mesh); if(s.light) scene.add(s.light); s.got=false; } }
   state.shards=0; state.fear=0; state.invuln=1.5; state.taughtFirst=false; state.eidNear=0;
   state.score=0; state.combo=1; state.comboT=0;
-  state.fovKick=0; state.punchX=0; state.punchZ=0;
+  state.fovKick=0; state.punchX=0; state.punchZ=0; state.veilT=0; kitT=0;
   camera.fov=72; camera.updateProjectionMatrix();
   state.mode='playing'; state.paused=false; state.elapsed=0; state.startT=performance.now();
   look.yaw=-Math.PI*0.75; look.pitch=0;
@@ -689,6 +699,7 @@ function resetGame(){
   gate.userData.active=false; M.gateInner.opacity=0; gateLight.intensity=0; M.gate.emissiveIntensity=.4;
   if(gate.userData.beacon) gate.userData.beacon.visible=false;   // beacon off until 5 shards
   syncUi(); setMsg('RIFT OPEN','光る断片を追え。眼に光を当てるな。',2.2);
+  if(kit){kit.mission('Every second shard creates a Silence Veil against fear.');kit.setMetric('SHARDS','0/'+NEEDED);kit.setMetric('FEAR','0%');}
 }
 function startGame(){
   // mark onboarding as seen (display-only flag; never gates input or state)
@@ -714,10 +725,12 @@ function endGame(victory){
     state.score += Math.max(0, Math.floor(3000 - state.elapsed*0.4));
     h1.textContent='Light Carried'; tl.textContent='THE EIDOLON ACCORD';
     p.innerHTML='ゲートを抜けた。お前は光を闇へ運んだ。<br>AlicE sYsTeM が、断片『提灯』を記憶する。 — '+fmtTime(state.elapsed)+' — SCORE '+state.score;
+    if(kit)kit.complete('The Eidolon lantern archived.');
     pulse(523,.2,'triangle',.06); setTimeout(()=>pulse(784,.26,'sine',.05),140);
   }else{
     if(state.lossKind==='fear'){ h1.textContent='Consumed'; tl.textContent='THE DARK WINS'; p.innerHTML='恐怖が満ちた。闇が、内側から灯りを消した。<br>The dark put out your light from the inside.'; }
     else{ h1.textContent='Taken'; tl.textContent='EYE IN THE DARK'; p.innerHTML='視線を逸らすのが遅かった。<br>EIDOLON が虚空にお前を畳み込んだ。'; }
+    if(kit)kit.toast(state.lossKind==='fear'?'FEAR SATURATED':'TAKEN BY THE EIDOLON');
     pulse(70,.6,'sawtooth',.06);
   }
   ui.start.textContent=victory?'ESCAPE AGAIN':'TRY AGAIN';
@@ -799,6 +812,12 @@ function updateShards(dt,t){
       // combo-scaled score (purely additive; shard count unchanged)
       const gain=500+Math.floor(250*state.combo);
       state.score+=gain;
+      if(state.shards>0 && state.shards%2===0 && state.shards<NEEDED){
+        state.veilT=Math.max(state.veilT,5.5);
+        state.fear=Math.max(0,state.fear-22);
+        burst(s.x,1.25,s.z,0x9b7cff,LOW?16:28);
+        if(kit){kit.toast('SILENCE VEIL ONLINE');kit.spark(innerWidth/2,innerHeight/2,34,'#9b7cff','ring');}
+      }
       if(state.shards>=NEEDED){
         gate.userData.active=true;
         setMsg('GATE ONLINE','紫の輪の中心を抜けろ',2.4);
@@ -936,6 +955,7 @@ function updateEidolon(dt){
 
 function updateFear(dt, nearGlow, t){
   let f=state.fear;
+  if(state.veilT>0){state.veilT=Math.max(0,state.veilT-dt); f-=dt*18;}
   f += dt*2.0;                                   // the void erodes you
   if(state.eidNear>0) f += dt*14*state.eidNear;  // proximity dread
   if(E.mode==='hunt') f += dt*22;                // being hunted dominates
@@ -999,6 +1019,7 @@ function updateWorld(dt,t){
   updateMotes(dt);
   updateAudio(dt);
   updateCompass();
+  if(kit){kitT+=dt;if(kitT>.35){kitT=0;kit.setMetric('SHARDS',state.shards+'/'+NEEDED);kit.setMetric('FEAR',Math.floor(state.fear)+'%');kit.setMetric('VEIL',state.veilT>0?Math.ceil(state.veilT)+'s':'--');}}
   // bloom swells once the gate is online
   bloomPass.strength = gate.userData.active ? (LOW?0.70:1.05) : BLOOM_BASE;
   // flashlight flicker (worse with fear)

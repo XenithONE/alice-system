@@ -77,10 +77,18 @@
     </div>
   </div>
 </div>
+<script src="./shared/alice-game-kit.js"></script>
 <script>
 (()=>{
   const cv=document.getElementById('game'),ctx=cv.getContext('2d');
   const $=id=>document.getElementById(id);
+  const kit=window.AliceGameKit&&window.AliceGameKit.install({
+    id:'signal-runner',
+    title:'Signal Runner',
+    bonusKey:'alice_bonus_signal_runner',
+    accent:'#2ff7d2',
+    mission:'Build charge. A 6x fragment chain triggers Sync Surge.'
+  });
   let W=0,H=0,DPR=1,last=0,spawn=0,shardSpawn=0,running=false;
   let score=0,charge=0,best=Number(localStorage.getItem('alice_signal_runner_best')||0);
   let gameTime=0,gimmickPhase=0,wallSpawn=2.5,staticFlash=0,staticTimer=6;
@@ -99,8 +107,9 @@
   const parts=[];               // particle pool
   let shake=0,flash=0;          // screen-shake amplitude, hit-flash 0..1
   let combo=0,comboT=0;         // shard combo multiplier + decay timer
-  const powerups=[]; let puSpawn=8,timeScale=1,slowT=0; // rare orbs + slow-time
+  const powerups=[]; let puSpawn=8,timeScale=1,slowT=0,surgeT=0; // rare orbs + slow-time + combo surge
   const trail=[];               // motion-blur trail samples for the runner
+  let kitT=0;
 
   // --- difficulty selector (additive; RUN = identity = TODAY'S behaviour exactly) ---
   // Multipliers applied ONLY at: spawn-timer reset, hazard fall-speed maker, charge increment.
@@ -178,10 +187,11 @@
     running=true;last=0;spawn=.35;shardSpawn=.35;score=0;charge=0;
     gameTime=0;gimmickPhase=0;wallSpawn=2.5;staticFlash=0;staticTimer=6;
     hazards.length=0;shards.length=0;walls.length=0;player.x=W*.5;player.y=H*.68;player.vx=0;player.vy=0;player.shield=2.2;
-    parts.length=0;powerups.length=0;trail.length=0;shake=0;flash=0;combo=0;comboT=0;puSpawn=8;timeScale=1;slowT=0;
+    parts.length=0;powerups.length=0;trail.length=0;shake=0;flash=0;combo=0;comboT=0;puSpawn=8;timeScale=1;slowT=0;surgeT=0;kitT=0;
     $('overlay').classList.add('hidden');$('state').textContent='RUNNING';$('msg').textContent='SIGNAL OPEN';
     $('sub').textContent='Collect golden fragments until charge reaches 100%.';
     $('score').textContent='0';$('charge').textContent='0%';
+    if(kit){kit.mission('Reach 100% charge. Chain 6 fragments for Sync Surge.');kit.setMetric('CHARGE','0%');}
     requestAnimationFrame(loop);
   }
   function end(victory){
@@ -190,7 +200,8 @@
     $('msg').textContent=victory?'SIGNAL SYNCHRONIZED':'SIGNAL LOST';
     $('sub').textContent=victory?'The archive noticed your run.':'Press Enter or Start to breach again.';
     if(score>best){best=score;localStorage.setItem('alice_signal_runner_best',best);$('best').textContent=best}
-    if(victory){localStorage.setItem('alice_bonus_signal_runner','1');try{parent.__markD&&parent.__markD('runner')}catch(e){}}
+    if(victory){localStorage.setItem('alice_bonus_signal_runner','1');try{parent.__markD&&parent.__markD('runner')}catch(e){} if(kit)kit.complete('Signal Runner breach archived.');}
+    else if(kit)kit.toast('SIGNAL LOST');
     setTimeout(()=>{
       $('overlay').classList.remove('hidden');
       $('overlay').querySelector('h1').textContent=victory?'Synchronized':'Signal Lost';
@@ -210,6 +221,7 @@
     gameTime+=dt;
     // --- additive systems step (decoupled from hazard timing) ---
     if(slowT>0){slowT=Math.max(0,slowT-dt);timeScale=slowT>0?.55:1;}else timeScale=1;
+    if(surgeT>0)surgeT=Math.max(0,surgeT-dt);
     if(comboT>0){comboT-=dt;if(comboT<=0)combo=0;}
     if(flash>0)flash=Math.max(0,flash-dt*2.2);
     if(shake>0)shake=Math.max(0,shake-dt*42);
@@ -272,10 +284,23 @@
         score+=25*combo;charge=Math.min(100,charge+8*diff.charge);shards.splice(i,1);pulse(520+charge*5+combo*40,.08,'triangle',.035);/* diff.charge===1 on RUN → identity (+8) */
         emit(s.x,s.y,10,'255,209,102',110);addShake(2);
         $('msg').textContent=charge>=76?'FINAL LOCK':(combo>1?'FRAGMENT x'+combo:'FRAGMENT CAPTURED');
+        if(combo>=6 && surgeT<=0){
+          surgeT=4.2; player.shield=Math.max(player.shield,3.2); score+=600;
+          let cleared=0;
+          for(let j=hazards.length-1;j>=0;j--){
+            const h=hazards[j];
+            if(Math.hypot(h.x-player.x,h.y-player.y)<185){emit(h.x,h.y,8,'47,247,210',160);hazards.splice(j,1);cleared++;}
+          }
+          $('msg').textContent='SYNC SURGE';
+          $('sub').textContent='Combo resonance burned nearby red noise.';
+          addShake(8); pulse(880,.12,'triangle',.045);
+          if(kit){kit.toast('SYNC SURGE: '+cleared+' NOISE CLEARED');kit.spark(player.x,player.y,34,'#2ff7d2','ring');}
+        }
         if(charge>=100){end(true);return}
       }
     }
     score+=Math.max(0,Math.floor(dt*18));$('score').textContent=score;$('charge').textContent=Math.floor(charge)+'%';
+    if(kit){kitT+=dt;if(kitT>.3){kitT=0;kit.setMetric('CHARGE',Math.floor(charge)+'%');kit.setMetric('COMBO','x'+Math.max(1,combo));kit.setMetric('MODE',DIFFS[diffKey].label);}}
     const chip=$('combochip');if(chip){if(combo>1){chip.style.display='';$('combo').textContent='x'+combo;}else chip.style.display='none';}
     // phase telegraph chip — reads gimmickPhase only (set by the fixed 15/30/50s timers)
     const pchip=$('phasechip');
@@ -341,6 +366,7 @@
     if(trail.length>1){ctx.save();for(let i=0;i<trail.length;i++){const tp=trail[i],a=(i/trail.length)*.5;ctx.globalAlpha=a;ctx.fillStyle='rgba(47,247,210,1)';ctx.beginPath();ctx.arc(tp.x,tp.y,player.r*(.4+i/trail.length*.5),0,Math.PI*2);ctx.fill();}ctx.restore();}
     ctx.save();ctx.translate(player.x,player.y);ctx.shadowBlur=28;ctx.shadowColor='rgba(47,247,210,.95)';ctx.fillStyle='rgba(47,247,210,.94)';ctx.beginPath();ctx.arc(0,0,player.r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=player.shield>0?'rgba(255,209,102,.9)':'rgba(255,255,255,.74)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,player.r+5+Math.sin(time*8)*2,0,Math.PI*2);ctx.stroke();
     if(slowT>0){ctx.globalAlpha=noMotion()?.7:.5+Math.sin(time*6)*.3;ctx.strokeStyle='rgba(107,166,255,.8)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,player.r+12,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
+    if(surgeT>0){const frac=Math.max(0,Math.min(1,surgeT/4.2));ctx.globalAlpha=.45+.25*Math.sin(time*10);ctx.strokeStyle='rgba(47,247,210,.95)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,player.r+26+Math.sin(time*8)*4,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
     // power-up countdown rings: depleting arc shows remaining time (readout, not decoration)
     if(slowT>0){const frac=Math.max(0,Math.min(1,slowT/3));ctx.globalAlpha=.95;ctx.strokeStyle='rgba(107,166,255,.95)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,player.r+16,-Math.PI/2,-Math.PI/2+frac*Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
     if(player.shield>0){const frac=Math.max(0,Math.min(1,player.shield/2.2));ctx.globalAlpha=.95;ctx.strokeStyle='rgba(255,209,102,.95)';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,player.r+(slowT>0?22:16),-Math.PI/2,-Math.PI/2+frac*Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}

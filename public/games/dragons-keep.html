@@ -88,6 +88,7 @@
   </div>
 </div>
 
+<script src="./shared/alice-game-kit.js"></script>
 <script>
 'use strict';
 /* ============================================================
@@ -102,6 +103,14 @@ const rnd=(a=1,b)=>b===undefined?Math.random()*a:a+Math.random()*(b-a);
 const TAU=Math.PI*2, RAD=Math.PI/180;
 const fmt=n=>n.toLocaleString('en-US');
 const HI_KEY='alice_dragons_keep_hi';
+const kit=window.AliceGameKit&&window.AliceGameKit.install({
+  id:'dragons-keep',
+  title:"Dragon's Keep",
+  bonusKey:'alice_bonus_dragons_keep',
+  accent:'#ffc34d',
+  mission:'Lock balls, complete missions, and reach Wizard Mode.'
+});
+let kitT=0;
 
 /* ---------- layout ---------- */
 let scale=1, dpr=1, ox=0, oy=0, panelW=0, viewW=540, rsTimer=null;
@@ -404,6 +413,12 @@ function launchBall(b,power){
 function comboHit(x,y){
   game.combo++; game.comboT=4;
   if(game.combo>=2){ftext(x,y-22,'COMBO x'+game.combo,'#9d7bff',15);addScore(25000*game.combo);}
+  if(game.combo===5 && game.frenzyT<=0 && !game.wizard){
+    game.frenzyT=12;
+    dmd('COSMIC FRENZY','2x SCORING — 12s',2.5,4);
+    flash('#33e7c8',.42); shake(7,.42); lightShowT=1.5; sfx.mystery();
+    if(kit){kit.toast('COSMIC FRENZY 2x');kit.spark(innerWidth/2,innerHeight/2,46,'#ffc34d','ring');}
+  }
 }
 
 /* ---------- RUNE lanes ---------- */
@@ -546,6 +561,7 @@ function missionFail(){
 }
 function startWizard(){
   try{localStorage.setItem('alice_bonus_dragons_keep','1');}catch(e){}
+  if(kit)kit.complete("Dragon's Keep Wizard Mode archived.");
   game.wizard=true; game.wizardT=60;
   dmd("DRAGON'S KEEP",'ALL IS LIT — 60 SECONDS',4,5);
   sfx.multi(); dragonFire(); slowmo(); flash('#ffc34d',.7); shake(12,.9); lightShowT=4;
@@ -802,6 +818,7 @@ function endOfBall(){
 }
 function gameOver(){
   state='gameover';
+  if(kit)kit.toast('PINBALL GAME OVER');
   document.getElementById('finalScore').textContent='SCORE '+fmt(game.score);
   document.getElementById('finalHi').textContent='HIGH SCORE '+fmt(hi)+(game.score>=hi?'  ★ NEW RECORD':'');
   document.getElementById('over').classList.remove('hidden');
@@ -890,10 +907,12 @@ document.getElementById('muteBtn').textContent=muted?'♪ OFF':'♪ ON';
 function startGame(){
   audioInit();
   resetGame();
+  kitT=0;
   state='playing';
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('over').classList.add('hidden');
   dmd("DRAGON'S KEEP",'BALL 1',2,2);
+  if(kit){kit.mission('Complete 4 missions to unlock Wizard Mode. Combo x5 starts Cosmic Frenzy.');kit.setMetric('BALL','1/'+game.ballsPerGame);kit.setMetric('SCORE','0');}
   serveBall();
   game.saveT=12;
 }
@@ -1634,6 +1653,7 @@ function frame(now){
       game.wizardT-=dts;
       if(game.wizardT<=0)endWizard();
     }
+    if(kit){kitT+=dt;if(kitT>.45){kitT=0;kit.setMetric('BALL',game.ballNum+'/'+game.ballsPerGame);kit.setMetric('SCORE',fmt(game.score));kit.setMetric('MODE',game.wizard?'WIZARD':(game.frenzyT>0?'FRENZY':(game.multiball?'MULTI':'PLAY')));}}
     if(dmdQ.length){dmdQ[0].t-=dt;if(dmdQ[0].t<=0)dmdQ.shift();}
     // serve queue
     if(game.serveQ>0&&game.endT<=0){

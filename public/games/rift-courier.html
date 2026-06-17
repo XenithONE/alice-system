@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Cormorant+Garamond:ital@1&display=swap" rel="stylesheet">
 <script type="importmap">
-{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"}}
+{"imports":{"three":"../vendor/three/build/three.module.js","three/addons/":"../vendor/three/examples/jsm/"}}
 </script>
 <style>
   :root{
@@ -119,6 +119,7 @@
 <div id="reticle"></div>
 <div id="loadError">THREE.JS の読み込みに失敗しました。<br>ネットワーク接続または CDN へのアクセスを確認してください。</div>
 
+<script src="./shared/alice-game-kit.js"></script>
 <script type="module">
 import * as THREE from "three";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
@@ -138,6 +139,14 @@ const fmt=n=>Math.floor(n).toLocaleString('en-US');
 const BEST_KEY='alice_rift_courier_best';
 const MUTE_KEY='alice_rift_courier_mute';
 const DIFF_KEY='alice_rift_diff';
+const kit=window.AliceGameKit&&window.AliceGameKit.install({
+  id:'rift-courier',
+  title:'Rift Courier',
+  bonusKey:'alice_bonus_rift_courier',
+  accent:'#33e7c8',
+  mission:'Collect keys, graze red noise, and fly through the gate.'
+});
+let kitT=0;
 // Heavy FX (bloom, screen shake, FOV kick, warp streaks) respect motion preference.
 const reduceMotion=(()=>{try{return matchMedia('(prefers-reduced-motion: reduce)').matches;}catch(e){return false;}})();
 let fxOn=!reduceMotion;
@@ -160,7 +169,7 @@ const state={
   keys:0,needed:7,hull:3,distance:0,speed:22,gateSpawned:false,gatePassed:false,
   combo:0,comboT:0,maxCombo:0,
   shakeT:0,shakeMag:0,nearMissT:0,
-  grazeStreak:0,grazeStreakT:0,
+  grazeStreak:0,grazeStreakT:0,grazeResonance:0,
   player:{x:0,y:0,vx:0,vy:0,invuln:0,roll:0},
   input:{left:false,right:false,up:false,down:false,pointer:false,px:0,py:0},
   timers:{hazard:.8,key:.5,beam:3.5,message:0},
@@ -364,7 +373,7 @@ function resetGame(){
   particles.length=0;
   Object.assign(state,{
     mode:'playing',paused:false,score:0,keys:0,hull:3,distance:0,speed:22,gateSpawned:false,gatePassed:false,
-    combo:0,comboT:0,maxCombo:0,shakeT:0,shakeMag:0,nearMissT:0,grazeStreak:0,grazeStreakT:0
+    combo:0,comboT:0,maxCombo:0,shakeT:0,shakeMag:0,nearMissT:0,grazeStreak:0,grazeStreakT:0,grazeResonance:0
   });
   Object.assign(state.player,{x:0,y:0,vx:0,vy:0,invuln:1.6,roll:0});
   Object.assign(state.timers,{hazard:.75,key:.45,beam:3.4,message:0});
@@ -377,6 +386,8 @@ function startGame(){
   audio();
   resetGame();
   ui.overlay.classList.add('hidden');
+  kitT=0;
+  if(kit){kit.mission('Graze chains repair hull every 3 near misses.');kit.setMetric('HULL',state.hull);kit.setMetric('KEYS','0/'+state.needed);}
   pulse(360,.09,'triangle',.045);
   setTimeout(()=>pulse(620,.12,'sine',.04),90);
 }
@@ -399,8 +410,10 @@ function endGame(victory){
   if(victory){
     localStorage.setItem('alice_bonus_rift_courier','1');
     try{parent.__markD&&parent.__markD('rift')}catch(e){}
+    if(kit)kit.complete('Rift Courier flight archived.');
     pulse(523,.2,'triangle',.06);setTimeout(()=>pulse(784,.25,'sine',.05),130);
   }else{
+    if(kit)kit.toast('RIFT COLLAPSED');
     pulse(96,.35,'sawtooth',.05);
   }
   syncUi();
@@ -541,6 +554,16 @@ function updateEntities(dt){
         state.grazeStreak++;
         state.grazeStreakT=3.2;
         setMessage(state.grazeStreak>1?'GRAZE x'+state.grazeStreak:'NEAR MISS','+'+nm,.7);
+        if(state.grazeStreak>0 && state.grazeStreak%3===0){
+          state.grazeResonance++;
+          const bonus=1200*state.grazeResonance;
+          state.score+=bonus;
+          const restored=state.hull<3;
+          if(restored) state.hull++;
+          makeBurst(p.x,p.y,6,0x33e7c8,42);
+          setMessage('GRAZE RESONANCE',(restored?'HULL RESTORED  ':'')+'+'+fmt(bonus),1.2);
+          if(kit){kit.toast('GRAZE RESONANCE');kit.spark(innerWidth/2,innerHeight/2,38,'#33e7c8','ring');}
+        }
         // Sound sharpens (rises in pitch) as grazes chain; capped so it never gets harsh.
         pulse(760+Math.min(state.grazeStreak,8)*55,.06,'sine',.03);
         // Cyan reticle ring-flash — fxOn-gated and also a CSS no-op under reduced-motion.
@@ -632,6 +655,7 @@ function updateWorld(dt,t){
     }
   }
   syncUi();
+  if(kit){kitT+=dt;if(kitT>.35){kitT=0;kit.setMetric('HULL',state.hull);kit.setMetric('KEYS',state.keys+'/'+state.needed);kit.setMetric('SPEED',Math.floor(state.speed));}}
 }
 
 let ac=null;

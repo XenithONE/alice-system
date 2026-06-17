@@ -27,6 +27,13 @@ const DEBUG = /[?&]debug/.test(location.search);
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
 ctx.imageSmoothingEnabled = false;
+const kit=window.AliceGameKit&&window.AliceGameKit.install({
+  id:'iwbtg',
+  title:'I Wanna Be The Signal',
+  bonusKey:'alice_bonus_iwbtg',
+  accent:'#33e7c8',
+  mission:'Clear all stages. Death Echo marks recent trap lessons.'
+});
 
 /* ---------- スプライト自動ロード ---------- */
 const SHEET = { player_idle:2, player_run:6, player_jump:2, player_dead:4,
@@ -150,6 +157,8 @@ let state = 'title';           // title | card | play | dead | stageclear | clea
 let deadT = 0, cardT = 0, clearT = 0, toast = '', toastT = 0, time = 0, runT = 0;
 let god = false, activeSave = -1, checkpoint = null;
 const parts = [];
+const deathMarks = [];
+let kitT = 0;
 
 /* ---------- 追加: 演出・スコア・設定（描画とスコアのみ。物理/衝突には一切触れない） ---------- */
 const REDUCE = (() => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } })();
@@ -209,6 +218,7 @@ function loadStage(i, viaTitle) {
   revealed.clear();
   initRuntime(false);
   placeAt(checkpoint);
+  if(kit){kit.mission('Stage '+(stageIdx+1)+'/'+DEFS.length+' - Death Echo marks recent danger.');kit.setMetric('STAGE',(stageIdx+1)+'/'+DEFS.length);}
   if (!viaTitle) { state = 'card'; cardT = 1.4; }
 }
 
@@ -227,6 +237,9 @@ function die(msg) {
   combo = 0;                                       // ノーデス連続クリアをリセット（スコアのみ）
   shake = REDUCE ? 0 : 16; flash = REDUCE ? 0.25 : 0.6;  // 描画専用の演出（物理には無関係）
   burst(P.x, P.y - P.h / 2, C.red, 28);
+  deathMarks.push({stage:stageIdx,x:P.x,y:P.y - P.h / 2});
+  while(deathMarks.length>10) deathMarks.shift();
+  if(kit){kit.toast('DEATH ECHO RECORDED');kit.spark(undefined,undefined,18,'#ff3b5c','ring');}
   if (msg) toastMsg(msg);
   tone(220, 0.12, 'sawtooth', 0.06); setTimeout(() => tone(110, 0.25, 'sawtooth', 0.05), 60);
 }
@@ -443,6 +456,7 @@ function update(dt) {
       if (stageIdx + 1 < DEFS.length) loadStage(stageIdx + 1);
       else { state = 'clear'; localStorage.setItem('signal_stage', 0);
         try{localStorage.setItem('alice_bonus_iwbtg','1');}catch(e){}
+        if(kit)kit.complete('All signal stages cleared.');
         if (bestTime === 0 || runT < bestTime) { bestTime = runT; localStorage.setItem('signal_besttime', runT.toFixed(2)); } }
     }
     return;
@@ -526,6 +540,7 @@ function update(dt) {
       // スコア記録（進行はゲートしない・難易度は不変）
       combo++; if (combo > bestCombo) { bestCombo = combo; localStorage.setItem('signal_bestcombo', bestCombo); }
       if (stageIdx + 1 > bestStage) { bestStage = stageIdx + 1; localStorage.setItem('signal_beststage', bestStage); }
+      if(kit){kit.toast('STAGE '+(stageIdx+1)+' CLEAR');kit.spark(undefined,undefined,32,'#33e7c8','ring');}
       tone(660, .1, 'sine', .06); setTimeout(() => tone(880, .14, 'sine', .06), 90);
       setTimeout(() => tone(1320, .2, 'sine', .06), 200);
       return;
@@ -732,6 +747,20 @@ function render() {
     ctx.fillStyle = 'rgba(123,77,255,.95)';
     ctx.fillText(m.text, m.x, m.y + 12);
   }
+  // Death Echo: recent death positions remain as non-colliding visual memory.
+  for (const mark of deathMarks) {
+    if (mark.stage !== stageIdx) continue;
+    ctx.save();
+    ctx.translate(mark.x, mark.y);
+    ctx.globalAlpha = 0.32 + 0.18 * Math.sin(time * 5);
+    ctx.strokeStyle = C.red;
+    ctx.fillStyle = 'rgba(255,59,92,.16)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 15 + Math.sin(time * 4) * 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-10, -10); ctx.lineTo(10, 10); ctx.moveTo(10, -10); ctx.lineTo(-10, 10); ctx.stroke();
+    ctx.font = '700 9px "Courier New",monospace'; ctx.textAlign = 'center'; ctx.fillText('ECHO', 0, -22);
+    ctx.restore();
+  }
   // プレイヤー
   if (state !== 'dead') {
     const px = P.x - 16, py = P.y - 32;
@@ -876,6 +905,15 @@ let last = performance.now();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 1 / 30); last = now;
   update(dt); render();
+  if (kit && LV) {
+    kitT += dt;
+    if (kitT > .45) {
+      kitT = 0;
+      kit.setMetric('STAGE', (stageIdx + 1) + '/' + DEFS.length);
+      kit.setMetric('DEATHS', deaths);
+      kit.setMetric('TIME', Math.floor(runT / 60) + ':' + (runT % 60).toFixed(1).padStart(4, '0'));
+    }
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

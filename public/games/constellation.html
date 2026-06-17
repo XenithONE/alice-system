@@ -82,10 +82,18 @@
   <a id="begin">◈ BEGIN ALIGNMENT</a>
 </div>
 
+<script src="./shared/alice-game-kit.js"></script>
 <script>
 (function(){
   const cv=document.getElementById('c'),x=cv.getContext('2d');
   const $=id=>document.getElementById(id);
+  const kit=window.AliceGameKit&&window.AliceGameKit.install({
+    id:'constellation',
+    title:'Constellation',
+    bonusKey:'alice_bonus_constellation',
+    accent:'#33e7c8',
+    mission:'Memorize the star path. Two misses unlock an echo hint.'
+  });
   let W,H,DPR;
   function resize(){ DPR=Math.min(2,window.devicePixelRatio||1); W=innerWidth;H=innerHeight;
     cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);
@@ -108,6 +116,7 @@
 
   let level=0, nodes=[], decoys=[], target=[], progress=0, phase='flash', flashT=0, errorT=0, bgStars=[];
   let pulse=0;
+  let mistakes=0, echoT=0;
 
   // --- additive: endless mode + procedural generation ---
   let endless=false, endlessIdx=0, streak=0;
@@ -166,7 +175,10 @@
   // --- additive: score / combo / persistence ---
   let score=0, combo=0, best=0;
   try{ best=+(localStorage.getItem('alice_constellation_best')||0)||0; }catch(e){}
-  function renderScore(){ const el=$('score'); if(el) el.textContent='SCORE '+score+(combo>1?' x'+combo:'')+'  ·  BEST '+best; }
+  function renderScore(){
+    const el=$('score'); if(el) el.textContent='SCORE '+score+(combo>1?' x'+combo:'')+'  ·  BEST '+best;
+    if(kit){ kit.setMetric('SCORE',score); kit.setMetric('LEVEL',endless?'ENDLESS '+(endlessIdx+1):(level+1)+'/'+LEVELS.length); }
+  }
 
   // --- additive: mute toggle (persisted) ---
   let muted=false; try{ muted=localStorage.getItem('alice_constellation_mute')==='1'; }catch(e){}
@@ -194,6 +206,7 @@
     // decoys
     const nd=18+level*4+(level===LEVELS.length-1?6:0); decoys=Array.from({length:nd},()=>{const r=Math.random()*1.6+.6;return {nx:Math.random(),ny:Math.random(),r};});
     progress=0; phase='flash'; flashT=performance.now(); errorT=0;
+    mistakes=0; echoT=0;
     ignite=0; igniteSeg=-1;
     comboTimer=1; lastDecayT=performance.now();
     layout(); buildBg();
@@ -202,6 +215,7 @@
     $('msg').textContent='記憶せよ…'; $('msg').style.opacity=1;
     $('sub').textContent= endless ? ('STREAK '+streak+'  ·  星座を覚えて再現せよ') : '光る星座を覚えて、同じ順に星をつなげ';
     renderScore();
+    if(kit) kit.mission(endless?'Endless echo chain: streak '+streak:'Trace the flashed constellation from memory.');
     // chime
     tone(420,0.25,'sine',0.04);
   }
@@ -225,6 +239,7 @@
       if(progress>=nodes.length){ // level complete
         phase='done'; tone(660,0.3,'sine',0.06); setTimeout(()=>tone(880,0.4,'sine',0.05),120);
         burst(nodes[nodes.length-1].x, nodes[nodes.length-1].y, 60, .55); addShake(9);
+        if(kit) kit.spark(nodes[nodes.length-1].x,nodes[nodes.length-1].y,30,'#33e7c8','ring');
         $('msg').textContent= endless ? ('✦ 整列 ✦  STREAK '+(streak+1)) : '✦ 整列 ✦';
         if(endless){
           // endless: grow the constellation, chase the streak, never re-fire winGame.
@@ -235,9 +250,10 @@
         }
       }
     } else { // wrong
-      errorT=performance.now(); progress=0; tone(120,0.25,'sawtooth',0.05);
+      errorT=performance.now(); progress=0; mistakes++; tone(120,0.25,'sawtooth',0.05);
       combo=0; renderScore();
       $('msg').textContent='信号がずれた。最初から。';
+      if(mistakes>=2){ echoT=1.4; if(kit) kit.toast('ECHO HINT ONLINE'); }
       setTimeout(()=>{ if(phase==='input')$('msg').textContent='星をつなげ'; },1100);
     }
   }
@@ -245,6 +261,7 @@
 
   function winGame(){ try{localStorage.setItem('alice_bonus_constellation','1');}catch(e){}
     try{parent.__markD&&parent.__markD('constellation');}catch(e){}
+    if(kit) kit.complete('Constellation signal archived.');
     $('win').classList.add('show');
     [0,1,2,3,4].forEach(i=>setTimeout(()=>tone(440*Math.pow(1.2,i),0.5,'sine',0.05),i*150)); }
 
@@ -306,6 +323,14 @@
       x.fillStyle = i<progress?'#7dffae':'#33e7c8';
       x.shadowColor='#33e7c8'; x.shadowBlur=lit?14:5;
       x.beginPath();x.arc(n.x,n.y,lit?4:2.4,0,6.28);x.fill(); x.shadowBlur=0; });
+    if(echoT>0 && phase==='input' && nodes[progress]){
+      echoT=Math.max(0,echoT-0.018);
+      const n=nodes[progress], a=Math.min(.9,echoT/1.4);
+      x.save(); x.globalAlpha=a; x.strokeStyle='#ffd166'; x.lineWidth=2;
+      x.shadowColor='#ffd166'; x.shadowBlur=18;
+      x.beginPath(); x.arc(n.x,n.y,16+Math.sin(pulse*3)*3,0,6.28); x.stroke();
+      x.restore(); x.shadowBlur=0; x.globalAlpha=1;
+    }
     x.globalAlpha=1;
     // error flash
     if(errorT){ const e=(now-errorT)/300; if(e<1){ x.fillStyle='rgba(255,92,157,'+(0.25*(1-e))+')'; x.fillRect(0,0,W,H);} else errorT=0; }

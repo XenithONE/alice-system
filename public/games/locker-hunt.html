@@ -55,12 +55,21 @@
     </div>
   </div>
 </div>
+<script src="./shared/alice-game-kit.js"></script>
 <script>
 (()=>{
-  const GAME_VERSION='v1.2.0';
+  const GAME_VERSION='v1.3.0';
   const cv=document.getElementById('game'),ctx=cv.getContext('2d');
   const $=id=>document.getElementById(id);
+  const kit=window.AliceGameKit&&window.AliceGameKit.install({
+    id:'locker-hunt',
+    title:'Locker Hunt',
+    bonusKey:'alice_bonus_locker_hunt',
+    accent:'#35f1d3',
+    mission:'Find the tiny signal three times. First-try finds build a Perfect chain.'
+  });
   let W=0,H=0,DPR=1,last=0,running=false,selected=0,target=0,tries=0,found=0,shake=0,faceTimer=1.5,face=0,scroll=0,round=1,score=0,startTime=0;
+  let roundStartTries=0,perfectStreak=0;
   const open=Array(10).fill(false),splats=[],keys=new Set();
   // --- additive enhancement state (visuals/UI/features; never touches hit-test or win/lose rules) ---
   const REDUCE=matchMedia('(prefers-reduced-motion:reduce)').matches;
@@ -87,10 +96,11 @@
   $('start').addEventListener('click',start);
 
   function start(){
-    running=true;last=0;selected=0;target=rand(10);tries=0;found=0;score=0;startTime=performance.now();shake=0;face=0;faceTimer=1.2;scroll=desiredPan();open.fill(false);splats.length=0;round=1;danger=0;flash=0;
+    running=true;last=0;selected=0;target=rand(10);tries=0;found=0;score=0;startTime=performance.now();shake=0;face=0;faceTimer=1.2;scroll=desiredPan();open.fill(false);splats.length=0;round=1;danger=0;flash=0;roundStartTries=0;perfectStreak=0;
     $('overlay').classList.add('hidden');$('state').textContent='SEARCHING';$('msg').textContent='LOCKERS WAITING';$('sub').textContent='Choose carefully. The tiny man moves after every find.';sync();requestAnimationFrame(loop);
+    if(kit)kit.mission('Round '+round+'/3: first-try finds trigger Perfect chain bonuses.');
   }
-  function sync(){$('tries').textContent=tries;$('found').textContent=found;$('score').textContent=score;$('selected').textContent=selected+1}
+  function sync(){$('tries').textContent=tries;$('found').textContent=found;$('score').textContent=score;$('selected').textContent=selected+1;if(kit){kit.setMetric('FOUND',found+'/3');kit.setMetric('TRIES',tries);kit.setMetric('CHAIN',perfectStreak?('x'+perfectStreak):'--');}}
   function loop(t){if(!running)return;const dt=last?Math.min(.033,(t-last)/1000):0;last=t;update(dt);draw(t/1000);requestAnimationFrame(loop)}
   function update(dt){
     if(keys.has('arrowleft')||keys.has('a')){selected=Math.max(0,selected-1);keys.delete('arrowleft');keys.delete('a');sync()}
@@ -108,12 +118,22 @@
     if(selected===target){
       found++;score+=Math.max(20,120-tries*10);$('msg').textContent='TINY MAN FOUND';$('sub').textContent='He squeaks, waves, and dives into another locker.';beep(740,.08,'square',.035);
       burst(lockerX(selected)+lockerW()*0.5,lockerY()+lockerH()*0.4,40,'rgba(255,209,102,0.95)',true);
+      const perfect=(tries-roundStartTries)===1;
+      perfectStreak=perfect?perfectStreak+1:0;
+      if(perfectStreak>0){
+        const bonus=45*round*perfectStreak;
+        score+=bonus;
+        $('sub').textContent='PERFECT FIND x'+perfectStreak+'  +'+bonus+'. He moves deeper into the hallway.';
+        burst(lockerX(selected)+lockerW()*0.5,lockerY()+lockerH()*0.22,24,'rgba(53,241,211,0.9)',true);
+        if(kit){kit.toast('PERFECT FIND x'+perfectStreak);kit.spark(lockerX(selected)+lockerW()*0.5,lockerY()+lockerH()*0.3,24,'#ffd166','ring');}
+      }
       danger=Math.min(1,danger+0.12);round++;
       // curve-aware relocation: later rounds bias the man away from the current pick (HOT/COLD intel still matters)
       let next=target,best2=-1,bestD=-1;
       for(let tryN=0;tryN<24;tryN++){const c=rand(10);if(c===target||open[c])continue;const d=Math.abs(c-selected);if(round>=2?d>bestD:true){best2=c;bestD=d;if(round<2)break;}}
       if(best2<0){next=target;while(next===target||open[next]){next=rand(10);if(open.every(Boolean))break}}else next=best2;
-      target=next;if(found>=3){win();return}
+      target=next;roundStartTries=tries;if(found>=3){win();return}
+      if(kit)kit.mission('Round '+round+'/3: keep the Perfect chain alive.');
     }else{lose();return}
     sync();
   }
@@ -121,10 +141,12 @@
     const secs=startTime?(performance.now()-startTime)/1000:999;score+=Math.max(0,Math.round(150-secs*3));sync();
     best.wins=(best.wins||0)+1;if(!best.bestTries||tries<best.bestTries)best.bestTries=tries;if(score>(best.bestScore||0))best.bestScore=score;try{localStorage.setItem(SAVE,JSON.stringify(best))}catch(e){}
     try{localStorage.setItem('alice_bonus_locker_hunt','1');}catch(e){}
+    if(kit)kit.complete('Locker Hunt hallway signal archived.');
     showEnd('Clear','Found him 3 times in '+tries+' tries for '+score+' points. He bows once, then slips into a crack in the wall.','SEARCH AGAIN')}
   function lose(){
     running=false;shake=1;flash=1;danger=Math.min(1,danger+0.4);for(let i=0;i<100;i++)splats.push({x:lockerX(selected)+55+Math.random()*50,y:lockerY()+120,vx:(Math.random()-.5)*560,vy:-Math.random()*460,life:2});
     $('state').textContent='GAME OVER';$('msg').textContent='THE WRONG LOCKER';$('sub').textContent='The hallway has chosen violence.';beep(92,.35,'sawtooth',.05);
+    if(kit)kit.toast('WRONG LOCKER');
     draw(performance.now()/1000);setTimeout(()=>showEnd('Game Over','The wrong locker erupts. The school hallway is no longer usable.','RETRY'),480);
   }
   function showEnd(title,text,button){$('overlay').classList.remove('hidden');$('overlay').querySelector('h1').textContent=title;$('overlay').querySelector('p').textContent=text;$('start').textContent=button;const rec=$('overlay').querySelector('.version');if(rec)rec.textContent=recordText()}
