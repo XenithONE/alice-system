@@ -92,6 +92,48 @@ function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3);
 }
 
+// Derive cheap surface relief from a planet's own color map luminance (no extra assets).
+function applyLuminanceBump(material: THREE.MeshStandardMaterial, strength = 0.6): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uBumpStrength = { value: strength };
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        uniform float uBumpStrength;
+        float _lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }`
+      )
+      .replace(
+        "#include <normal_fragment_maps>",
+        `#include <normal_fragment_maps>
+        #ifdef USE_MAP
+          float _h  = _lum(texture2D(map, vMapUv).rgb);
+          float _hx = _lum(texture2D(map, vMapUv + vec2(1.0 / 1024.0, 0.0)).rgb);
+          float _hy = _lum(texture2D(map, vMapUv + vec2(0.0, 1.0 / 1024.0)).rgb);
+          normal = normalize(normal + vec3((_h - _hx) * uBumpStrength, (_h - _hy) * uBumpStrength, 0.0));
+        #endif`
+      );
+  };
+  material.needsUpdate = true;
+}
+
+// Soft radial sun glow (canvas-generated; no asset fetch, bloom-friendly additive).
+function makeGlowTexture(size = 256): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d")!;
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0.0, "rgba(255,255,245,1)");
+  grad.addColorStop(0.2, "rgba(255,232,176,0.9)");
+  grad.addColorStop(0.5, "rgba(255,182,96,0.25)");
+  grad.addColorStop(1.0, "rgba(255,150,60,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export class CosmosEngine {
   private readonly canvas: HTMLCanvasElement;
   private readonly worlds: World[];
@@ -124,6 +166,9 @@ export class CosmosEngine {
   private progress: ProgressState;
   private sparkActive = false;
   private disposed = false;
+  // v1.2 realism
+  private envRT: THREE.WebGLRenderTarget | null = null;
+  private readonly sunDir = new THREE.Vector3(54, 72, 48).normalize();
   // v1.1 gameplay + perf
   private readonly textureCache = new Map<string, THREE.Texture>();
   private readonly lastCamPos = new THREE.Vector3(0, 14, 82);
@@ -156,7 +201,7 @@ export class CosmosEngine {
 
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    this.renderer.toneMappingExposure = 1.0; // lowered for the bright sun + tighter bloom (v1.2)
     this.renderer.setClearColor(0x03050b, 1);
     this.renderer.setPixelRatio(quality.dpr);
     this.camera.position.set(0, 14, 82);
@@ -259,6 +304,8 @@ export class CosmosEngine {
       if (mesh.material) disposeMaterial(mesh.material);
     });
     this.composer?.dispose();
+    if (this.envRT) { this.envRT.dispose(); this.envRT = null; }
+    this.scene.environment = null;
     this.renderer.dispose();
     for (const texture of this.textureCache.values()) texture.dispose();
     this.textureCache.clear();
@@ -280,6 +327,33 @@ export class CosmosEngine {
     violet.position.set(34, -18, -44);
     this.scene.add(violet);
     this.scene.add(new THREE.AmbientLight(0x28344d, 0.58));
+
+    // v1.2: a visible sun (glow sprite + bright core) along the key-light direction → bloom anchor
+    const sunGroup = new THREE.Group();
+    sunGroup.position.copy(this.sunDir).multiplyScalar(168);
+    const glow = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: makeGlowTexture(), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false })
+    );
+    glow.scale.setScalar(this.quality.label === "LOW" ? 26 : 42);
+    sunGroup.add(glow);
+    if (this.quality.label !== "LOW") {
+      sunGroup.add(new THREE.Mesh(new THREE.SphereGeometry(6, 24, 24), new THREE.MeshBasicMaterial({ color: 0xfff4e0, fog: false })));
+    }
+    this.scene.add(sunGroup);
+  }
+
+  // Build a PMREM environment from the loaded equirect skybox → realistic IBL on planets (non-LOW).
+  private buildEnvFrom(texture: THREE.Texture): void {
+    if (this.quality.label === "LOW" || this.disposed || this.envRT) return;
+    try {
+      const pmrem = new THREE.PMREMGenerator(this.renderer);
+      this.envRT = pmrem.fromEquirectangular(texture);
+      this.scene.environment = this.envRT.texture;
+      this.scene.environmentIntensity = 0.3;
+      pmrem.dispose();
+    } catch {
+      // IBL is a nice-to-have; never break the scene if PMREM fails.
+    }
   }
 
   // Shared, de-duplicated texture loader (one Texture/GPU upload per URL) with quiet error degrade.
@@ -319,6 +393,7 @@ export class CosmosEngine {
         texture.colorSpace = THREE.SRGBColorSpace;
         skyMat.map = texture;
         skyMat.needsUpdate = true;
+        this.buildEnvFrom(texture);
       },
       undefined,
       () => {
@@ -326,6 +401,7 @@ export class CosmosEngine {
           texture.colorSpace = THREE.SRGBColorSpace;
           skyMat.map = texture;
           skyMat.needsUpdate = true;
+          this.buildEnvFrom(texture);
         });
       }
     );
@@ -470,11 +546,13 @@ export class CosmosEngine {
 
     const material = new THREE.MeshStandardMaterial({
       color: world.color,
-      roughness: 0.86,
-      metalness: 0.02,
+      roughness: 0.9,
+      metalness: 0.0,
       emissive: new THREE.Color(world.color),
-      emissiveIntensity: 0.16
+      emissiveIntensity: 0.16,
+      envMapIntensity: 0.65
     });
+    if (this.quality.label !== "LOW") applyLuminanceBump(material, 0.6); // surface relief from the color map
     const surface = new THREE.Mesh(new THREE.SphereGeometry(world.size, this.quality.planetSegments, Math.max(24, this.quality.planetSegments / 2)), material);
     surface.userData.worldId = world.id;
     group.add(surface);
@@ -564,7 +642,9 @@ export class CosmosEngine {
     const material = new THREE.ShaderMaterial({
       uniforms: {
         uColor: { value: new THREE.Color(color) },
-        uBoost: { value: this.quality.label === "HIGH" ? 1.55 : 1.15 }
+        uSunsetColor: { value: new THREE.Color(0xff7a3c) },
+        uSunDirection: { value: this.sunDir.clone() },
+        uBoost: { value: this.quality.label === "HIGH" ? 1.45 : 1.1 }
       },
       transparent: true,
       side: THREE.BackSide,
@@ -572,19 +652,33 @@ export class CosmosEngine {
       blending: THREE.AdditiveBlending,
       fog: false,
       vertexShader: `
-        varying vec3 vNormal;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPos;
         void main() {
-          vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          vec4 wp = modelMatrix * vec4(position, 1.0);
+          vWorldPos = wp.xyz;
+          gl_Position = projectionMatrix * viewMatrix * wp;
         }
       `,
       fragmentShader: `
         uniform vec3 uColor;
+        uniform vec3 uSunsetColor;
+        uniform vec3 uSunDirection;
         uniform float uBoost;
-        varying vec3 vNormal;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPos;
         void main() {
-          float intensity = pow(0.72 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0) * uBoost;
-          gl_FragColor = vec4(uColor, clamp(intensity, 0.0, 0.75));
+          vec3 N = normalize(vWorldNormal);
+          vec3 V = normalize(cameraPosition - vWorldPos);
+          vec3 L = normalize(uSunDirection);
+          float fres = pow(1.0 - max(dot(-N, V), 0.0), 3.0);
+          float sun = dot(N, L);
+          float day = smoothstep(-0.25, 0.35, sun);
+          float sunset = smoothstep(0.35, -0.1, sun) * day;
+          vec3 col = mix(uColor, uSunsetColor, sunset);
+          float a = fres * day * uBoost + pow(max(dot(V, L), 0.0), 8.0) * day * 0.5;
+          gl_FragColor = vec4(col, clamp(a, 0.0, 0.78));
         }
       `
     });
@@ -659,7 +753,7 @@ export class CosmosEngine {
     if (!this.quality.bloom) return;
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.86, 0.58, 0.05));
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(1, 1), 0.7, 0.6, 0.8)); // strength, radius, threshold (only sun/speculars bloom)
     this.composer.addPass(new OutputPass());
   }
 
@@ -687,27 +781,33 @@ export class CosmosEngine {
   private createSparkCloud(spark: unknown, center: THREE.Vector3, color: number, count: number, seed: number, scale: number): THREE.Object3D {
     const mod = spark as { SplatMesh: new (opts: unknown) => THREE.Object3D };
     const rand = rng(seed);
-    return new mod.SplatMesh({
+    const base = new THREE.Color(color);
+    const hot = new THREE.Color(0xffffff);
+    const mesh = new mod.SplatMesh({
+      // splats built RELATIVE to the mesh (mesh.position = center) so onFrame can spin/drift in place
       constructSplats: (splats: { pushSplat: (p: THREE.Vector3, s: THREE.Vector3, q: THREE.Quaternion, o: number, c: THREE.Color) => void }) => {
         const pos = new THREE.Vector3();
         const scl = new THREE.Vector3();
         const quat = new THREE.Quaternion();
-        const col = new THREE.Color(color);
+        const col = new THREE.Color();
         for (let i = 0; i < count; i += 1) {
-          const r = Math.pow(rand(), 0.62) * 13;
+          const t = Math.pow(rand(), 0.62); // 0=core .. 1=edge
+          const r = t * 13;
           const theta = rand() * Math.PI * 2;
           const phi = Math.acos(rand() * 2 - 1);
-          pos.set(
-            center.x + Math.sin(phi) * Math.cos(theta) * r,
-            center.y + Math.cos(phi) * r * 0.72,
-            center.z + Math.sin(phi) * Math.sin(theta) * r
-          );
-          scl.setScalar(scale + rand() * scale * 3.6);
-          col.setHex(color).lerp(new THREE.Color(0xffffff), rand() * 0.2);
-          splats.pushSplat(pos, scl, quat, 0.18 + rand() * 0.38, col);
+          pos.set(Math.sin(phi) * Math.cos(theta) * r, Math.cos(phi) * r * 0.72, Math.sin(phi) * Math.sin(theta) * r);
+          scl.setScalar(scale * (0.6 + (1 - t) * 2.6) + rand() * scale * 1.4); // larger toward the glowing core
+          col.copy(base).lerp(hot, (1 - t) * 0.5 + rand() * 0.12); // hot white core → colored rim
+          splats.pushSplat(pos, scl, quat, (0.12 + (1 - t) * 0.42) * (0.7 + rand() * 0.5), col); // denser core
         }
+      },
+      onFrame: ({ mesh: m, time }: { mesh: THREE.Object3D; time: number }) => {
+        m.position.set(center.x, center.y + Math.sin(time * 0.18 + seed) * 0.6, center.z);
+        m.rotation.y = time * 0.02;
       }
     });
+    mesh.position.copy(center);
+    return mesh;
   }
 
   private attachEvents(): void {

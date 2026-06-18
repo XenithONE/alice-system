@@ -29,6 +29,18 @@ export function hasWebGL2(): boolean {
 }
 
 export function detectQuality(): QualityTier {
+  // QA / power-user override: ?q=high|balanced|low forces a tier (and disables reduced-motion
+  // so the headless preview — which forces prefers-reduced-motion => LOW — can exercise HIGH).
+  const forced =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("q") : null;
+  if (forced === "high" || forced === "balanced" || forced === "low") {
+    const base = {
+      high: { label: "HIGH" as const, dpr: Math.min(2, window.devicePixelRatio || 1), starCount: 5200, dustCount: 2600, planetSegments: 96, bloom: true, spark: true },
+      balanced: { label: "BALANCED" as const, dpr: Math.min(1.5, window.devicePixelRatio || 1), starCount: 3400, dustCount: 1500, planetSegments: 64, bloom: false, spark: false },
+      low: { label: "LOW" as const, dpr: 1, starCount: 1800, dustCount: 700, planetSegments: 40, bloom: false, spark: false }
+    }[forced];
+    return { ...base, reducedMotion: false, mobile: false };
+  }
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const mobile = window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 780;
   const memory = typeof navigator !== "undefined" && "deviceMemory" in navigator
