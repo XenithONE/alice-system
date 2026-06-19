@@ -6602,18 +6602,39 @@ export class CosmosEngine {
 
   private createWorlds(): void {
     const visibleWorlds = this.worlds.filter((world) => !world.hidden);
+    const camStart = new THREE.Vector3(0, 14, 82); // keep planets clear of the spawn point
+    const placed: THREE.Vector3[] = [];
     for (let i = 0; i < visibleWorlds.length; i += 1) {
       const world = visibleWorlds[i];
-      const angle = i * GOLDEN + 0.4;
-      const radius = world.kind === "app" ? 24 : 38 + ((i * 11) % 19);
-      const y = world.kind === "app" ? 8 : Math.sin(i * 1.57) * 18;
-      const pos = new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius - 8);
+      // Deterministic per-world stream (loop folded in => NG+ remixes the layout on reload).
+      const rand = rng((i + 1) * 1973 + this.progress.loop * 7919 + 9277);
+      // Jittered golden angle so the field never reads as a regular ring.
+      const angle = i * GOLDEN + 0.4 + (rand() - 0.5) * 1.2;
+      // Wide, uneven radius — some planets near, some far (CORE/app pulled toward the heart).
+      let radius = world.kind === "app" ? 26 + rand() * 18 : 42 + rand() * 42;
+      // Full vertical spread (not a flat shell).
+      let y = (rand() - 0.45) * 66;
+      let pos = new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius - 8);
+      // Relaxation: push outward + re-jitter height until clear of other planets AND the spawn.
+      for (let pass = 0; pass < 30; pass += 1) {
+        const tooCloseToSpawn = pos.distanceTo(camStart) < 30;
+        const tooCloseToPlanet = placed.some((other) => pos.distanceTo(other) < 24);
+        if (!tooCloseToSpawn && !tooCloseToPlanet) break;
+        radius = Math.min(88, radius + 6);
+        y = THREE.MathUtils.clamp(y + (rand() - 0.5) * 10, -34, 42);
+        pos = new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius - 8);
+      }
+      // Stay inside the reachable camera box (clamp ±105 / y -48..56) with margin.
+      pos.x = THREE.MathUtils.clamp(pos.x, -96, 96);
+      pos.z = THREE.MathUtils.clamp(pos.z, -96, 96);
+      pos.y = THREE.MathUtils.clamp(pos.y, -34, 42);
+      placed.push(pos.clone());
       this.createPlanet(world, pos, i);
     }
 
     const hidden = this.worlds.find((world) => world.hidden);
     if (hidden) {
-      this.hiddenPlanet = this.createPlanet(hidden, new THREE.Vector3(-52, 20, -54), 99);
+      this.hiddenPlanet = this.createPlanet(hidden, new THREE.Vector3(-78, 26, -70), 99);
       this.hiddenPlanet.group.visible = this.progress.hiddenPlanet;
     }
   }

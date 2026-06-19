@@ -192,6 +192,31 @@ canvas:focus-visible {
   white-space: nowrap;
 }
 
+/* GFX chip: looks like a .status-strip span but is an interactive button. */
+.gfx-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(155, 204, 218, 0.12);
+  background: rgba(5, 10, 18, 0.38);
+  border-radius: 7px;
+  backdrop-filter: blur(10px);
+  white-space: nowrap;
+  pointer-events: auto; /* parent .status-strip is pointer-events:none */
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  letter-spacing: 0.12em;
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+.gfx-chip:hover,
+.gfx-chip:focus-visible {
+  color: var(--teal);
+  border-color: var(--line-strong);
+  background: rgba(6, 20, 28, 0.7);
+}
+
 .top-actions {
   display: flex;
   gap: 8px;

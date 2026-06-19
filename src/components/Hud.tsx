@@ -1,6 +1,7 @@
 import { SIGNAL_FRAGMENTS, WORLDS, assetPath, routePath, type World } from "../data/worlds";
 import type { CosmosInfo, TimeTrialEvent } from "../lib/cosmosEngine";
 import type { ProgressState } from "../lib/storage";
+import { getQualityChoice, setQualityChoice, type QualityChoice } from "../lib/webgl";
 
 interface HudProps {
   selected: World | null;
@@ -25,6 +26,16 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
   const atlasPercent = Math.round((progress.sevenWorlds.size / 7) * 100);
   const fragmentPercent = Math.round((progress.fragments.size / SIGNAL_FRAGMENTS.length) * 100);
 
+  // Graphics override — self-contained: read/write localStorage, reload to apply.
+  // (Tier is captured once in CosmosCanvas's []-deps effect, so a reload is required.)
+  const GFX_CYCLE: QualityChoice[] = ["auto", "high", "balanced", "low"];
+  const gfxChoice = getQualityChoice();
+  const cycleGraphics = () => {
+    const next = GFX_CYCLE[(GFX_CYCLE.indexOf(gfxChoice) + 1) % GFX_CYCLE.length];
+    setQualityChoice(next);
+    window.location.reload();
+  };
+
   return (
     <>
       <header className="topbar">
@@ -32,7 +43,15 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
           <b>AlicE</b> sYsTeM
         </button>
         <div className="status-strip" aria-label="system status">
-          <span>GRAPHICS {info?.quality ?? "..."}</span>
+          <button
+            type="button"
+            className="gfx-chip"
+            onClick={cycleGraphics}
+            title="Graphics quality — click to cycle AUTO / HIGH / BALANCED / LOW (reloads to apply)."
+            aria-label={`Graphics quality ${gfxChoice === "auto" ? `auto, detected ${info?.quality ?? "..."}` : gfxChoice}. Click to cycle.`}
+          >
+            GFX {gfxChoice === "auto" ? `AUTO·${info?.quality ?? "..."}` : `${info?.quality ?? gfxChoice.toUpperCase()}*`}
+          </button>
           <span>WEBGL {info ? (info.webgl2 ? "2" : "1") : "..."}</span>
           <span>SPARK {info?.spark ? "ON" : "OFF"}</span>
           <span>BLOOM {info?.bloom ? "ON" : "OFF"}</span>
