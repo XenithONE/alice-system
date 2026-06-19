@@ -108,6 +108,7 @@ const TMP_VEC = new THREE.Vector3();
 const TMP_VEC_2 = new THREE.Vector3();
 const TMP_VEC_3 = new THREE.Vector3();
 const TMP_OBJ = new THREE.Object3D();
+const TMP_MAT = new THREE.Matrix4();
 const CLAMP_MIN = new THREE.Vector3(-105, -48, -105);
 const CLAMP_MAX = new THREE.Vector3(105, 56, 105);
 
@@ -8628,6 +8629,14 @@ export class CosmosEngine {
       this.camera.position.lerpVectors(this.focus.fromPos, this.focus.toPos, e);
       this.camera.quaternion.slerpQuaternions(this.focus.fromQuat, this.focus.toQuat, e);
       if (t >= 1) {
+        // Sync free-look yaw/pitch to the focused look direction so the next frame's
+        // look control keeps the planet centered instead of snapping back to the old
+        // angle (which left the just-focused planet off-screen with the wide layout).
+        // Derive from the forward vector directly: decomposing toQuat via Euler "YXZ"
+        // can land on a roll-flipped branch that, once roll is dropped, aims 180° away.
+        const fwd = TMP_VEC.set(0, 0, -1).applyQuaternion(this.focus.toQuat);
+        this.pitch = Math.asin(THREE.MathUtils.clamp(fwd.y, -1, 1));
+        this.yaw = Math.atan2(-fwd.x, -fwd.z);
         if (this.focus.world) this.callbacks.onSelectWorld(this.focus.world);
         this.focus = null;
       }
@@ -9160,8 +9169,11 @@ export class CosmosEngine {
     direction.normalize();
     const target = TMP_VEC_2.copy(node.group.position).addScaledVector(direction, node.world.size * 4.1 + 6);
     target.y += node.world.size * 0.55;
-    TMP_OBJ.position.copy(target);
-    TMP_OBJ.lookAt(node.group.position);
+    // Camera-convention look-at: Matrix4.lookAt points -Z (the camera's forward) at the
+    // planet. (Object3D.lookAt on a NON-camera points +Z at the target, which aimed the
+    // camera 180° away from the planet.)
+    TMP_MAT.lookAt(target, node.group.position, this.camera.up);
+    TMP_OBJ.quaternion.setFromRotationMatrix(TMP_MAT);
     this.focus = {
       startedAt: performance.now(),
       duration: 900,
