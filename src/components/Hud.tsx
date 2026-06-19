@@ -21,6 +21,9 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
   const active = selected ?? nearest;
   const completed = WORLDS.filter((world) => world.kind === "game" && progress.completedWorlds.has(world.id)).length;
   const visibleWorlds = WORLDS.filter((world) => !world.hidden || progress.hiddenPlanet);
+  const particleBudget = info ? new Intl.NumberFormat("en-US").format(info.particles) : "...";
+  const atlasPercent = Math.round((progress.sevenWorlds.size / 7) * 100);
+  const fragmentPercent = Math.round((progress.fragments.size / SIGNAL_FRAGMENTS.length) * 100);
 
   return (
     <>
@@ -30,7 +33,14 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
         </button>
         <div className="status-strip" aria-label="system status">
           <span>GRAPHICS {info?.quality ?? "..."}</span>
-          <span>SPARK {info?.spark ? "ON" : "READY"}</span>
+          <span>WEBGL {info ? (info.webgl2 ? "2" : "1") : "..."}</span>
+          <span>SPARK {info?.spark ? "ON" : "OFF"}</span>
+          <span>BLOOM {info?.bloom ? "ON" : "OFF"}</span>
+          <span>LENS {info?.gravity ? "ON" : "LIGHT"}</span>
+          <span>RAYS {info?.rays ? "ON" : "OFF"}</span>
+          <span>FLARE {info?.flare ? "ON" : "OFF"}</span>
+          <span>MSAA {info?.msaa ?? 0}X</span>
+          <span>PTS {particleBudget}</span>
           <span>{progress.trueEnding ? "TRUE SIGNAL" : progress.accord ? "ACCORD" : "SEEKING"}</span>
           {progress.loop > 0 && <span>LOOP {progress.loop}</span>}
           <span>v{__APP_VERSION__}</span>
@@ -63,6 +73,36 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
         <p>惑星へ接近してゲームやアプリを起動。宇宙の奥に隠された信号を辿れ。</p>
       </section>
 
+      <aside className="telemetry-panel desktop-hud" aria-label="deep space telemetry">
+        <div className="hud-caption">DEEP SPACE TELEMETRY</div>
+        <dl>
+          <div>
+            <dt>BLACK HOLE</dt>
+            <dd>{progress.hiddenPlanet ? "OBSERVER FOUND" : "GRAVITY WELL"}</dd>
+          </div>
+          <div>
+            <dt>NEBULA FIELD</dt>
+            <dd>{info?.quality === "LOW" ? "LITE" : "DENSE"}</dd>
+          </div>
+          <div>
+            <dt>FRAG SYNC</dt>
+            <dd>{fragmentPercent}%</dd>
+          </div>
+          <div>
+            <dt>ATLAS</dt>
+            <dd>{atlasPercent}%</dd>
+          </div>
+          <div>
+            <dt>BEST RUN</dt>
+            <dd>{progress.timeTrialBest > 0 ? `${(progress.timeTrialBest / 1000).toFixed(2)}S` : "NONE"}</dd>
+          </div>
+          <div>
+            <dt>DISTANCE</dt>
+            <dd>{Math.round(progress.distance).toLocaleString("en-US")}</dd>
+          </div>
+        </dl>
+      </aside>
+
       <aside className="planet-panel" data-active={active ? "true" : "false"} aria-live="polite">
         {active ? (
           <>
@@ -92,6 +132,20 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
             <strong>Signal field open</strong>
           </div>
         )}
+      </aside>
+
+      <aside className="world-stack desktop-hud" aria-label="world quick focus">
+        <div className="hud-caption">ORBITAL INDEX</div>
+        {visibleWorlds.map((world) => {
+          const done = progress.completedWorlds.has(world.id);
+          const isActive = active?.id === world.id;
+          return (
+            <button key={world.id} type="button" className={isActive ? "active" : done ? "done" : ""} onClick={() => onFocus(world.id)}>
+              <span>{world.title}</span>
+              <b>{done ? "DONE" : world.kind === "app" ? "APP" : world.hidden ? "HID" : "LOCK"}</b>
+            </button>
+          );
+        })}
       </aside>
 
       <aside className="progress-panel" aria-label="signal progress">
@@ -142,6 +196,14 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
       <div className={`alice-line ${aliceLine ? "show" : ""}`} role="status" aria-live="polite">
         {aliceLine}
       </div>
+
+      <footer className="command-ribbon desktop-hud" aria-label="flight commands">
+        <span>DRAG LOOK</span>
+        <span>WASD MOVE</span>
+        <span>SHIFT BOOST</span>
+        <span>SPACE / CTRL Y-AXIS</span>
+        <span>BH PROXIMITY UNLOCK</span>
+      </footer>
 
       {trial && (
         <div className="timetrial-hud" role="status" aria-live="polite">

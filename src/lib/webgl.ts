@@ -35,9 +35,9 @@ export function detectQuality(): QualityTier {
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("q") : null;
   if (forced === "high" || forced === "balanced" || forced === "low") {
     const base = {
-      high: { label: "HIGH" as const, dpr: Math.min(2, window.devicePixelRatio || 1), starCount: 5200, dustCount: 2600, planetSegments: 96, bloom: true, spark: true },
-      balanced: { label: "BALANCED" as const, dpr: Math.min(1.5, window.devicePixelRatio || 1), starCount: 3400, dustCount: 1500, planetSegments: 64, bloom: false, spark: false },
-      low: { label: "LOW" as const, dpr: 1, starCount: 1800, dustCount: 700, planetSegments: 40, bloom: false, spark: false }
+      high: { label: "HIGH" as const, dpr: Math.min(2, window.devicePixelRatio || 1), starCount: 11000, dustCount: 7200, planetSegments: 144, bloom: true, spark: true },
+      balanced: { label: "BALANCED" as const, dpr: Math.min(1.35, window.devicePixelRatio || 1), starCount: 3600, dustCount: 1400, planetSegments: 64, bloom: false, spark: false },
+      low: { label: "LOW" as const, dpr: 1, starCount: 1100, dustCount: 280, planetSegments: 32, bloom: false, spark: false }
     }[forced];
     return { ...base, reducedMotion: false, mobile: false };
   }
@@ -46,16 +46,16 @@ export function detectQuality(): QualityTier {
   const memory = typeof navigator !== "undefined" && "deviceMemory" in navigator
     ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 4)
     : 4;
-  const low = reducedMotion || memory < 3 || window.innerWidth < 520;
+  const low = reducedMotion || memory < 3 || mobile;
   const high = !low && !mobile && memory >= 4 && hasWebGL2();
 
   if (high) {
     return {
       label: "HIGH",
       dpr: Math.min(2, window.devicePixelRatio || 1),
-      starCount: 5200,
-      dustCount: 2600,
-      planetSegments: 96,
+      starCount: 11000,
+      dustCount: 7200,
+      planetSegments: 144,
       bloom: true,
       spark: true,
       reducedMotion,
@@ -66,9 +66,9 @@ export function detectQuality(): QualityTier {
   if (!low) {
     return {
       label: "BALANCED",
-      dpr: Math.min(1.5, window.devicePixelRatio || 1),
-      starCount: 3400,
-      dustCount: 1500,
+      dpr: Math.min(1.35, window.devicePixelRatio || 1),
+      starCount: 3600,
+      dustCount: 1400,
       planetSegments: 64,
       bloom: false,
       spark: false,
@@ -80,9 +80,9 @@ export function detectQuality(): QualityTier {
   return {
     label: "LOW",
     dpr: 1,
-    starCount: 1800,
-    dustCount: 700,
-    planetSegments: 40,
+    starCount: 1100,
+    dustCount: 280,
+    planetSegments: 32,
     bloom: false,
     spark: false,
     reducedMotion,

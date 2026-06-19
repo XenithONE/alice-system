@@ -35,6 +35,7 @@ export function CosmosCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const engineRef = useRef<CosmosEngine | null>(null);
   const [unsupported, setUnsupported] = useState(false);
+  const [stageInfo, setStageInfo] = useState({ quality: "loading", spark: "loading", bloom: "loading", gravity: "loading", flare: "loading", rays: "loading" });
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -44,7 +45,17 @@ export function CosmosCanvas({
       return;
     }
 
-    const engine = new CosmosEngine(canvasRef.current, WORLDS, progress, detectQuality(), {
+    const quality = detectQuality();
+    setStageInfo({
+      quality: quality.label.toLowerCase(),
+      spark: quality.spark ? "on" : "off",
+      bloom: quality.bloom ? "on" : "off",
+      gravity: quality.label === "HIGH" && !quality.mobile && !quality.reducedMotion ? "on" : "off",
+      flare: quality.label === "HIGH" && !quality.mobile ? "on" : "off",
+      rays: quality.label === "HIGH" && !quality.mobile && !quality.reducedMotion ? "on" : "off"
+    });
+
+    const engine = new CosmosEngine(canvasRef.current, WORLDS, progress, quality, {
       onSelectWorld,
       onNearestWorld,
       onCollectFragment,
@@ -70,7 +81,16 @@ export function CosmosCanvas({
   }, [progress.version]);
 
   return (
-    <div className="cosmos-stage" data-webgl={unsupported ? "unsupported" : "ready"}>
+    <div
+      className="cosmos-stage"
+      data-webgl={unsupported ? "unsupported" : "ready"}
+      data-quality={stageInfo.quality}
+      data-spark={stageInfo.spark}
+      data-bloom={stageInfo.bloom}
+      data-gravity={stageInfo.gravity}
+      data-flare={stageInfo.flare}
+      data-rays={stageInfo.rays}
+    >
       <canvas ref={canvasRef} className="cosmos-canvas" />
     </div>
   );
