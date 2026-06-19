@@ -12,7 +12,7 @@ declare global {
       startTimeTrial: () => void;
       cancelTimeTrial: () => void;
     };
-    // Legacy bonus-marker hook some games call via parent.__markD(); App makes it live.
-    __markD?: (id: string) => void;
+    // Legacy bonus-marker hook some games call via parent.__markD(); App assigns a zero-arg refresh.
+    __markD?: (id?: string) => void;
   }
 }

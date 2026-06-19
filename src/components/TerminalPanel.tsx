@@ -117,7 +117,7 @@ export function TerminalPanel({ open, progress, worlds, onClose, onCollect, onRe
       return;
     }
     if (command === "version" || command === "about") {
-      print(`AlicE sYsTeM // v${__APP_VERSION__}`, "v1.1 — stardust, missions, ring run, NG+ / perf + fixes.");
+      print(`AlicE sYsTeM // v${__APP_VERSION__}`, "v1.3 — cinematic high-density cosmos / IBL + atmosphere + cinematic FX / perf + fixes.");
       return;
     }
     print("unknown command.");

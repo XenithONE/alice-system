@@ -173,13 +173,6 @@ export function unlockTrueEnding(worlds: World[]): ProgressState {
   return readProgress(worlds);
 }
 
-export function syncSevenWorld(id: string, worlds: World[]): ProgressState {
-  const saved = new Set(readJsonArray(SEVEN_KEY));
-  saved.add(id);
-  saveJsonArray(SEVEN_KEY, saved);
-  return readProgress(worlds);
-}
-
 // ---- v1.1 gameplay mutators (all additive, idempotent where it matters) ----
 
 export function collectStardust(id: string, worlds: World[]): ProgressState {

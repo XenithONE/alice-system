@@ -106,7 +106,10 @@ const GOLDEN = Math.PI * (3 - Math.sqrt(5));
 const TMP_COLOR = new THREE.Color();
 const TMP_VEC = new THREE.Vector3();
 const TMP_VEC_2 = new THREE.Vector3();
+const TMP_VEC_3 = new THREE.Vector3();
 const TMP_OBJ = new THREE.Object3D();
+const CLAMP_MIN = new THREE.Vector3(-105, -48, -105);
+const CLAMP_MAX = new THREE.Vector3(105, 56, 105);
 
 function rng(seed: number): () => number {
   let value = seed >>> 0;
@@ -1382,6 +1385,7 @@ export class CosmosEngine {
     }
     this.teardownTrialRings();
     this.scene.traverse((object) => {
+      if (object instanceof THREE.InstancedMesh) object.dispose(); // free instanceMatrix/instanceColor GPU buffers
       const mesh = object as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
       if (mesh.material) disposeMaterial(mesh.material);
@@ -1547,7 +1551,7 @@ export class CosmosEngine {
     const sky = new THREE.Mesh(new THREE.SphereGeometry(220, 64, 32), skyMat);
     sky.renderOrder = -30;
     this.scene.add(sky);
-    const skyPath = this.quality.label === "LOW" ? "assets/cosmos-skybox.jpg" : "assets/deep-field-v4.png";
+    const skyPath = this.quality.label === "LOW" ? "assets/cosmos-skybox.jpg" : "assets/deep-field-v4.jpg";
     this.loader.load(
       assetPath(skyPath),
       (texture) => {
@@ -1680,8 +1684,8 @@ export class CosmosEngine {
     this.scene.add(group);
 
     const layers = [
-      { path: "assets/deep-field-v3.png", radius: 214, alpha: 0.26, tint: 0xd8f4ff, seed: 2.7, drift: 0.0009, rot: new THREE.Euler(0.08, -0.22, 0.03) },
-      { path: "assets/deep-field-v4.png", radius: 198, alpha: 0.18, tint: 0xffd6f1, seed: 9.3, drift: -0.0007, rot: new THREE.Euler(-0.06, 0.36, -0.05) }
+      { path: "assets/deep-field-v3.jpg", radius: 214, alpha: 0.26, tint: 0xd8f4ff, seed: 2.7, drift: 0.0009, rot: new THREE.Euler(0.08, -0.22, 0.03) },
+      { path: "assets/deep-field-v4.jpg", radius: 198, alpha: 0.18, tint: 0xffd6f1, seed: 9.3, drift: -0.0007, rot: new THREE.Euler(-0.06, 0.36, -0.05) }
     ];
 
     for (const layer of layers) {
@@ -2117,7 +2121,7 @@ export class CosmosEngine {
 
   private createDeepNebula(): void {
     const layers = [
-      { path: "assets/deep-nebula-v2.png", color: 0xffffff, pos: new THREE.Vector3(4, 2, -186), width: 222, height: 125, opacity: 0.36, blend: THREE.NormalBlending },
+      { path: "assets/deep-nebula-v2.jpg", color: 0xffffff, pos: new THREE.Vector3(4, 2, -186), width: 222, height: 125, opacity: 0.36, blend: THREE.NormalBlending },
       { path: "assets/cosmos-nebula.jpg", color: 0x6af8e4, pos: new THREE.Vector3(-92, 18, -156), width: 142, height: 84, opacity: 0.2, blend: THREE.AdditiveBlending },
       { path: "assets/cosmos-nebula-2.jpg", color: 0xff6fa8, pos: new THREE.Vector3(84, -22, -150), width: 132, height: 76, opacity: 0.18, blend: THREE.AdditiveBlending },
       { path: "assets/nebula.jpg", color: 0x8f70ff, pos: new THREE.Vector3(8, 44, -180), width: 172, height: 96, opacity: 0.12, blend: THREE.AdditiveBlending }
@@ -5024,7 +5028,7 @@ export class CosmosEngine {
       accretionGlow.scale.set(44, 22, 1);
       accretionGlow.renderOrder = 4;
       group.add(accretionGlow);
-      this.loadTexture("assets/blackhole-accretion-v2.png", (texture) => {
+      this.loadTexture("assets/blackhole-accretion-v2.jpg", (texture) => {
         texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
         accretionMaterial.map = texture;
         accretionMaterial.opacity = this.quality.label === "HIGH" ? 0.46 : 0.62;
@@ -8569,21 +8573,25 @@ export class CosmosEngine {
       this.gravityPass.uniforms.uCenter.value.set(x, y);
       this.gravityPass.uniforms.uTime.value = t;
       this.gravityPass.uniforms.uStrength.value = visible ? THREE.MathUtils.clamp(0.036 - distance * 0.00008, 0.014, 0.036) : 0;
+      this.gravityPass.enabled = visible;
     }
     if (this.lightShaftPass) {
       this.lightShaftPass.uniforms.uCenter.value.set(x, y);
       this.lightShaftPass.uniforms.uTime.value = t;
       this.lightShaftPass.uniforms.uStrength.value = visible ? THREE.MathUtils.clamp(0.28 - distance * 0.0015, 0.1, 0.28) : 0;
+      this.lightShaftPass.enabled = visible;
     }
     if (this.lensArtifactPass) {
       this.lensArtifactPass.uniforms.uCenter.value.set(x, y);
       this.lensArtifactPass.uniforms.uTime.value = t;
       this.lensArtifactPass.uniforms.uStrength.value = visible ? THREE.MathUtils.clamp(0.19 - distance * 0.0011, 0.055, 0.16) : 0;
+      this.lensArtifactPass.enabled = visible;
     }
     if (this.diffractionPass) {
       this.diffractionPass.uniforms.uCenter.value.set(x, y);
       this.diffractionPass.uniforms.uTime.value = t;
       this.diffractionPass.uniforms.uStrength.value = visible ? THREE.MathUtils.clamp(0.13 - distance * 0.00075, 0.035, 0.105) : 0;
+      this.diffractionPass.enabled = visible;
     }
     if (this.dofPass) {
       this.dofPass.uniforms.uCenter.value.set(x, y);
@@ -8611,7 +8619,7 @@ export class CosmosEngine {
     const speed = (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") ? 34 : 19) * (this.quality.mobile ? 0.62 : 1);
     const accel = TMP_VEC.set(0, 0, 0);
     const forward = TMP_VEC_2.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.camera.quaternion);
+    const right = TMP_VEC_3.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
     if (this.keys.has("KeyW")) accel.add(forward);
     if (this.keys.has("KeyS")) accel.addScaledVector(forward, -1);
     if (this.keys.has("KeyA")) accel.addScaledVector(right, -1);
@@ -8621,7 +8629,7 @@ export class CosmosEngine {
     if (accel.lengthSq() > 0) {
       accel.normalize().multiplyScalar(speed * dt);
       this.camera.position.add(accel);
-      this.camera.position.clamp(new THREE.Vector3(-105, -48, -105), new THREE.Vector3(105, 56, 105));
+      this.camera.position.clamp(CLAMP_MIN, CLAMP_MAX);
     }
   }
 
@@ -8682,7 +8690,7 @@ export class CosmosEngine {
     for (const child of this.parallaxNebulaVolume.children) {
       if (child instanceof THREE.Points && child.userData.motes) {
         child.rotation.y = Math.sin(t * 0.019) * 0.018;
-        child.rotation.z += 0.00018;
+        child.rotation.z = t * 0.0108; // time-based (frame-rate independent; was += 0.00018/frame)
         continue;
       }
       if (!(child instanceof THREE.Mesh) || child.userData.roll === undefined) continue;
@@ -9116,7 +9124,8 @@ export class CosmosEngine {
         const id = object.userData.worldId as string | undefined;
         if (id) {
           const node = this.planets.get(id);
-          return node && node.group.visible ? node.world : null;
+          if (node && node.group.visible) return node.world;
+          break; // occluding planet is hidden → fall through to the next raycast hit
         }
         object = object.parent;
       }

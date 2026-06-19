@@ -36,7 +36,7 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
           <span>WEBGL {info ? (info.webgl2 ? "2" : "1") : "..."}</span>
           <span>SPARK {info?.spark ? "ON" : "OFF"}</span>
           <span>BLOOM {info?.bloom ? "ON" : "OFF"}</span>
-          <span>LENS {info?.gravity ? "ON" : "LIGHT"}</span>
+          <span>LENS {info?.gravity ? "ON" : "OFF"}</span>
           <span>RAYS {info?.rays ? "ON" : "OFF"}</span>
           <span>FLARE {info?.flare ? "ON" : "OFF"}</span>
           <span>MSAA {info?.msaa ?? 0}X</span>
