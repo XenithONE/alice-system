@@ -3506,7 +3506,6 @@ export class CosmosEngine {
         ship.userData.speed = 0.038;
         ship.userData.phase = -0.34;
         ship.userData.bob = 5;
-        ship.userData.nearFlyby = true;
       }
 
       const body = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.42, 3.0), hullMaterial.clone());
@@ -3590,7 +3589,6 @@ export class CosmosEngine {
         comet.userData.speed = -0.018;
         comet.userData.phase = 0.5;
         comet.userData.bob = 12;
-        comet.userData.nearFlyby = true;
       }
 
       const color = rand() > 0.45 ? 0x9fffee : rand() > 0.5 ? 0xffd98a : 0xc7d8ff;
@@ -9130,23 +9128,6 @@ export class CosmosEngine {
       const speed = Number(ship.userData.speed ?? 0.03);
       const phase = Number(ship.userData.phase ?? 0);
       const bob = Number(ship.userData.bob ?? 8);
-      if (ship.userData.nearFlyby) {
-        const lane = Math.sin(t * 0.34 + phase);
-        const forward = TMP_VEC.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        const right = TMP_VEC_2.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
-        const up = TMP_VEC_3.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
-        ship.position.copy(this.camera.position)
-          .addScaledVector(forward, 68)
-          .addScaledVector(right, 4 + lane * 12)
-          .addScaledVector(up, -10 + Math.cos(t * 0.48 + phase) * bob);
-        TMP_OBJ.position.copy(this.camera.position)
-          .addScaledVector(forward, 82)
-          .addScaledVector(right, -8 + lane * 14)
-          .addScaledVector(up, -10 + Math.cos(t * 0.48 + phase + 0.2) * bob);
-        ship.lookAt(TMP_OBJ.position);
-        ship.rotateY(Math.PI); // model faces -Z; Object3D.lookAt aims +Z, so flip to fly nose-first
-        ship.rotateZ(Math.sin(t * 0.92 + phase) * 0.1);
-      } else {
       const angle = phase + t * speed;
       const nextAngle = angle + Math.sign(speed || 1) * 0.035;
       const y = yBase + Math.sin(t * 0.36 + phase) * bob;
@@ -9155,7 +9136,6 @@ export class CosmosEngine {
       ship.lookAt(TMP_VEC);
       ship.rotateY(Math.PI); // model faces -Z; Object3D.lookAt aims +Z, so flip to fly nose-first
       ship.rotateZ(Math.sin(t * 0.7 + phase) * 0.08);
-      }
 
       const engine = ship.userData.engine as THREE.Sprite | undefined;
       if (engine?.material instanceof THREE.SpriteMaterial) {
@@ -9177,23 +9157,6 @@ export class CosmosEngine {
       const speed = Number(comet.userData.speed ?? 0.02);
       const phase = Number(comet.userData.phase ?? 0);
       const bob = Number(comet.userData.bob ?? 24);
-      if (comet.userData.nearFlyby) {
-        const lane = Math.sin(t * 0.2 + phase);
-        const forward = TMP_VEC.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-        const right = TMP_VEC_2.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
-        const up = TMP_VEC_3.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
-        comet.position.copy(this.camera.position)
-          .addScaledVector(forward, 104)
-          .addScaledVector(right, -32 + lane * 26)
-          .addScaledVector(up, 40 + Math.cos(t * 0.31 + phase) * bob);
-        TMP_OBJ.position.copy(this.camera.position)
-          .addScaledVector(forward, 126)
-          .addScaledVector(right, -48 + lane * 30)
-          .addScaledVector(up, 40 + Math.cos(t * 0.31 + phase + 0.2) * bob);
-        comet.lookAt(TMP_OBJ.position);
-        comet.rotateY(Math.PI); // head faces -Z; flip so the tail trails behind travel
-        comet.rotateZ(Math.sin(t * 0.38 + phase) * 0.06);
-      } else {
       const angle = phase + t * speed;
       const nextAngle = angle + Math.sign(speed || 1) * 0.04;
       const y = yBase + Math.sin(t * 0.22 + phase) * bob;
@@ -9202,7 +9165,6 @@ export class CosmosEngine {
       comet.lookAt(TMP_VEC);
       comet.rotateY(Math.PI); // head faces -Z; flip so the tail trails behind travel
       comet.rotateZ(Math.sin(t * 0.35 + phase) * 0.06);
-      }
 
       const core = comet.userData.core as THREE.Sprite | undefined;
       if (core?.material instanceof THREE.SpriteMaterial) {
