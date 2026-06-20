@@ -137,6 +137,9 @@ PLANETS = [
     ("planet-signal-hq.png", 5309, 0x6FFFF0, 0xFFD98A, "signal"),
     ("planet-core-hq.jpg", 8227, 0xD0A6FF, 0x33E7C8, "core"),
     ("planet-observer-hq.jpg", 9907, 0x33E7C8, 0x7B4DFF, "observer"),
+    ("planet-archive-hq.jpg", 12037, 0xE2ECFF, 0xB9CFFF, "constellation"),
+    ("planet-harbor-hq.jpg", 14591, 0x9FFFEE, 0xFFD98A, "rift"),
+    ("planet-vesper-hq.jpg", 17239, 0xFF9BD6, 0xB265FF, "core"),
 ]
 
 

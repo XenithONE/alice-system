@@ -171,6 +171,7 @@ export default function App() {
   }, []);
 
   const handleLaunch = useCallback((world: World) => {
+    if (!world.url || !world.launchMode) return;
     setSelected(world);
     setLaunching(world);
   }, []);

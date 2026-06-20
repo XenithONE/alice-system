@@ -1,4 +1,4 @@
-import { SIGNAL_FRAGMENTS, WORLDS, assetPath, routePath, type World } from "../data/worlds";
+import { SIGNAL_FRAGMENTS, WORLDS, assetPath, isLaunchableWorld, routePath, type World } from "../data/worlds";
 import type { CosmosInfo, TimeTrialEvent } from "../lib/cosmosEngine";
 import type { ProgressState } from "../lib/storage";
 import { getQualityChoice, setQualityChoice, type QualityChoice } from "../lib/webgl";
@@ -127,7 +127,9 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
           <>
             <div className="planet-cover" style={{ backgroundImage: `url(${assetPath(active.cover)})` }} />
             <div className="planet-meta">
-              <div className="planet-kind">{active.kind === "app" ? "APP WORLD" : active.hidden ? "HIDDEN WORLD" : "GAME WORLD"}</div>
+              <div className="planet-kind">
+                {active.kind === "app" ? "APP WORLD" : active.kind === "unregistered" ? "UNREGISTERED PLANET" : active.hidden ? "HIDDEN WORLD" : "GAME WORLD"}
+              </div>
               <h2>{active.title}</h2>
               <p>{active.description}</p>
               <div className="tag-row">
@@ -136,12 +138,18 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
                 ))}
               </div>
               <div className="panel-actions">
-                <button type="button" className="launch-button" onClick={() => onLaunch(active)}>
-                  LAUNCH
-                </button>
-                <a className="ghost-button" href={routePath(active.url)} target="_blank" rel="noreferrer">
-                  OPEN
-                </a>
+                {isLaunchableWorld(active) ? (
+                  <>
+                    <button type="button" className="launch-button" onClick={() => onLaunch(active)}>
+                      LAUNCH
+                    </button>
+                    <a className="ghost-button" href={routePath(active.url)} target="_blank" rel="noreferrer">
+                      OPEN
+                    </a>
+                  </>
+                ) : (
+                  <span className="unregistered-button">NO GAME</span>
+                )}
               </div>
             </div>
           </>
@@ -161,7 +169,7 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
           return (
             <button key={world.id} type="button" className={isActive ? "active" : done ? "done" : ""} onClick={() => onFocus(world.id)}>
               <span>{world.title}</span>
-              <b>{done ? "DONE" : world.kind === "app" ? "APP" : world.hidden ? "HID" : "LOCK"}</b>
+              <b>{done ? "DONE" : world.kind === "app" ? "APP" : world.kind === "unregistered" ? "N/A" : world.hidden ? "HID" : "LOCK"}</b>
             </button>
           );
         })}
@@ -194,7 +202,7 @@ export function Hud({ selected, nearest, progress, info, aliceLine, trial, onLau
           const isActive = active?.id === world.id;
           const isComplete = progress.completedWorlds.has(world.id);
           const angle = (index / Math.max(1, visibleWorlds.length)) * Math.PI * 2 - Math.PI / 2;
-          const radius = world.kind === "app" ? 29 : 38;
+          const radius = world.kind === "app" ? 29 : world.kind === "unregistered" ? 45 : 38;
           return (
             <button
               key={world.id}

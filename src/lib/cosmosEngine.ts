@@ -109,8 +109,12 @@ const TMP_VEC_2 = new THREE.Vector3();
 const TMP_VEC_3 = new THREE.Vector3();
 const TMP_OBJ = new THREE.Object3D();
 const TMP_MAT = new THREE.Matrix4();
-const CLAMP_MIN = new THREE.Vector3(-105, -48, -105);
-const CLAMP_MAX = new THREE.Vector3(105, 56, 105);
+const SPACE_SCALE = 5;
+const CAMERA_START = new THREE.Vector3(0, 14, 82);
+const CLAMP_MIN = new THREE.Vector3(-105 * SPACE_SCALE, -48 * SPACE_SCALE, -105 * SPACE_SCALE);
+const CLAMP_MAX = new THREE.Vector3(105 * SPACE_SCALE, 56 * SPACE_SCALE, 105 * SPACE_SCALE);
+const WORLD_CLAMP_MIN = new THREE.Vector3(-485, -205, -485);
+const WORLD_CLAMP_MAX = new THREE.Vector3(485, 245, 485);
 
 function rng(seed: number): () => number {
   let value = seed >>> 0;
@@ -1140,7 +1144,7 @@ export class CosmosEngine {
   private readonly quality: QualityTier;
   private readonly renderer: THREE.WebGLRenderer;
   private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(58, 1, 0.1, 480);
+  private readonly camera = new THREE.PerspectiveCamera(58, 1, 0.1, 2400);
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private readonly loader = new THREE.TextureLoader();
@@ -1188,7 +1192,7 @@ export class CosmosEngine {
   private readonly sunDir = new THREE.Vector3(54, 72, 48).normalize();
   // v1.1 gameplay + perf
   private readonly textureCache = new Map<string, THREE.Texture>();
-  private readonly lastCamPos = new THREE.Vector3(0, 14, 82);
+  private readonly lastCamPos = CAMERA_START.clone();
   private distanceAccum = 0;
   private distantGalaxyField: THREE.Group | null = null;
   private lensedGalaxyClusterField: THREE.Group | null = null;
@@ -1199,6 +1203,9 @@ export class CosmosEngine {
   private prismaticScatteringField: THREE.Group | null = null;
   private cameraDepthField: THREE.Group | null = null;
   private foregroundRelicField: THREE.Group | null = null;
+  private asteroidBeltField: THREE.Group | null = null;
+  private shipTrafficField: THREE.Group | null = null;
+  private cometField: THREE.Group | null = null;
   private lensDustField: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
   private cosmicWebField: THREE.Group | null = null;
   private stardust: THREE.Points | null = null;
@@ -1234,8 +1241,8 @@ export class CosmosEngine {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setClearColor(0x03050b, 1);
     this.renderer.setPixelRatio(quality.dpr);
-    this.camera.position.set(0, 14, 82);
-    this.scene.fog = new THREE.FogExp2(0x03050b, 0.0065);
+    this.camera.position.copy(CAMERA_START);
+    this.scene.fog = new THREE.FogExp2(0x03050b, 0.00155);
     this.canvas.tabIndex = 0;
     this.canvas.setAttribute("role", "img");
     this.canvas.setAttribute("aria-label", "AlicE sYsTeMの3D宇宙。ドラッグで視点、WASDで飛行、惑星クリックで選択。");
@@ -1253,6 +1260,9 @@ export class CosmosEngine {
     this.createStellarNurseryVolume();
     this.createCosmicWebField();
     this.createDeepSpaceDebrisField();
+    this.createAsteroidBeltField();
+    this.createShipTrafficField();
+    this.createCometField();
     this.createCameraDepthField();
     this.createLensDustField();
     this.createBlackHole();
@@ -1350,13 +1360,15 @@ export class CosmosEngine {
   }
 
   resetCamera(): void {
-    TMP_OBJ.position.set(0, 14, 82);
-    TMP_OBJ.lookAt(0, 0, 0);
+    // Camera-convention look-at: Matrix4.lookAt aims the camera's -Z at the origin.
+    // (A plain Object3D.lookAt aims +Z, which left the reset view pointing away.)
+    TMP_MAT.lookAt(CAMERA_START, TMP_VEC.set(0, 0, 0), this.camera.up);
+    TMP_OBJ.quaternion.setFromRotationMatrix(TMP_MAT);
     this.focus = {
       startedAt: performance.now(),
       duration: 1000,
       fromPos: this.camera.position.clone(),
-      toPos: TMP_OBJ.position.clone(),
+      toPos: CAMERA_START.clone(),
       fromQuat: this.camera.quaternion.clone(),
       toQuat: TMP_OBJ.quaternion.clone(),
       world: null
@@ -3357,6 +3369,299 @@ export class CosmosEngine {
 
     this.enableHighDetailShadows(group);
     group.userData.particleBudget = rockCount + crystalCount + sparkCount;
+  }
+
+  private createAsteroidBeltField(): void {
+    const group = new THREE.Group();
+    group.rotation.set(0.18, -0.08, 0.11);
+    group.renderOrder = 3;
+    group.userData.particleBudget = 0;
+    this.asteroidBeltField = group;
+    this.scene.add(group);
+
+    const rand = rng(581239);
+    const rockCount = this.quality.label === "HIGH" && !this.quality.mobile ? 760 : this.quality.label === "BALANCED" ? 420 : 170;
+    const dustCount = this.quality.label === "HIGH" && !this.quality.mobile ? 920 : this.quality.label === "BALANCED" ? 460 : 150;
+    const dummy = new THREE.Object3D();
+    const color = new THREE.Color();
+
+    const rockGeometry = new THREE.DodecahedronGeometry(1, this.quality.label === "LOW" ? 0 : 1);
+    const rockMaterial = new THREE.MeshStandardMaterial({
+      color: 0xaab3bd,
+      roughness: 0.88,
+      metalness: 0.1,
+      envMapIntensity: 0.72,
+      vertexColors: true
+    });
+    const rocks = new THREE.InstancedMesh(rockGeometry, rockMaterial, rockCount);
+
+    for (let i = 0; i < rockCount; i += 1) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 175 + Math.pow(rand(), 0.72) * 300;
+      const eccentricity = 0.58 + rand() * 0.22;
+      const lane = rand() > 0.5 ? 1 : -1;
+      dummy.position.set(
+        Math.cos(angle) * radius + Math.sin(angle * 3.0) * 9,
+        lane * (6 + Math.pow(rand(), 1.6) * 34) + Math.sin(angle * 2.2) * 10,
+        Math.sin(angle) * radius * eccentricity - 34 + Math.cos(angle * 1.7) * 14
+      );
+      dummy.rotation.set(rand() * Math.PI, rand() * Math.PI, rand() * Math.PI);
+      const scale = 0.22 + Math.pow(rand(), 2.25) * 2.9;
+      dummy.scale.set(scale * (0.7 + rand() * 1.7), scale * (0.55 + rand() * 1.2), scale * (0.62 + rand() * 1.55));
+      dummy.updateMatrix();
+      rocks.setMatrixAt(i, dummy.matrix);
+
+      color.setHSL(rand() > 0.72 ? 0.09 + rand() * 0.04 : 0.57 + rand() * 0.05, 0.13 + rand() * 0.2, 0.28 + rand() * 0.24);
+      if (rand() > 0.9) color.lerp(new THREE.Color(rand() > 0.5 ? 0x33e7c8 : 0xffd98a), 0.28);
+      rocks.setColorAt(i, color);
+    }
+    rocks.instanceMatrix.needsUpdate = true;
+    if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
+    rocks.renderOrder = 3;
+    group.add(rocks);
+
+    const positions = new Float32Array(dustCount * 3);
+    const colors = new Float32Array(dustCount * 3);
+    for (let i = 0; i < dustCount; i += 1) {
+      const angle = rand() * Math.PI * 2;
+      const radius = 155 + Math.pow(rand(), 0.76) * 330;
+      const p = i * 3;
+      positions[p] = Math.cos(angle) * radius + (rand() - 0.5) * 26;
+      positions[p + 1] = (rand() - 0.5) * 86 + Math.sin(angle * 2.0) * 7;
+      positions[p + 2] = Math.sin(angle) * radius * (0.58 + rand() * 0.22) - 34 + (rand() - 0.5) * 26;
+      TMP_COLOR.setHSL(rand() > 0.62 ? 0.1 + rand() * 0.04 : 0.52 + rand() * 0.08, 0.34 + rand() * 0.3, 0.46 + rand() * 0.28);
+      colors[p] = TMP_COLOR.r;
+      colors[p + 1] = TMP_COLOR.g;
+      colors[p + 2] = TMP_COLOR.b;
+    }
+
+    const dustGeometry = new THREE.BufferGeometry();
+    dustGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    dustGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    const dustMaterial = new THREE.PointsMaterial({
+      size: this.quality.label === "LOW" ? 1.4 : 1.9,
+      sizeAttenuation: true,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const dust = new THREE.Points(dustGeometry, dustMaterial);
+    dust.renderOrder = 4;
+    group.add(dust);
+
+    if (this.useHighDetailShadows) this.enableHighDetailShadows(group);
+    group.userData.particleBudget = rockCount + dustCount;
+  }
+
+  private createShipTrafficField(): void {
+    if (this.quality.reducedMotion) return;
+
+    const group = new THREE.Group();
+    group.renderOrder = 8;
+    group.userData.particleBudget = 0;
+    this.shipTrafficField = group;
+    this.scene.add(group);
+
+    const rand = rng(733219);
+    const shipCount = this.quality.label === "HIGH" && !this.quality.mobile ? 11 : this.quality.label === "BALANCED" ? 7 : 3;
+    const hullMaterial = new THREE.MeshStandardMaterial({
+      color: 0xaeb8c3,
+      roughness: 0.34,
+      metalness: 0.72,
+      emissive: 0x071018,
+      emissiveIntensity: 0.1,
+      envMapIntensity: 1.35
+    });
+    const darkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x192632,
+      roughness: 0.46,
+      metalness: 0.58,
+      emissive: 0x02070b,
+      emissiveIntensity: 0.08,
+      envMapIntensity: 0.9
+    });
+    const lightMaterial = new THREE.MeshBasicMaterial({
+      color: 0x33e7c8,
+      transparent: true,
+      opacity: 0.82,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const engineTexture = makeGlowTexture(96);
+
+    for (let i = 0; i < shipCount; i += 1) {
+      const ship = new THREE.Group();
+      ship.userData.radius = 115 + rand() * 335;
+      ship.userData.y = -92 + rand() * 188;
+      ship.userData.zScale = 0.56 + rand() * 0.24;
+      ship.userData.speed = (rand() > 0.5 ? 1 : -1) * (0.025 + rand() * 0.026);
+      ship.userData.phase = rand() * Math.PI * 2;
+      ship.userData.bob = 5 + rand() * 15;
+      if (i === 0) {
+        ship.userData.radius = 132;
+        ship.userData.y = 24;
+        ship.userData.zScale = 0.68;
+        ship.userData.speed = 0.038;
+        ship.userData.phase = -0.34;
+        ship.userData.bob = 5;
+        ship.userData.nearFlyby = true;
+      }
+
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.42, 3.0), hullMaterial.clone());
+      body.castShadow = this.useHighDetailShadows;
+      ship.add(body);
+
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.9, 4), hullMaterial.clone());
+      nose.rotation.x = -Math.PI / 2;
+      nose.position.z = -1.9;
+      nose.castShadow = this.useHighDetailShadows;
+      ship.add(nose);
+
+      const wingGeometry = new THREE.BoxGeometry(2.2, 0.08, 0.72);
+      const wingA = new THREE.Mesh(wingGeometry, darkMaterial.clone());
+      wingA.position.set(-0.86, -0.08, 0.24);
+      wingA.rotation.z = 0.2;
+      ship.add(wingA);
+      const wingB = wingA.clone();
+      wingB.position.x = 0.86;
+      wingB.rotation.z = -0.2;
+      ship.add(wingB);
+
+      const mast = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.62, 0.9), darkMaterial.clone());
+      mast.position.set(0, 0.48, -0.2);
+      ship.add(mast);
+
+      const portLight = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), lightMaterial.clone());
+      portLight.position.set(-0.42, 0.08, -0.95);
+      ship.add(portLight);
+      const starboardLight = portLight.clone();
+      starboardLight.position.x = 0.42;
+      ship.add(starboardLight);
+
+      const engine = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: engineTexture,
+        color: rand() > 0.5 ? 0x33e7c8 : 0xffd98a,
+        transparent: true,
+        opacity: 0.82,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      }));
+      engine.position.set(0, 0, 1.72);
+      engine.scale.set(2.1, 2.1, 1);
+      ship.add(engine);
+      ship.userData.engine = engine;
+
+      const scale = 1.05 + rand() * 1.15;
+      ship.scale.setScalar(i === 0 ? Math.max(2.6, scale) : scale);
+      ship.renderOrder = 8;
+      group.add(ship);
+    }
+
+    group.userData.particleBudget = shipCount * 16;
+  }
+
+  private createCometField(): void {
+    if (this.quality.reducedMotion) return;
+
+    const group = new THREE.Group();
+    group.renderOrder = 7;
+    group.userData.particleBudget = 0;
+    this.cometField = group;
+    this.scene.add(group);
+
+    const rand = rng(917531);
+    const cometCount = this.quality.label === "HIGH" && !this.quality.mobile ? 5 : this.quality.label === "BALANCED" ? 4 : 2;
+    const glowTexture = makeGlowTexture(128);
+
+    for (let i = 0; i < cometCount; i += 1) {
+      const comet = new THREE.Group();
+      comet.userData.radius = 215 + rand() * 300;
+      comet.userData.y = -130 + rand() * 250;
+      comet.userData.zScale = 0.5 + rand() * 0.28;
+      comet.userData.speed = (rand() > 0.5 ? 1 : -1) * (0.017 + rand() * 0.014);
+      comet.userData.phase = rand() * Math.PI * 2;
+      comet.userData.bob = 22 + rand() * 32;
+      if (i === 0) {
+        comet.userData.radius = 138;
+        comet.userData.y = 58;
+        comet.userData.zScale = 0.65;
+        comet.userData.speed = -0.018;
+        comet.userData.phase = 0.5;
+        comet.userData.bob = 12;
+        comet.userData.nearFlyby = true;
+      }
+
+      const color = rand() > 0.45 ? 0x9fffee : rand() > 0.5 ? 0xffd98a : 0xc7d8ff;
+      const core = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTexture,
+        color,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      }));
+      const coreScale = i === 0 ? 9.4 : 4.2 + rand() * 4.6;
+      core.scale.set(coreScale, coreScale, 1);
+      comet.add(core);
+      comet.userData.core = core;
+
+      const tailMaterial = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: i === 0 ? 0.14 : 0.18 + rand() * 0.12,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false
+      });
+      const tailLength = i === 0 ? 56 : 24 + rand() * 30;
+      const tailRadius = i === 0 ? 1.15 : 2.1 + rand() * 1.6;
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(tailRadius, tailLength, 24, 1, true), tailMaterial);
+      tail.rotation.x = Math.PI / 2;
+      tail.position.z = tailLength * 0.48;
+      tail.scale.x = 0.42 + rand() * 0.26;
+      tail.scale.y = 0.42 + rand() * 0.26;
+      comet.add(tail);
+      comet.userData.tail = tail;
+
+      const sparkCount = this.quality.label === "LOW" ? 12 : 24;
+      const positions = new Float32Array(sparkCount * 3);
+      const colors = new Float32Array(sparkCount * 3);
+      for (let j = 0; j < sparkCount; j += 1) {
+        const p = j * 3;
+        const z = 3 + Math.pow(rand(), 0.72) * tailLength;
+        positions[p] = (rand() - 0.5) * (1.2 + z * 0.08);
+        positions[p + 1] = (rand() - 0.5) * (1.2 + z * 0.08);
+        positions[p + 2] = z;
+        TMP_COLOR.setHex(color).lerp(new THREE.Color(0xffffff), rand() * 0.34);
+        colors[p] = TMP_COLOR.r;
+        colors[p + 1] = TMP_COLOR.g;
+        colors[p + 2] = TMP_COLOR.b;
+      }
+      const sparkGeometry = new THREE.BufferGeometry();
+      sparkGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      sparkGeometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      const sparks = new THREE.Points(
+        sparkGeometry,
+        new THREE.PointsMaterial({
+          size: 1.25,
+          sizeAttenuation: true,
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.7,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        })
+      );
+      comet.add(sparks);
+      comet.userData.sparkCount = sparkCount;
+
+      group.add(comet);
+    }
+
+    group.userData.particleBudget = cometCount * 32;
   }
 
   private createRelativisticWakeField(): void {
@@ -6603,7 +6908,7 @@ export class CosmosEngine {
 
   private createWorlds(): void {
     const visibleWorlds = this.worlds.filter((world) => !world.hidden);
-    const camStart = new THREE.Vector3(0, 14, 82); // keep planets clear of the spawn point
+    const camStart = CAMERA_START; // keep planets clear of the spawn point
     const placed: THREE.Vector3[] = [];
     for (let i = 0; i < visibleWorlds.length; i += 1) {
       const world = visibleWorlds[i];
@@ -6611,31 +6916,32 @@ export class CosmosEngine {
       const rand = rng((i + 1) * 1973 + this.progress.loop * 7919 + 9277);
       // Jittered golden angle so the field never reads as a regular ring.
       const angle = i * GOLDEN + 0.4 + (rand() - 0.5) * 1.2;
-      // Wide, uneven radius — some planets near, some far (CORE/app pulled toward the heart).
-      let radius = world.kind === "app" ? 26 + rand() * 18 : 42 + rand() * 42;
-      // Full vertical spread (not a flat shell).
-      let y = (rand() - 0.45) * 66;
+      // Wide, uneven radius across the expanded flight box. CORE/app stays closer;
+      // unregistered survey planets live farther into the newly opened volume.
+      let radius = world.kind === "app" ? 82 + rand() * 82 : world.kind === "unregistered" ? 245 + rand() * 215 : 145 + rand() * 230;
+      // Full vertical spread without flattening the field into a ring.
+      let y = (rand() - 0.45) * (world.kind === "unregistered" ? 360 : 270);
       let pos = new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius - 8);
       // Relaxation: push outward + re-jitter height until clear of other planets AND the spawn.
-      for (let pass = 0; pass < 30; pass += 1) {
-        const tooCloseToSpawn = pos.distanceTo(camStart) < 30;
-        const tooCloseToPlanet = placed.some((other) => pos.distanceTo(other) < 24);
+      for (let pass = 0; pass < 36; pass += 1) {
+        const tooCloseToSpawn = pos.distanceTo(camStart) < 78;
+        const tooCloseToPlanet = placed.some((other) => pos.distanceTo(other) < 42);
         if (!tooCloseToSpawn && !tooCloseToPlanet) break;
-        radius = Math.min(88, radius + 6);
-        y = THREE.MathUtils.clamp(y + (rand() - 0.5) * 10, -34, 42);
+        radius = Math.min(470, radius + 20);
+        y = THREE.MathUtils.clamp(y + (rand() - 0.5) * 34, WORLD_CLAMP_MIN.y, WORLD_CLAMP_MAX.y);
         pos = new THREE.Vector3(Math.cos(angle) * radius, y, Math.sin(angle) * radius - 8);
       }
-      // Stay inside the reachable camera box (clamp ±105 / y -48..56) with margin.
-      pos.x = THREE.MathUtils.clamp(pos.x, -96, 96);
-      pos.z = THREE.MathUtils.clamp(pos.z, -96, 96);
-      pos.y = THREE.MathUtils.clamp(pos.y, -34, 42);
+      // Stay inside the reachable camera box with a margin for approach and focus.
+      pos.x = THREE.MathUtils.clamp(pos.x, WORLD_CLAMP_MIN.x, WORLD_CLAMP_MAX.x);
+      pos.z = THREE.MathUtils.clamp(pos.z, WORLD_CLAMP_MIN.z, WORLD_CLAMP_MAX.z);
+      pos.y = THREE.MathUtils.clamp(pos.y, WORLD_CLAMP_MIN.y, WORLD_CLAMP_MAX.y);
       placed.push(pos.clone());
       this.createPlanet(world, pos, i);
     }
 
     const hidden = this.worlds.find((world) => world.hidden);
     if (hidden) {
-      this.hiddenPlanet = this.createPlanet(hidden, new THREE.Vector3(-78, 26, -70), 99);
+      this.hiddenPlanet = this.createPlanet(hidden, new THREE.Vector3(-390, 138, -360), 99);
       this.hiddenPlanet.group.visible = this.progress.hiddenPlanet;
     }
   }
@@ -8500,6 +8806,9 @@ export class CosmosEngine {
     this.updateLensedGalaxyClusterField(time);
     this.updateCosmicWebField(time);
     this.updateDeepSpaceDebrisField(dt, time);
+    this.updateAsteroidBeltField(dt, time);
+    this.updateShipTrafficField(time);
+    this.updateCometField(time);
     this.updateRelativisticWakeField(dt, time);
     this.updateEventHorizonCitadelField(dt, time);
     this.updateMegastructureField(dt, time);
@@ -8646,7 +8955,7 @@ export class CosmosEngine {
     const wobble = this.quality.reducedMotion ? 0 : Math.sin(time * 0.00035) * 0.002;
     TMP_OBJ.rotation.set(this.pitch + wobble, this.yaw, 0, "YXZ");
     this.camera.quaternion.copy(TMP_OBJ.quaternion);
-    const speed = (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") ? 34 : 19) * (this.quality.mobile ? 0.62 : 1);
+    const speed = (this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") ? 72 : 30) * (this.quality.mobile ? 0.62 : 1);
     const accel = TMP_VEC.set(0, 0, 0);
     const forward = TMP_VEC_2.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
     const right = TMP_VEC_3.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
@@ -8799,6 +9108,114 @@ export class CosmosEngine {
     this.deepSpaceDebrisField.rotation.y += dt * 0.0028;
     this.deepSpaceDebrisField.rotation.z = Math.sin(t * 0.018) * 0.01;
     this.deepSpaceDebrisField.position.y = Math.sin(t * 0.013 + 1.1) * 0.42;
+  }
+
+  private updateAsteroidBeltField(dt: number, time: number): void {
+    if (!this.asteroidBeltField) return;
+    const t = time * 0.001;
+    if (!this.quality.reducedMotion) this.asteroidBeltField.rotation.y += dt * 0.0105;
+    this.asteroidBeltField.rotation.x = 0.18 + Math.sin(t * 0.01) * 0.018;
+    this.asteroidBeltField.rotation.z = 0.11 + Math.cos(t * 0.008) * 0.012;
+    this.asteroidBeltField.position.y = Math.sin(t * 0.017 + 0.4) * 1.4;
+  }
+
+  private updateShipTrafficField(time: number): void {
+    if (!this.shipTrafficField || this.quality.reducedMotion) return;
+    const t = time * 0.001;
+    for (const child of this.shipTrafficField.children) {
+      const ship = child as THREE.Group;
+      const radius = Number(ship.userData.radius ?? 180);
+      const yBase = Number(ship.userData.y ?? 0);
+      const zScale = Number(ship.userData.zScale ?? 0.64);
+      const speed = Number(ship.userData.speed ?? 0.03);
+      const phase = Number(ship.userData.phase ?? 0);
+      const bob = Number(ship.userData.bob ?? 8);
+      if (ship.userData.nearFlyby) {
+        const lane = Math.sin(t * 0.34 + phase);
+        const forward = TMP_VEC.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        const right = TMP_VEC_2.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
+        const up = TMP_VEC_3.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
+        ship.position.copy(this.camera.position)
+          .addScaledVector(forward, 68)
+          .addScaledVector(right, 4 + lane * 12)
+          .addScaledVector(up, -10 + Math.cos(t * 0.48 + phase) * bob);
+        TMP_OBJ.position.copy(this.camera.position)
+          .addScaledVector(forward, 82)
+          .addScaledVector(right, -8 + lane * 14)
+          .addScaledVector(up, -10 + Math.cos(t * 0.48 + phase + 0.2) * bob);
+        ship.lookAt(TMP_OBJ.position);
+        ship.rotateY(Math.PI); // model faces -Z; Object3D.lookAt aims +Z, so flip to fly nose-first
+        ship.rotateZ(Math.sin(t * 0.92 + phase) * 0.1);
+      } else {
+      const angle = phase + t * speed;
+      const nextAngle = angle + Math.sign(speed || 1) * 0.035;
+      const y = yBase + Math.sin(t * 0.36 + phase) * bob;
+      ship.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius * zScale - 30);
+      TMP_VEC.set(Math.cos(nextAngle) * radius, y, Math.sin(nextAngle) * radius * zScale - 30);
+      ship.lookAt(TMP_VEC);
+      ship.rotateY(Math.PI); // model faces -Z; Object3D.lookAt aims +Z, so flip to fly nose-first
+      ship.rotateZ(Math.sin(t * 0.7 + phase) * 0.08);
+      }
+
+      const engine = ship.userData.engine as THREE.Sprite | undefined;
+      if (engine?.material instanceof THREE.SpriteMaterial) {
+        engine.material.opacity = 0.58 + Math.sin(t * 5.2 + phase) * 0.2;
+        const scale = 1.9 + Math.sin(t * 4.7 + phase * 1.3) * 0.28;
+        engine.scale.set(scale, scale, 1);
+      }
+    }
+  }
+
+  private updateCometField(time: number): void {
+    if (!this.cometField || this.quality.reducedMotion) return;
+    const t = time * 0.001;
+    for (const child of this.cometField.children) {
+      const comet = child as THREE.Group;
+      const radius = Number(comet.userData.radius ?? 280);
+      const yBase = Number(comet.userData.y ?? 0);
+      const zScale = Number(comet.userData.zScale ?? 0.62);
+      const speed = Number(comet.userData.speed ?? 0.02);
+      const phase = Number(comet.userData.phase ?? 0);
+      const bob = Number(comet.userData.bob ?? 24);
+      if (comet.userData.nearFlyby) {
+        const lane = Math.sin(t * 0.2 + phase);
+        const forward = TMP_VEC.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+        const right = TMP_VEC_2.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
+        const up = TMP_VEC_3.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
+        comet.position.copy(this.camera.position)
+          .addScaledVector(forward, 104)
+          .addScaledVector(right, -32 + lane * 26)
+          .addScaledVector(up, 40 + Math.cos(t * 0.31 + phase) * bob);
+        TMP_OBJ.position.copy(this.camera.position)
+          .addScaledVector(forward, 126)
+          .addScaledVector(right, -48 + lane * 30)
+          .addScaledVector(up, 40 + Math.cos(t * 0.31 + phase + 0.2) * bob);
+        comet.lookAt(TMP_OBJ.position);
+        comet.rotateY(Math.PI); // head faces -Z; flip so the tail trails behind travel
+        comet.rotateZ(Math.sin(t * 0.38 + phase) * 0.06);
+      } else {
+      const angle = phase + t * speed;
+      const nextAngle = angle + Math.sign(speed || 1) * 0.04;
+      const y = yBase + Math.sin(t * 0.22 + phase) * bob;
+      comet.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius * zScale - 80);
+      TMP_VEC.set(Math.cos(nextAngle) * radius, y + Math.cos(t * 0.22 + phase) * 0.9, Math.sin(nextAngle) * radius * zScale - 80);
+      comet.lookAt(TMP_VEC);
+      comet.rotateY(Math.PI); // head faces -Z; flip so the tail trails behind travel
+      comet.rotateZ(Math.sin(t * 0.35 + phase) * 0.06);
+      }
+
+      const core = comet.userData.core as THREE.Sprite | undefined;
+      if (core?.material instanceof THREE.SpriteMaterial) {
+        core.material.opacity = 0.78 + Math.sin(t * 2.7 + phase) * 0.14;
+        const scale = 4.1 + Math.sin(t * 2.1 + phase) * 0.46;
+        core.scale.set(scale, scale, 1);
+      }
+
+      const tail = comet.userData.tail as THREE.Mesh | undefined;
+      if (tail) {
+        tail.scale.z = 1 + Math.sin(t * 1.9 + phase) * 0.08;
+      }
+    }
   }
 
   private updateRelativisticWakeField(dt: number, time: number): void {
@@ -8963,7 +9380,7 @@ export class CosmosEngine {
 
   // ---- v1.1: stardust collectibles (pooled Points, static so proximity is world-accurate) ----
   private createStardust(): void {
-    const count = this.quality.label === "HIGH" ? 220 : this.quality.label === "BALANCED" ? 140 : 40;
+    const count = this.quality.label === "HIGH" ? 360 : this.quality.label === "BALANCED" ? 220 : 64;
     const rand = mulberry32(dailySeed(this.progress.loop));
     const positions = new Float32Array(count * 3);
     this.stardustIds = [];
@@ -8971,11 +9388,11 @@ export class CosmosEngine {
     for (let i = 0; i < count; i += 1) {
       const id = `s${i}`;
       this.stardustIds.push(id);
-      const r = 26 + rand() * 70;
+      const r = 70 + rand() * 420;
       const theta = rand() * Math.PI * 2;
       const phi = Math.acos(rand() * 2 - 1);
       positions[i * 3] = Math.sin(phi) * Math.cos(theta) * r;
-      positions[i * 3 + 1] = this.stardustTaken.has(id) ? 9999 : (rand() - 0.5) * 62;
+      positions[i * 3 + 1] = this.stardustTaken.has(id) ? 9999 : (rand() - 0.5) * 440;
       positions[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * r;
     }
     const geometry = new THREE.BufferGeometry();
@@ -9054,11 +9471,11 @@ export class CosmosEngine {
     this.teardownTrialRings();
     const group = new THREE.Group();
     const rand = mulberry32(dailySeed(this.progress.loop, 0x5217));
-    const count = 6;
+    const count = 7;
     for (let i = 0; i < count; i += 1) {
-      const r = 30 + rand() * 60;
+      const r = 90 + rand() * 320;
       const theta = rand() * Math.PI * 2;
-      const y = (rand() - 0.5) * 70;
+      const y = (rand() - 0.5) * 220;
       const material = new THREE.MeshBasicMaterial({
         color: 0x33e7c8,
         transparent: true,
@@ -9068,7 +9485,7 @@ export class CosmosEngine {
         blending: THREE.AdditiveBlending,
         fog: false
       });
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(3.2, 0.22, 14, 56), material);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(4.8, 0.28, 14, 64), material);
       ring.position.set(Math.cos(theta) * r, y, Math.sin(theta) * r);
       ring.lookAt(0, y, 0);
       group.add(ring);
@@ -9102,7 +9519,7 @@ export class CosmosEngine {
     if (!this.trialActive) return;
     const ms = performance.now() - this.trialStart;
     const ring = this.trialRings[this.trialIndex];
-    if (ring && this.camera.position.distanceTo(ring.position) < 3.4) {
+    if (ring && this.camera.position.distanceTo(ring.position) < 5.2) {
       this.trialIndex += 1;
       if (this.trialIndex >= this.trialRings.length) {
         this.trialActive = false;
@@ -9196,7 +9613,7 @@ export class CosmosEngine {
   }
 
   getInfo(): CosmosInfo {
-    const stardustBudget = this.quality.label === "HIGH" ? 220 : this.quality.label === "BALANCED" ? 140 : 40;
+    const stardustBudget = this.quality.label === "HIGH" ? 360 : this.quality.label === "BALANCED" ? 220 : 64;
     const depthFieldBudget = Number(this.cameraDepthField?.userData.particleBudget ?? 0);
     const foregroundRelicBudget = Number(this.foregroundRelicField?.userData.particleBudget ?? 0);
     const lensDustBudget = this.lensDustField?.geometry.getAttribute("position").count ?? 0;
@@ -9206,6 +9623,9 @@ export class CosmosEngine {
     const parallaxNebulaBudget = Number(this.parallaxNebulaVolume?.userData.particleBudget ?? 0);
     const stellarNurseryBudget = Number(this.stellarNurseryField?.userData.particleBudget ?? 0);
     const deepSpaceDebrisBudget = Number(this.deepSpaceDebrisField?.userData.particleBudget ?? 0);
+    const asteroidBeltBudget = Number(this.asteroidBeltField?.userData.particleBudget ?? 0);
+    const shipTrafficBudget = Number(this.shipTrafficField?.userData.particleBudget ?? 0);
+    const cometBudget = Number(this.cometField?.userData.particleBudget ?? 0);
     const relativisticWakeBudget = Number(this.relativisticWakeField?.userData.particleBudget ?? 0);
     const eventHorizonCitadelBudget = Number(this.eventHorizonCitadelField?.userData.particleBudget ?? 0);
     const megastructureBudget = Number(this.megastructureField?.userData.particleBudget ?? 0);
@@ -9240,7 +9660,7 @@ export class CosmosEngine {
       flare: Boolean(this.streakPass || this.lensArtifactPass || this.diffractionPass),
       rays: Boolean(this.lightShaftPass),
       msaa: this.composerSamples,
-      particles: this.quality.starCount + this.quality.dustCount + stardustBudget + depthFieldBudget + foregroundRelicBudget + lensDustBudget + cosmicWebBudget + lensedGalaxyClusterBudget + nebulaCanyonBudget + parallaxNebulaBudget + stellarNurseryBudget + deepSpaceDebrisBudget + relativisticWakeBudget + eventHorizonCitadelBudget + megastructureBudget + prismaticScatteringBudget + blackHoleDetailBudget + sparkBudget + planetGlintBudget + nightNetworkBudget + ringDebrisBudget + magnetosphereBudget + orbitalInfrastructureBudget
+      particles: this.quality.starCount + this.quality.dustCount + stardustBudget + depthFieldBudget + foregroundRelicBudget + lensDustBudget + cosmicWebBudget + lensedGalaxyClusterBudget + nebulaCanyonBudget + parallaxNebulaBudget + stellarNurseryBudget + deepSpaceDebrisBudget + asteroidBeltBudget + shipTrafficBudget + cometBudget + relativisticWakeBudget + eventHorizonCitadelBudget + megastructureBudget + prismaticScatteringBudget + blackHoleDetailBudget + sparkBudget + planetGlintBudget + nightNetworkBudget + ringDebrisBudget + magnetosphereBudget + orbitalInfrastructureBudget
     };
   }
 }

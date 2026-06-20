@@ -1,4 +1,4 @@
-import { WORLDS, routePath } from "../data/worlds";
+import { WORLDS, isLaunchableWorld, routePath, type LaunchMode, type World } from "../data/worlds";
 
 export function WebglFallback() {
   return (
@@ -8,7 +8,7 @@ export function WebglFallback() {
         <h1>AlicE sYsTeM</h1>
         <p>この環境では3D宇宙を初期化できません。各惑星へ直接アクセスできます。</p>
         <nav>
-          {WORLDS.filter((world) => !world.hidden).map((world) => (
+          {WORLDS.filter((world): world is World & { url: string; launchMode: LaunchMode } => !world.hidden && isLaunchableWorld(world)).map((world) => (
             <a key={world.id} href={routePath(world.url)}>
               <span>{world.title}</span>
               <small>{world.tags.join(" / ")}</small>

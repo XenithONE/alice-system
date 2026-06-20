@@ -19,7 +19,7 @@ export function LaunchOverlay({ world, onClose }: LaunchOverlayProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [world, onClose]);
 
-  if (!world) return null;
+  if (!world?.url) return null;
 
   const src = routePath(world.url);
 

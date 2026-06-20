@@ -1,11 +1,11 @@
-export type WorldKind = "game" | "app" | "hidden";
+export type WorldKind = "game" | "app" | "hidden" | "unregistered";
 export type LaunchMode = "overlay";
 
 export interface World {
   id: string;
   title: string;
   kind: WorldKind;
-  url: string;
+  url: string | null;
   texture: string;
   cover: string;
   color: number;
@@ -17,7 +17,7 @@ export interface World {
   description: string;
   statusKey: string | null;
   hidden: boolean;
-  launchMode: LaunchMode;
+  launchMode: LaunchMode | null;
 }
 
 export type FragmentId = "anomaly" | "terminal" | "lantern" | "rift" | "voice" | "idle";
@@ -170,6 +170,60 @@ export const WORLDS: World[] = [
     launchMode: "overlay"
   },
   {
+    id: "archival_moon",
+    title: "ARCHIVAL MOON",
+    kind: "unregistered",
+    url: null,
+    texture: "assets/planet-archive-hq.jpg",
+    cover: "assets/planet-archive-hq.jpg",
+    color: 0xb9cfff,
+    atmosphere: 0xe2ecff,
+    size: 2.55,
+    ring: false,
+    clouds: true,
+    tags: ["Unregistered", "Archive", "Silent"],
+    description: "ゲーム登録前の冷たい記録惑星。表面の光は残っているが、まだ入口は開いていない。",
+    statusKey: null,
+    hidden: false,
+    launchMode: null
+  },
+  {
+    id: "null_harbor",
+    title: "NULL HARBOR",
+    kind: "unregistered",
+    url: null,
+    texture: "assets/planet-harbor-hq.jpg",
+    cover: "assets/planet-harbor-hq.jpg",
+    color: 0x40d8c6,
+    atmosphere: 0x9fffee,
+    size: 2.9,
+    ring: true,
+    clouds: false,
+    tags: ["Unregistered", "Dock", "Signal"],
+    description: "未登録の軌道港。リングだけが稼働し、ゲームリンクはまだどの周波数にも紐付いていない。",
+    statusKey: null,
+    hidden: false,
+    launchMode: null
+  },
+  {
+    id: "vesper_ruin",
+    title: "VESPER RUIN",
+    kind: "unregistered",
+    url: null,
+    texture: "assets/planet-vesper-hq.jpg",
+    cover: "assets/planet-vesper-hq.jpg",
+    color: 0xb265ff,
+    atmosphere: 0xff9bd6,
+    size: 2.62,
+    ring: false,
+    clouds: true,
+    tags: ["Unregistered", "Ruin", "Drift"],
+    description: "宵闇に浮かぶ未登録遺構。反応はあるが、遊べるゲームはまだ配置されていない。",
+    statusKey: null,
+    hidden: false,
+    launchMode: null
+  },
+  {
     id: "observer_node",
     title: "OBSERVER NODE",
     kind: "hidden",
@@ -191,6 +245,10 @@ export const WORLDS: World[] = [
 
 export function routePath(path: string): string {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, "")}`;
+}
+
+export function isLaunchableWorld(world: World): world is World & { url: string; launchMode: LaunchMode } {
+  return Boolean(world.url && world.launchMode);
 }
 
 export function assetPath(path: string): string {
