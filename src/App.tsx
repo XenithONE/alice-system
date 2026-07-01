@@ -1,242 +1,155 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { CosmosCanvas } from "./components/CosmosCanvas";
+import { useCallback, useRef, useState } from "react";
+import { GameCanvas } from "./components/GameCanvas";
 import { Hud } from "./components/Hud";
-import { LaunchOverlay } from "./components/LaunchOverlay";
-import { TerminalPanel } from "./components/TerminalPanel";
-import { WebglFallback } from "./components/WebglFallback";
-import { AchievementsPanel } from "./components/AchievementsPanel";
-import { WORLDS, type FragmentId, type World } from "./data/worlds";
-import { CosmosEngine, type CosmosInfo, type TimeTrialEvent } from "./lib/cosmosEngine";
-import {
-  addDistance,
-  advanceLoop,
-  bumpVisits,
-  collectFragment,
-  collectStardust,
-  readProgress,
-  recordTimeTrial,
-  revealHiddenPlanet,
-  unlockAchievements,
-  unlockTrueEnding,
-  type ProgressState
-} from "./lib/storage";
-import { ACHIEVEMENTS, evaluate, type AchievementExtras } from "./lib/achievements";
+import type { GameInfo, GameMode, HorrorEngine, JumpscareKind, RunEndResult } from "./lib/horrorEngine";
+import { advanceLoop, readProgress, recordRun, recordScare, unlockAchievements, type ProgressState } from "./lib/storage";
+import { ACHIEVEMENTS, evaluate } from "./lib/achievements";
 
-const FRAGMENT_LINES: Record<FragmentId, string> = {
-  anomaly: "◈ flaw observed. one signal fragment recovered.",
-  terminal: "◈ derelict console awake. terminal fragment recovered.",
-  lantern: "◈ light carried through the dark.",
-  rift: "◈ rift breach survived.",
-  voice: "◈ AlicE heard your voice.",
-  idle: "◈ the quiet noticed you."
+const SCARE_LINES: Record<JumpscareKind, string> = {
+  chase: "◈ THE WARDEN FOUND YOU.",
+  mirror: "◈ something looked back.",
+  locker: "◈ something moved nearby.",
+  finale: "◈ it was waiting at the door.",
+  ambient: "◈ ...did you hear that?"
 };
 
 export default function App() {
-  const [progress, setProgress] = useState<ProgressState>(() => readProgress(WORLDS));
-  const [selected, setSelected] = useState<World | null>(null);
-  const [nearest, setNearest] = useState<World | null>(null);
-  const [launching, setLaunching] = useState<World | null>(null);
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const [achievementsOpen, setAchievementsOpen] = useState(false);
-  const [trial, setTrial] = useState<TimeTrialEvent | null>(null);
-  const [info, setInfo] = useState<CosmosInfo | null>(null);
-  const [aliceLine, setAliceLine] = useState("");
+  const [progress, setProgress] = useState<ProgressState>(() => readProgress());
+  const [mode, setMode] = useState<GameMode>("menu");
+  const [info, setInfo] = useState<GameInfo | null>(null);
+  const [filesFound, setFilesFound] = useState(0);
+  const [filesTotal, setFilesTotal] = useState(6);
+  const [fear, setFear] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [hiding, setHiding] = useState(false);
+  const [flashlightOn, setFlashlightOn] = useState(true);
+  const [lastRun, setLastRun] = useState<RunEndResult | null>(null);
+  const [toastLine, setToastLine] = useState("");
+  const [jumpscareToken, setJumpscareToken] = useState(0);
+  const [jumpscareKind, setJumpscareKind] = useState<JumpscareKind | null>(null);
   const [webglError, setWebglError] = useState("");
-  const engineRef = useRef<CosmosEngine | null>(null);
-  const progressRef = useRef(progress);
-  const visitBumped = useRef(false);
-  const lineTimer = useRef<number | null>(null);
 
-  useEffect(() => {
-    progressRef.current = progress;
-  }, [progress]);
+  const engineRef = useRef<HorrorEngine | null>(null);
+  const loopRef = useRef(progress.loop);
+  const toastTimer = useRef<number | null>(null);
+  const isTouch = typeof window !== "undefined" && (window.matchMedia("(hover: none)").matches || "ontouchstart" in window);
 
-  useEffect(() => {
-    if (visitBumped.current) return;
-    visitBumped.current = true;
-    bumpVisits();
-    setProgress(readProgress(WORLDS));
+  const speak = useCallback((line: string) => {
+    setToastLine(line);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToastLine(""), 4200);
   }, []);
 
-  function speak(line: string): void {
-    setAliceLine(line);
-    if (lineTimer.current) window.clearTimeout(lineTimer.current);
-    lineTimer.current = window.setTimeout(() => setAliceLine(""), 4200);
-  }
-
-  // Evaluate achievements against a fresh ProgressState; toast the first newly-earned one.
-  function syncAchievements(state: ProgressState, extras?: AchievementExtras): ProgressState {
+  const syncAchievements = useCallback((state: ProgressState, extras?: Parameters<typeof evaluate>[1]): ProgressState => {
     const earned = evaluate(state, extras);
     const fresh = earned.filter((id) => !state.achievements.has(id));
     if (fresh.length === 0) return state;
-    const next = unlockAchievements(earned, WORLDS);
+    const next = unlockAchievements(earned);
     const ach = ACHIEVEMENTS.find((entry) => entry.id === fresh[0]);
     if (ach) speak(`ACHIEVEMENT // ${ach.title}`);
     return next;
-  }
+  }, [speak]);
 
-  useEffect(() => {
-    const refresh = () => setProgress(syncAchievements(readProgress(WORLDS)));
-    window.addEventListener("storage", refresh);
-    const interval = window.setInterval(refresh, launching ? 1500 : 5000);
-    return () => {
-      window.removeEventListener("storage", refresh);
-      window.clearInterval(interval);
-    };
-  }, [launching]);
+  const handleReady = useCallback((gameInfo: GameInfo) => setInfo(gameInfo), []);
+  const handleError = useCallback((message: string) => setWebglError(message), []);
+  const handleFilesUpdate = useCallback((found: number, total: number) => { setFilesFound(found); setFilesTotal(total); }, []);
+  const handleFear = useCallback((value: number) => setFear(value), []);
+  const handleTime = useCallback((ms: number) => setElapsedMs(ms), []);
+  const handleHideChange = useCallback((value: boolean) => setHiding(value), []);
+  const handleFlashlightChange = useCallback((value: boolean) => setFlashlightOn(value), []);
+  const handleModeChange = useCallback((next: GameMode) => setMode(next), []);
 
-  // Make the legacy parent.__markD() calls in some games refresh progress live.
-  useEffect(() => {
-    window.__markD = () => setProgress(syncAchievements(readProgress(WORLDS)));
-    return () => {
-      delete window.__markD;
-    };
-  }, []);
+  const handleJumpscare = useCallback((kind: JumpscareKind) => {
+    setJumpscareKind(kind);
+    setJumpscareToken((t) => t + 1);
+    setProgress(syncAchievements(recordScare(kind)));
+    speak(SCARE_LINES[kind]);
+  }, [speak, syncAchievements]);
 
-  const handleCollectFragment = useCallback((fragment: FragmentId) => {
-    const alreadyHad = progressRef.current.fragments.has(fragment);
-    const collected = collectFragment(fragment, WORLDS);
-    if (!alreadyHad) {
-      speak(FRAGMENT_LINES[fragment]);
-      if (collected.accord) speak("◈ THE EIDOLON ACCORD is open.");
+  const handleRunEnd = useCallback((result: RunEndResult) => {
+    setLastRun(result);
+    let next = syncAchievements(recordRun({ won: result.won, ms: result.ms, score: result.score }), {
+      wonThisRun: result.won,
+      scaresThisRun: result.scares,
+      hidesThisRun: result.hides,
+      msThisRun: result.ms
+    });
+    if (result.won && next.wins >= 1 && loopRef.current === next.loop && next.wins > 1) {
+      // Subsequent wins gently remix the ward layout (NG+) on the next run.
+      next = syncAchievements(advanceLoop());
+      loopRef.current = next.loop;
+    } else if (result.won && next.wins === 1) {
+      loopRef.current = next.loop;
     }
-    setProgress(syncAchievements(collected));
-  }, []);
-
-  const handleHiddenReveal = useCallback(() => {
-    const already = progressRef.current.hiddenPlanet;
-    const next = syncAchievements(revealHiddenPlanet(WORLDS));
     setProgress(next);
-    if (!already) speak("◈ hidden planet surfaced beyond the mapped orbit.");
+  }, [syncAchievements]);
+
+  const handleEngine = useCallback((engine: HorrorEngine) => { engineRef.current = engine; }, []);
+
+  const handleStart = useCallback(() => {
+    engineRef.current?.setLoop(loopRef.current);
+    engineRef.current?.start();
   }, []);
-
-  const triggerHiddenReveal = useCallback(() => {
-    if (engineRef.current) engineRef.current.revealHiddenPlanet();
-    else handleHiddenReveal();
-  }, [handleHiddenReveal]);
-
-  const handleUnlockTrue = useCallback(() => {
-    setProgress(syncAchievements(unlockTrueEnding(WORLDS)));
-    speak("◈ THE SEVENTH SIGNAL is open.");
-  }, []);
-
-  const handleCollectStardust = useCallback((id: string) => {
-    const next = syncAchievements(collectStardust(id, WORLDS));
-    setProgress(next);
-    if (next.stardustToday.size > 0 && next.stardustToday.size % 10 === 0) {
-      speak(`STARDUST ${next.stardustToday.size} // total ${next.stardustTotal}`);
-    }
-  }, []);
-
-  const handleFlyDistance = useCallback((units: number) => {
-    addDistance(units);
-  }, []);
-
-  const handleTimeTrial = useCallback((event: TimeTrialEvent) => {
-    if (event.phase === "finish") {
-      setTrial(null);
-      const next = syncAchievements(recordTimeTrial(event.ms, WORLDS), { timeTrialFinished: true });
-      setProgress(next);
-      speak(`RING RUN ${(event.ms / 1000).toFixed(2)}s${event.ms <= next.timeTrialBest ? " // NEW BEST" : ""}`);
-    } else if (event.phase === "cancel") {
-      setTrial(null);
-    } else {
-      setTrial(event);
-    }
-  }, []);
-
-  const handleStartTrial = useCallback(() => {
-    setAchievementsOpen(false);
-    setTerminalOpen(false);
-    engineRef.current?.startTimeTrial();
-  }, []);
-
-  const handleAdvanceLoop = useCallback(() => {
-    const next = syncAchievements(advanceLoop(WORLDS));
-    setProgress(next);
-    speak(`◈ NEW LOOP ${next.loop} // the signal remembers.`);
-  }, []);
-
-  const handleLaunchClose = useCallback(() => {
-    setLaunching(null);
-    setProgress(syncAchievements(readProgress(WORLDS)));
-  }, []);
-
-  const handleFocus = useCallback((id: string) => {
-    const world = WORLDS.find((entry) => entry.id === id) ?? null;
-    if (world && (!world.hidden || progressRef.current.hiddenPlanet)) {
-      setSelected(world);
-      engineRef.current?.focusWorld(id);
-    }
-  }, []);
-
-  const handleLaunch = useCallback((world: World) => {
-    if (!world.url || !world.launchMode) return;
-    setSelected(world);
-    setLaunching(world);
-  }, []);
-
-  const handleError = useCallback((message: string) => {
-    setWebglError(message);
-  }, []);
-
-  const showFallback = Boolean(webglError);
+  const handlePause = useCallback(() => engineRef.current?.pause(), []);
+  const handleResume = useCallback(() => engineRef.current?.resume(), []);
+  const handleHide = useCallback(() => engineRef.current?.toggleHide(), []);
+  const handleFlashlight = useCallback(() => engineRef.current?.toggleFlashlight(), []);
+  const handleMute = useCallback((muted: boolean) => engineRef.current?.setMuted(muted), []);
+  const handleBloom = useCallback((enabled: boolean) => engineRef.current?.setBloomEnabled(enabled), []);
+  const handleShake = useCallback((enabled: boolean) => engineRef.current?.setShakeEnabled(enabled), []);
+  const handleLookSens = useCallback((v: number) => engineRef.current?.setLookSens(v), []);
 
   return (
     <div className="app-shell">
-      {showFallback ? (
-        <WebglFallback />
+      {webglError ? (
+        <div className="webgl-fallback">
+          <h1>THE HOLLOW WARD</h1>
+          <p>この環境では3D描画を初期化できませんでした。WebGL対応のブラウザでお試しください。</p>
+        </div>
       ) : (
-        <CosmosCanvas
-          progress={progress}
-          onSelectWorld={setSelected}
-          onNearestWorld={setNearest}
-          onCollectFragment={handleCollectFragment}
-          onRevealHiddenPlanet={handleHiddenReveal}
-          onReady={setInfo}
+        <GameCanvas
+          loop={loopRef.current}
+          onReady={handleReady}
           onError={handleError}
-          onCollectStardust={handleCollectStardust}
-          onFlyDistance={handleFlyDistance}
-          onTimeTrial={handleTimeTrial}
-          onEngine={(engine) => {
-            engineRef.current = engine;
-          }}
+          onFilesUpdate={handleFilesUpdate}
+          onFear={handleFear}
+          onTime={handleTime}
+          onJumpscare={handleJumpscare}
+          onHideChange={handleHideChange}
+          onFlashlightChange={handleFlashlightChange}
+          onModeChange={handleModeChange}
+          onRunEnd={handleRunEnd}
+          onEngine={handleEngine}
         />
       )}
 
-      {!showFallback && (
+      {!webglError && (
         <Hud
-          selected={selected}
-          nearest={nearest}
-          progress={progress}
+          mode={mode}
           info={info}
-          aliceLine={aliceLine}
-          trial={trial}
-          onLaunch={handleLaunch}
-          onFocus={handleFocus}
-          onReset={() => engineRef.current?.resetCamera()}
-          onTerminal={() => setTerminalOpen(true)}
-          onMissions={() => setAchievementsOpen(true)}
-          onStartTrial={handleStartTrial}
+          filesFound={filesFound}
+          filesTotal={filesTotal}
+          fear={fear}
+          elapsedMs={elapsedMs}
+          hiding={hiding}
+          flashlightOn={flashlightOn}
+          progress={progress}
+          lastRun={lastRun}
+          toastLine={toastLine}
+          jumpscareToken={jumpscareToken}
+          jumpscareKind={jumpscareKind}
+          isTouch={isTouch}
+          onStart={handleStart}
+          onPause={handlePause}
+          onResume={handleResume}
+          onHide={handleHide}
+          onFlashlight={handleFlashlight}
+          onMute={handleMute}
+          onBloom={handleBloom}
+          onShake={handleShake}
+          onLookSens={handleLookSens}
         />
       )}
-
-      <LaunchOverlay world={launching} onClose={handleLaunchClose} />
-      <AchievementsPanel open={achievementsOpen} progress={progress} onClose={() => setAchievementsOpen(false)} />
-      <TerminalPanel
-        open={terminalOpen}
-        progress={progress}
-        worlds={WORLDS}
-        onClose={() => setTerminalOpen(false)}
-        onCollect={handleCollectFragment}
-        onRevealHidden={triggerHiddenReveal}
-        onUnlockTrue={handleUnlockTrue}
-        onMissions={() => setAchievementsOpen(true)}
-        onStartTrial={handleStartTrial}
-        onAdvanceLoop={handleAdvanceLoop}
-      />
-      <div className="grain" aria-hidden="true" />
-      <div className="vignette" aria-hidden="true" />
     </div>
   );
 }

@@ -1,11 +1,12 @@
 export interface QualityTier {
   label: "HIGH" | "BALANCED" | "LOW";
   dpr: number;
-  starCount: number;
-  dustCount: number;
-  planetSegments: number;
+  shadowSize: number;
+  shadows: boolean;
   bloom: boolean;
   spark: boolean;
+  aa: boolean;
+  motes: number;
   reducedMotion: boolean;
   mobile: boolean;
 }
@@ -28,19 +29,17 @@ export function hasWebGL2(): boolean {
   }
 }
 
-const QUALITY_KEY = "alice_quality";
+const QUALITY_KEY = "hw_quality";
 export type QualityChoice = "auto" | "high" | "balanced" | "low";
 
 // SAFE forced-tier builder. Gates spark by REAL hasWebGL2() so forcing HIGH on a
 // WebGL1 GPU degrades instead of throwing (the HUD then honestly shows SPARK OFF).
-// MSAA is not a QualityTier field — the engine derives it from
-// renderer.capabilities.isWebGL2, so it self-gates already.
 function forcedTier(tier: "high" | "balanced" | "low", opts: { reducedMotion: boolean; mobile: boolean }): QualityTier {
   const webgl2 = hasWebGL2();
   const base = {
-    high: { label: "HIGH" as const, dpr: Math.min(2, window.devicePixelRatio || 1), starCount: 11000, dustCount: 7200, planetSegments: 144, bloom: true, spark: webgl2 && !opts.mobile },
-    balanced: { label: "BALANCED" as const, dpr: Math.min(1.35, window.devicePixelRatio || 1), starCount: 3600, dustCount: 1400, planetSegments: 64, bloom: false, spark: false },
-    low: { label: "LOW" as const, dpr: 1, starCount: 1100, dustCount: 280, planetSegments: 32, bloom: false, spark: false }
+    high: { label: "HIGH" as const, dpr: Math.min(2, window.devicePixelRatio || 1), shadowSize: 1024, shadows: true, bloom: true, spark: webgl2 && !opts.mobile, aa: true, motes: 900 },
+    balanced: { label: "BALANCED" as const, dpr: Math.min(1.35, window.devicePixelRatio || 1), shadowSize: 512, shadows: true, bloom: true, spark: false, aa: false, motes: 360 },
+    low: { label: "LOW" as const, dpr: 1, shadowSize: 0, shadows: false, bloom: false, spark: false, aa: false, motes: 0 }
   }[tier];
   return { ...base, ...opts };
 }
@@ -64,12 +63,8 @@ export function setQualityChoice(v: QualityChoice): void {
 }
 
 export function detectQuality(): QualityTier {
-  // Priority: ?q= URL param  >  localStorage(alice_quality)  >  auto-detect.
-
-  // 1) QA / power-user override: ?q=high|balanced|low. Wins over everything (and disables
-  //    reduced-motion so the headless preview — which forces prefers-reduced-motion => LOW — can exercise HIGH).
-  const forced =
-    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("q") : null;
+  // Priority: ?q= URL param  >  localStorage(hw_quality)  >  auto-detect.
+  const forced = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("q") : null;
   if (forced === "high" || forced === "balanced" || forced === "low") {
     return forcedTier(forced, { reducedMotion: false, mobile: false });
   }
@@ -77,59 +72,20 @@ export function detectQuality(): QualityTier {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const mobile = window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 780;
 
-  // 2) In-site persisted user choice = an explicit opt-in, so deliver the FULL experience:
-  //    disable reduced-motion (else cinematic FX like rays/flare/MSAA stay off and "HIGH"
-  //    looks half-applied). AUTO (step 3) still respects the OS reduced-motion setting.
-  //    Keep REAL `mobile` so phones still get mobile-appropriate optimizations + no heavy spark.
+  // In-site persisted user choice = an explicit opt-in, so deliver the FULL experience
+  // (ignore OS reduced-motion). AUTO (below) still respects the OS setting.
   const saved = getQualityChoice();
   if (saved !== "auto") {
     return forcedTier(saved, { reducedMotion: false, mobile });
   }
 
-  // 3) Auto-detect.
   const memory = typeof navigator !== "undefined" && "deviceMemory" in navigator
     ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 4)
     : 4;
   const low = reducedMotion || memory < 3 || mobile;
   const high = !low && !mobile && memory >= 4 && hasWebGL2();
 
-  if (high) {
-    return {
-      label: "HIGH",
-      dpr: Math.min(2, window.devicePixelRatio || 1),
-      starCount: 11000,
-      dustCount: 7200,
-      planetSegments: 144,
-      bloom: true,
-      spark: true,
-      reducedMotion,
-      mobile
-    };
-  }
-
-  if (!low) {
-    return {
-      label: "BALANCED",
-      dpr: Math.min(1.35, window.devicePixelRatio || 1),
-      starCount: 3600,
-      dustCount: 1400,
-      planetSegments: 64,
-      bloom: false,
-      spark: false,
-      reducedMotion,
-      mobile
-    };
-  }
-
-  return {
-    label: "LOW",
-    dpr: 1,
-    starCount: 1100,
-    dustCount: 280,
-    planetSegments: 32,
-    bloom: false,
-    spark: false,
-    reducedMotion,
-    mobile
-  };
+  if (high) return { label: "HIGH", dpr: Math.min(2, window.devicePixelRatio || 1), shadowSize: 1024, shadows: true, bloom: true, spark: true, aa: true, motes: 900, reducedMotion, mobile };
+  if (!low) return { label: "BALANCED", dpr: Math.min(1.35, window.devicePixelRatio || 1), shadowSize: 512, shadows: true, bloom: true, spark: false, aa: false, motes: 360, reducedMotion, mobile };
+  return { label: "LOW", dpr: 1, shadowSize: 0, shadows: false, bloom: false, spark: false, aa: false, motes: 0, reducedMotion, mobile };
 }
