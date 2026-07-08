@@ -1,12 +1,12 @@
 {
-  "name": "THE HOLLOW WARD",
-  "short_name": "Hollow Ward",
-  "description": "廃病棟を舞台にした一人称ホラー探索ゲーム。",
+  "name": "AlicE sYsTeM",
+  "short_name": "AlicE sYsTeM",
+  "description": "AIと共作したWebゲーム・シンセ・実験群のポートフォリオ。",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#030408",
-  "theme_color": "#030408",
+  "background_color": "#0a0a0c",
+  "theme_color": "#0a0a0c",
   "icons": [
     { "src": "assets/favicon-64.png", "sizes": "64x64", "type": "image/png" },
     { "src": "assets/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },

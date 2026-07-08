@@ -1,6 +1,6 @@
 {
-  "name": "the-hollow-ward",
-  "version": "1.0.0",
+  "name": "alice-system-portfolio",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@sparkjsdev/spark": "2.1.0",
+    "lenis": "^1.3.25",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "three": "0.184.0"
