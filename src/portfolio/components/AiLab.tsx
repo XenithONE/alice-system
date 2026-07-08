@@ -32,6 +32,7 @@ export function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
+      data-magnetic
       className={`copy-btn ${copied ? "done" : ""}`}
       onClick={() => {
         if (copyText(text)) {

@@ -5,9 +5,9 @@ export function SiteNav() {
         AlicE <b>sYsTeM</b>
       </a>
       <nav aria-label="sections">
-        <a href="#works">WORKS</a>
-        <a href="#ai-lab">AI LAB</a>
-        <a href="#prompts">PROMPTS</a>
+        <a href="#works" data-magnetic>WORKS</a>
+        <a href="#ai-lab" data-magnetic>AI LAB</a>
+        <a href="#prompts" data-magnetic>PROMPTS</a>
       </nav>
     </header>
   );

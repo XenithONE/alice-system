@@ -19,7 +19,7 @@ export function Works() {
             data-reveal
             style={{ "--reveal-i": i % 3 } as React.CSSProperties}
           >
-            <div className="work-cover">
+            <div className="work-cover" data-gl-cover>
               <img src={BASE + work.cover} alt={`${work.title} cover`} loading="lazy" />
             </div>
             <div className="work-meta">
