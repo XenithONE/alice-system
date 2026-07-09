@@ -112,8 +112,12 @@ export function AiLab() {
     <section id="ai-lab" className="section">
       <div className="section-head" data-reveal>
         <span className="kicker">02 — AI LAB</span>
-        <h2>Model Comparisons</h2>
-        <p className="section-lead">全ツール最上位プランだからできる、同一プロンプトでのAIモデル比較実験。</p>
+        <div className="section-head-copy">
+          <h2>Model Comparisons</h2>
+          <p className="section-lead">
+            全ツール最上位プランだからできる、同一プロンプトでのAIモデル比較実験。
+          </p>
+        </div>
       </div>
       {COMPARISONS.length === 0 ? (
         <LabEmptyState />

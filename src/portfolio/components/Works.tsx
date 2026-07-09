@@ -7,8 +7,12 @@ export function Works() {
     <section id="works" className="section">
       <div className="section-head" data-reveal>
         <span className="kicker">01 — WORKS</span>
-        <h2>Games &amp; Apps</h2>
-        <p className="section-lead">AIと共作したWebゲームとアプリ。すべてブラウザでそのまま遊べます。</p>
+        <div className="section-head-copy">
+          <h2>Games &amp; Apps</h2>
+          <p className="section-lead">
+            AIと共作したWebゲームとアプリ。すべてブラウザでそのまま遊べます。
+          </p>
+        </div>
       </div>
       <div className="works-grid">
         {WORKS.map((work, i) => (
@@ -30,13 +34,17 @@ export function Works() {
               <p className="work-desc">{work.description}</p>
               <div className="work-tags">
                 {work.tags.map((tag) => (
-                  <span key={tag} className="tag">{tag}</span>
+                  <span key={tag} className="tag">
+                    {tag}
+                  </span>
                 ))}
               </div>
               <div className="work-foot">
                 <div className="work-ai">
                   {work.aiTools.map((tool) => (
-                    <span key={tool} className="ai-badge">{tool}</span>
+                    <span key={tool} className="ai-badge">
+                      {tool}
+                    </span>
                   ))}
                 </div>
                 <span className="launch">LAUNCH ↗</span>

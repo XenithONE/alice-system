@@ -6,8 +6,12 @@ export function Prompts() {
     <section id="prompts" className="section">
       <div className="section-head" data-reveal>
         <span className="kicker">03 — PROMPTS</span>
-        <h2>Prompt Library</h2>
-        <p className="section-lead">制作で実際に使っているプロンプトの型。ワンクリックでコピーできます。</p>
+        <div className="section-head-copy">
+          <h2>Prompt Library</h2>
+          <p className="section-lead">
+            制作で実際に使っているプロンプトの型。ワンクリックでコピーできます。
+          </p>
+        </div>
       </div>
       <div className="prompt-grid">
         {PROMPTS.map((card, i) => (
