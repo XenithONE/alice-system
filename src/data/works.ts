@@ -32,6 +32,18 @@ export interface Work {
 
 export const WORKS: Work[] = [
   {
+    id: "signal-siege",
+    title: "SIGNAL SIEGE",
+    titleJa: "対戦タワーディフェンス",
+    description: "ルームコードで友達とP2P対戦するタワーディフェンス。タワーで守り、クリープを送って攻める。ソロ(vs AI)対応。",
+    href: "tower-defense.html",
+    cover: "assets/tower-defense-cover.jpg",
+    year: "2026",
+    kind: "game",
+    tags: ["Canvas 2D", "Versus TD", "P2P", "PeerJS"],
+    aiTools: ["Claude"]
+  },
+  {
     id: "hollow-ward",
     title: "THE HOLLOW WARD",
     titleJa: "廃病棟一人称ホラー",
