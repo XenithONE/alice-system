@@ -7,7 +7,7 @@ export interface HeroQuality {
   radialSegments: number;
   tubularSegments: number;
   maxFps: 60 | 30;
-  animate: boolean;
+  motionScale: 0 | 1;
   parallax: boolean;
 }
 
@@ -35,7 +35,10 @@ function build(tier: "high" | "balanced" | "low", reducedMotion: boolean, coarse
   return {
     tier,
     ...table,
-    animate: !reducedMotion,
+    // Reduced motion keeps the real 3D composition visible by default, but
+    // freezes ambient looping motion and uses the lower frame-rate budget.
+    maxFps: reducedMotion ? 30 : table.maxFps,
+    motionScale: reducedMotion ? 0 : 1,
     parallax: !reducedMotion && !coarse
   };
 }
@@ -52,8 +55,8 @@ export function detectHeroQuality(): HeroQuality {
 
   const preferred = document.documentElement.dataset.experienceQuality;
   if (preferred === "high" || preferred === "low") {
-    // A visible experience control selected this tier. It still respects the OS
-    // motion preference; `?q=` above remains the explicit QA escape hatch.
+    // A visible experience control selected this tier. The motion preference is
+    // still applied, but it never replaces the 3D composition with a poster.
     return build(preferred, reducedMotion, coarse);
   }
 

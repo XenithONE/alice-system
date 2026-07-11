@@ -5,7 +5,8 @@ import type { GlScene } from "./glScene";
 
 // Persistent full-viewport WebGL layer behind the whole page. The CSS poster and
 // plain <img> covers paint first; this boots at idle and takes over visuals.
-// Never boots under reduced-motion auto mode or without WebGL — the DOM site stands alone.
+// Reduced-motion keeps this layer visible with ambient motion frozen. Without
+// WebGL, the complete DOM composition and poster still stand alone.
 export function GlRoot() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [live, setLive] = useState(false);
@@ -45,7 +46,6 @@ export function GlRoot() {
         !hasWebGL()
       ) return;
       const quality = detectHeroQuality();
-      if (!quality.animate) return; // reduced-motion: DOM-only path
 
       booting = true;
       const version = ++bootVersion;

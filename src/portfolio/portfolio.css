@@ -2244,7 +2244,6 @@ pre {
     transform: none;
   }
 
-  .gl-canvas,
   .cursor-dot,
   .cursor-ring {
     display: none !important;
@@ -2260,14 +2259,13 @@ pre {
   }
 }
 
-/* Explicit QA/user quality overrides are intentional opt-ins, even when the
-   automation host advertises reduced motion. Auto keeps the accessible poster. */
-html.gl-on[data-experience-quality="high"] .hero-poster,
-html.gl-on[data-experience-quality="low"] .hero-poster {
+/* The real 3D composition is the default in every motion mode. Reduced-motion
+   freezes ambient movement in JS; only an explicit 3D OFF or WebGL failure
+   leaves the accessible poster visible. */
+html.gl-on:not(.experience-3d-off) .hero-poster {
   opacity: 0 !important;
 }
 
-html.gl-on[data-experience-quality="high"] .gl-canvas,
-html.gl-on[data-experience-quality="low"] .gl-canvas {
+html.gl-on:not(.experience-3d-off) .gl-canvas {
   display: block !important;
 }
