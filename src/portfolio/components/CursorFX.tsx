@@ -29,7 +29,7 @@ export function CursorFX() {
       x = e.clientX;
       y = e.clientY;
       const target = (e.target as HTMLElement | null)?.closest?.("a, button, [data-magnetic]") as HTMLElement | null;
-      scaleTarget = target ? 2.4 : 1;
+      scaleTarget = target ? 1.65 : 1;
       const nextMagnetic = (e.target as HTMLElement | null)?.closest?.("[data-magnetic]") as HTMLElement | null;
       if (magnetic && magnetic !== nextMagnetic) magnetic.style.transform = "";
       magnetic = nextMagnetic;

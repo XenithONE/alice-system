@@ -1,756 +1,529 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import type { HeroQuality } from "../quality";
-import { scrollState } from "../useLenis";
 
-// Immersive persistent WebGL layer (Lusion / Bruno-Simon inspired):
-//  - atmospheric void with scroll-linked glows + fluid pointer trail
-//  - sculptural SIGNAL core (iris rings, orbiting geometry, field particles)
-//  - floating crystal forms with depth parallax
-//  - work covers as DOM-synced planes with hover ripple + scroll curve
-// DOM remains fully usable if this layer never boots.
+// A transparent, persistent creation object shared by the light hero and dark
+// closing section. The DOM owns the page and backgrounds; WebGL only contributes
+// the chrome/glass sculpture and its signal orbit.
 
 export interface GlScene {
   dispose: () => void;
 }
 
-const ACCENT = new THREE.Color("#cdaa6d");
-const COOL = new THREE.Color("#6b7a9e");
-const FOV = 48;
-
-interface CoverPlane {
-  el: HTMLElement;
-  img: HTMLImageElement | null;
-  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
-  hover: number;
-  hoverTarget: number;
-  mouse: THREE.Vector2;
-  mouseTarget: THREE.Vector2;
-  ready: boolean;
-  enter: () => void;
-  leave: () => void;
-  move: (e: PointerEvent) => void;
+interface FadingMaterial {
+  material: THREE.Material & { opacity: number };
+  opacity: number;
 }
 
-interface Floater {
-  group: THREE.Group;
-  base: THREE.Vector3;
-  phase: number;
-  speed: number;
-  amp: number;
-  spin: THREE.Vector3;
+const FOV = 38;
+const CAMERA_Z = 10;
+const VERMILION = 0xff3b1f;
+const COBALT = 0x164cff;
+const ORBIT_RX = 2.34;
+const ORBIT_RY = 1.24;
+const CLOSING_SELECTORS = "[data-creation-close], #closing, .closing-section, footer";
+
+function clamp01(value: number): number {
+  return Math.min(1, Math.max(0, value));
+}
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const x = clamp01((value - edge0) / Math.max(0.0001, edge1 - edge0));
+  return x * x * (3 - 2 * x);
+}
+
+function createChromeMaterial(opacity = 1): THREE.MeshPhysicalMaterial {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xf3f5f7,
+    metalness: 1,
+    roughness: 0.105,
+    clearcoat: 1,
+    clearcoatRoughness: 0.045,
+    envMapIntensity: 2.3,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+}
+
+function createGlassMaterial(opacity = 0.68): THREE.MeshPhysicalMaterial {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xe7efff,
+    metalness: 0.03,
+    roughness: 0.045,
+    transmission: 0.94,
+    thickness: 0.72,
+    ior: 1.46,
+    clearcoat: 1,
+    clearcoatRoughness: 0.025,
+    envMapIntensity: 2.5,
+    transparent: true,
+    opacity,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+}
+
+function ellipseLine(
+  radiusX: number,
+  radiusY: number,
+  segments: number,
+  color: number,
+  opacity: number
+): THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial> {
+  const curve = new THREE.EllipseCurve(0, 0, radiusX, radiusY, 0, Math.PI * 2, false, 0);
+  const points = curve.getPoints(segments).map((point) => new THREE.Vector3(point.x, point.y, 0));
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    depthWrite: false
+  });
+  return new THREE.LineLoop(geometry, material);
 }
 
 export function createGlScene(canvas: HTMLCanvasElement, quality: HeroQuality): GlScene {
-  const coarse = window.matchMedia("(pointer: coarse)").matches;
-
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true,
     alpha: true,
-    powerPreference: "high-performance"
+    antialias: quality.tier !== "low",
+    powerPreference: "high-performance",
+    premultipliedAlpha: true
   });
+
+  try {
+    return initialiseScene(canvas, renderer, quality);
+  } catch (error) {
+    renderer.dispose();
+    throw error;
+  }
+}
+
+function initialiseScene(
+  canvas: HTMLCanvasElement,
+  renderer: THREE.WebGLRenderer,
+  quality: HeroQuality
+): GlScene {
   renderer.setPixelRatio(quality.dpr);
+  renderer.setClearColor(0x000000, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.15;
-  renderer.autoClear = false;
+  renderer.toneMappingExposure = 1.05;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x0a0a0c, 0.00028);
-  const camera = new THREE.PerspectiveCamera(FOV, 1, 10, 8000);
+  const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 60);
+  camera.position.set(0, 0, CAMERA_Z);
 
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const roomEnv = new RoomEnvironment();
-  const envRT = pmrem.fromScene(roomEnv, 0.04);
-  scene.environment = envRT.texture;
-  roomEnv.dispose();
+  const room = new RoomEnvironment();
+  const environment = pmrem.fromScene(room, 0.03);
+  scene.environment = environment.texture;
+  room.dispose();
   pmrem.dispose();
 
-  // ---------- fluid trail (ping-pong) ----------
-  const trailRes = quality.tier === "high" ? 448 : 288;
-  const rtOptions: THREE.RenderTargetOptions = {
-    minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter,
-    depthBuffer: false,
-    stencilBuffer: false
-  };
-  let trailA = new THREE.WebGLRenderTarget(trailRes, trailRes, rtOptions);
-  let trailB = new THREE.WebGLRenderTarget(trailRes, trailRes, rtOptions);
-  const orthoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const trailScene = new THREE.Scene();
-  const trailMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uPrev: { value: trailA.texture },
-      uPointer: { value: new THREE.Vector2(-10, -10) },
-      uVel: { value: new THREE.Vector2(0, 0) },
-      uStrength: { value: 0 },
-      uDecay: { value: 0.96 }
-    },
-    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-    fragmentShader: `
-      uniform sampler2D uPrev; uniform vec2 uPointer; uniform vec2 uVel; uniform float uStrength; uniform float uDecay;
-      varying vec2 vUv;
-      void main(){
-        vec2 smear = uVel * 0.004;
-        float prev = texture2D(uPrev, vUv - smear).r * uDecay;
-        float d = distance(vUv, uPointer);
-        float splat = exp(-d * d * 320.0) * uStrength;
-        float ring = exp(-abs(d - 0.04) * abs(d - 0.04) * 1800.0) * uStrength * 0.35;
-        gl_FragColor = vec4(vec3(clamp(prev + splat + ring - 0.002, 0.0, 1.0)), 1.0);
-      }`
-  });
-  trailScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), trailMat));
+  const root = new THREE.Group();
+  root.name = "creation-core";
+  scene.add(root);
 
-  // ---------- atmospheric background ----------
-  const bgScene = new THREE.Scene();
-  const bgMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uTrail: { value: trailB.texture },
-      uTime: { value: 0 },
-      uScroll: { value: 0 },
-      uAspect: { value: 1 },
-      uPointer: { value: new THREE.Vector2(0.5, 0.5) }
-    },
-    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }`,
-    fragmentShader: `
-      uniform sampler2D uTrail; uniform float uTime; uniform float uScroll; uniform float uAspect;
-      uniform vec2 uPointer;
-      varying vec2 vUv;
+  const intact = new THREE.Group();
+  intact.name = "creation-core-intact";
+  root.add(intact);
 
-      float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-      float noise(vec2 p){
-        vec2 i = floor(p); vec2 f = fract(p);
-        float a = hash(i), b = hash(i + vec2(1.0, 0.0));
-        float c = hash(i + vec2(0.0, 1.0)), d = hash(i + vec2(1.0, 1.0));
-        vec2 u = f * f * (3.0 - 2.0 * f);
-        return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
-      }
-      float fbm(vec2 p){
-        float v = 0.0, a = 0.5;
-        for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.05; a *= 0.5; }
-        return v;
-      }
+  const intactChrome = createChromeMaterial();
+  const intactGlass = createGlassMaterial(0.7);
+  const fragmentChrome = createChromeMaterial(0);
+  const fragmentGlass = createGlassMaterial(0);
 
-      void main(){
-        vec3 bg = vec3(0.035, 0.035, 0.045);
-        vec2 uv = vUv;
-        vec2 p = vec2(uv.x * uAspect, uv.y);
-        float t = uTime * 0.08;
-
-        // layered drifting nebulae
-        float n1 = fbm(p * 1.8 + vec2(t * 0.4, uScroll * 1.2));
-        float n2 = fbm(p * 3.2 - vec2(t * 0.25, -uScroll * 0.8) + 8.0);
-        float n3 = fbm(p * 0.9 + vec2(-t * 0.15, uScroll * 0.5));
-
-        vec2 c1 = vec2(0.72 + sin(t * 0.5) * 0.04, 0.48 + uScroll * 0.18);
-        vec2 c2 = vec2(0.22, 0.78 - uScroll * 0.25);
-        vec2 c3 = vec2(0.55, 0.15 + uScroll * 0.1);
-        float g1 = exp(-distance(p, vec2(c1.x * uAspect, c1.y)) * 1.8);
-        float g2 = exp(-distance(p, vec2(c2.x * uAspect, c2.y)) * 2.4);
-        float g3 = exp(-distance(p, vec2(c3.x * uAspect, c3.y)) * 3.0);
-
-        vec3 accent = vec3(0.804, 0.667, 0.427);
-        vec3 cool = vec3(0.38, 0.44, 0.62);
-        vec3 deep = vec3(0.12, 0.14, 0.28);
-
-        vec3 col = bg;
-        col += deep * n3 * 0.35;
-        col += accent * g1 * (0.07 + n1 * 0.04);
-        col += cool * g2 * (0.06 + n2 * 0.05);
-        col += mix(accent, cool, 0.5) * g3 * 0.04;
-        col += accent * n1 * n2 * 0.03;
-
-        // faint star field
-        float stars = step(0.997, hash(floor(uv * vec2(900.0, 700.0) + uTime * 0.01)));
-        col += vec3(0.85, 0.88, 1.0) * stars * 0.35;
-
-        // fluid trail
-        float tr = texture2D(uTrail, uv).r;
-        float e = 0.01;
-        vec2 grad = vec2(
-          texture2D(uTrail, uv + vec2(e, 0.0)).r - texture2D(uTrail, uv - vec2(e, 0.0)).r,
-          texture2D(uTrail, uv + vec2(0.0, e)).r - texture2D(uTrail, uv - vec2(0.0, e)).r
-        );
-        col += accent * tr * 0.22;
-        col += cool * abs(grad.x + grad.y) * 0.35;
-        col += accent * exp(-distance(uv, uPointer) * 8.0) * 0.04;
-
-        // vignette + film grain
-        float vig = smoothstep(1.35, 0.3, distance(uv, vec2(0.5)));
-        col *= mix(0.72, 1.0, vig);
-        col += (hash(uv * 1100.0 + uTime) - 0.5) * 0.018;
-
-        gl_FragColor = vec4(col, 1.0);
-      }`
-  });
-  bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat));
-
-  // ---------- SIGNAL core (hero sculpture) ----------
-  const core = new THREE.Group();
-  scene.add(core);
-  const coreMats: THREE.Material[] = [];
-
-  const nucleusMat = new THREE.MeshStandardMaterial({
-    color: 0x0e0e12,
-    metalness: 1,
-    roughness: 0.12,
-    envMapIntensity: 1.4,
-    transparent: true
-  });
-  const nucleus = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 2), nucleusMat);
-  core.add(nucleus);
-  coreMats.push(nucleusMat);
-
-  const shellMat = new THREE.MeshStandardMaterial({
-    color: 0x1a1a22,
-    metalness: 0.95,
-    roughness: 0.25,
-    transparent: true,
-    opacity: 0.35,
-    side: THREE.DoubleSide,
-    wireframe: true
-  });
-  const shell = new THREE.Mesh(new THREE.IcosahedronGeometry(1.35, 1), shellMat);
-  core.add(shell);
-  coreMats.push(shellMat);
-
-  const bladeCount = quality.blades;
-  const bladeMat = new THREE.MeshStandardMaterial({
-    color: 0x9a9aa8,
-    metalness: 0.95,
-    roughness: 0.28,
-    transparent: true,
-    envMapIntensity: 1.2
-  });
-  const blades = new THREE.InstancedMesh(new THREE.BoxGeometry(0.01, 0.42, 0.01), bladeMat, bladeCount);
-  const dummy = new THREE.Object3D();
-  const bladeColor = new THREE.Color();
-  for (let i = 0; i < bladeCount; i += 1) {
-    placeBlade(dummy, i, bladeCount, 0);
-    blades.setMatrixAt(i, dummy.matrix);
-    if (i % 10 === 0) bladeColor.copy(ACCENT);
-    else if (i % 7 === 0) bladeColor.copy(COOL);
-    else bladeColor.setRGB(0.58, 0.58, 0.64);
-    blades.setColorAt(i, bladeColor);
-  }
-  blades.instanceMatrix.needsUpdate = true;
-  if (blades.instanceColor) blades.instanceColor.needsUpdate = true;
-  const iris = new THREE.Group();
-  iris.add(blades);
-  core.add(iris);
-  coreMats.push(bladeMat);
-
-  const ringSpecs: Array<{ r: number; tube: number; color: number; emissive: number; ei: number }> = [
-    { r: 1.75, tube: 0.006, color: 0x3a3a48, emissive: 0x000000, ei: 0 },
-    { r: 2.15, tube: 0.004, color: 0x121214, emissive: 0xcdaa6d, ei: 0.55 },
-    { r: 2.55, tube: 0.003, color: 0x2a2a38, emissive: 0x6b7a9e, ei: 0.25 }
+  const fading: FadingMaterial[] = [
+    { material: intactChrome, opacity: 1 },
+    { material: intactGlass, opacity: 0.7 },
+    { material: fragmentChrome, opacity: 0.97 },
+    { material: fragmentGlass, opacity: 0.62 }
   ];
-  const rings: THREE.Mesh[] = [];
-  for (const spec of ringSpecs) {
-    const mat = new THREE.MeshStandardMaterial({
-      color: spec.color,
-      emissive: new THREE.Color(spec.emissive),
-      emissiveIntensity: spec.ei,
-      metalness: 0.85,
-      roughness: 0.35,
-      transparent: true
-    });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(spec.r, spec.tube, 10, 128), mat);
-    core.add(ring);
-    rings.push(ring);
-    coreMats.push(mat);
-  }
-  rings[0].rotation.x = Math.PI * 0.5;
-  rings[1].rotation.x = Math.PI * 0.42;
-  rings[1].rotation.y = 0.35;
-  rings[2].rotation.x = Math.PI * 0.58;
-  rings[2].rotation.z = 0.4;
 
-  // orbiting mini crystals around core
-  const orbitGroup = new THREE.Group();
-  core.add(orbitGroup);
-  const crystalMat = new THREE.MeshStandardMaterial({
-    color: 0xcdaa6d,
-    metalness: 1,
-    roughness: 0.15,
-    emissive: ACCENT,
-    emissiveIntensity: 0.15,
-    transparent: true,
-    opacity: 0.85
-  });
-  coreMats.push(crystalMat);
-  const orbitCount = quality.tier === "high" ? 7 : 5;
-  for (let i = 0; i < orbitCount; i += 1) {
-    const geo =
-      i % 2 === 0
-        ? new THREE.OctahedronGeometry(0.08 + (i % 3) * 0.02, 0)
-        : new THREE.TetrahedronGeometry(0.09 + (i % 2) * 0.02, 0);
-    const m = new THREE.Mesh(geo, crystalMat);
-    const a = (i / orbitCount) * Math.PI * 2;
-    m.position.set(Math.cos(a) * 2.9, Math.sin(a * 1.7) * 0.55, Math.sin(a) * 2.9);
-    m.userData.angle = a;
-    m.userData.radius = 2.7 + (i % 3) * 0.25;
-    m.userData.yAmp = 0.35 + (i % 4) * 0.1;
-    orbitGroup.add(m);
-  }
-
-  // field particles
-  const particleCount = quality.particles;
-  let particleSystem: THREE.Points | null = null;
-  if (particleCount > 0) {
-    const positions = new Float32Array(particleCount * 3);
-    const sizes = new Float32Array(particleCount);
-    for (let i = 0; i < particleCount; i += 1) {
-      const r = 3.5 + Math.random() * 8;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.55;
-      positions[i * 3 + 2] = r * Math.cos(phi);
-      sizes[i] = 0.5 + Math.random();
-    }
-    const pGeo = new THREE.BufferGeometry();
-    pGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    pGeo.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
-    const pMat = new THREE.PointsMaterial({
-      color: 0xcdaa6d,
-      size: 2.2,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: 0.55,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    });
-    particleSystem = new THREE.Points(pGeo, pMat);
-    core.add(particleSystem);
-    coreMats.push(pMat);
-  }
-
-  // ---------- floating world geometry (parallax depth) ----------
-  const floaters: Floater[] = [];
-  const floaterMat = new THREE.MeshStandardMaterial({
-    color: 0x1c1c24,
-    metalness: 0.9,
-    roughness: 0.35,
-    transparent: true,
-    opacity: 0.55,
-    wireframe: false,
-    envMapIntensity: 0.9
-  });
-  const floaterWireMat = new THREE.MeshBasicMaterial({
-    color: 0xcdaa6d,
-    wireframe: true,
-    transparent: true,
-    opacity: 0.18
-  });
-  const floaterDefs =
-    quality.tier === "high"
-      ? [
-          { geo: new THREE.IcosahedronGeometry(90, 0), x: -420, y: 180, z: -520, s: 1 },
-          { geo: new THREE.OctahedronGeometry(70, 0), x: 480, y: -120, z: -680, s: 1.2 },
-          { geo: new THREE.TetrahedronGeometry(55, 0), x: -280, y: -260, z: -400, s: 0.9 },
-          { geo: new THREE.DodecahedronGeometry(48, 0), x: 320, y: 280, z: -900, s: 1.1 },
-          { geo: new THREE.IcosahedronGeometry(40, 1), x: 80, y: -340, z: -1100, s: 1.4 },
-          { geo: new THREE.TorusKnotGeometry(35, 10, 80, 8), x: -500, y: 40, z: -780, s: 0.8 }
-        ]
-      : [
-          { geo: new THREE.IcosahedronGeometry(90, 0), x: -400, y: 160, z: -500, s: 1 },
-          { geo: new THREE.OctahedronGeometry(70, 0), x: 450, y: -100, z: -650, s: 1.2 },
-          { geo: new THREE.TetrahedronGeometry(55, 0), x: -250, y: -220, z: -420, s: 0.9 },
-          { geo: new THREE.DodecahedronGeometry(48, 0), x: 300, y: 240, z: -850, s: 1.1 }
-        ];
-
-  for (let i = 0; i < floaterDefs.length; i += 1) {
-    const def = floaterDefs[i];
-    const group = new THREE.Group();
-    const solid = new THREE.Mesh(def.geo, floaterMat);
-    const wire = new THREE.Mesh(def.geo.clone(), floaterWireMat);
-    wire.scale.setScalar(1.02);
-    group.add(solid);
-    group.add(wire);
-    group.scale.setScalar(def.s);
-    group.position.set(def.x, def.y, def.z);
-    scene.add(group);
-    floaters.push({
-      group,
-      base: new THREE.Vector3(def.x, def.y, def.z),
-      phase: i * 1.7,
-      speed: 0.15 + (i % 4) * 0.05,
-      amp: 28 + (i % 3) * 12,
-      spin: new THREE.Vector3(0.08 + (i % 3) * 0.02, 0.12 + (i % 2) * 0.04, 0.05)
-    });
-  }
-
-  // lighting
-  const key = new THREE.DirectionalLight(0xfff0d8, 0.65);
-  key.position.set(-700, 500, 900);
-  scene.add(key);
-  const fill = new THREE.DirectionalLight(0x8899cc, 0.28);
-  fill.position.set(600, -200, 400);
-  scene.add(fill);
-  const rim = new THREE.PointLight(0xcdaa6d, 1.2, 2000, 2);
-  rim.position.set(200, 100, 200);
-  scene.add(rim);
-  const amb = new THREE.AmbientLight(0x404050, 0.35);
-  scene.add(amb);
-
-  // ---------- work cover planes ----------
-  const covers: CoverPlane[] = [];
-  const coverEnabled = !coarse;
-  const loader = new THREE.TextureLoader();
-
-  const coverVert = `
-    uniform float uVelocity;
-    varying vec2 vUv;
-    varying vec2 vScreenUv;
-    void main(){
-      vUv = uv;
-      vec3 pos = position;
-      pos.z += sin(uv.y * 3.14159) * uVelocity * -32.0;
-      pos.z += sin(uv.x * 6.28318 + uv.y * 3.14159) * abs(uVelocity) * 4.0;
-      vec4 clip = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-      vScreenUv = clip.xy / clip.w * 0.5 + 0.5;
-      gl_Position = clip;
-    }`;
-  const coverFrag = `
-    uniform sampler2D uMap; uniform sampler2D uTrail;
-    uniform float uHover; uniform float uTime; uniform float uTexAspect; uniform float uPlaneAspect;
-    uniform vec2 uMouse;
-    varying vec2 vUv; varying vec2 vScreenUv;
-    void main(){
-      float pr = uPlaneAspect; float tr = uTexAspect;
-      vec2 crop = (pr / tr < 1.0) ? vec2(pr / tr, 1.0) : vec2(1.0, tr / pr);
-      vec2 uv = (vUv - 0.5);
-      uv *= (1.0 - 0.08 * uHover);
-      vec2 fromMouse = vUv - uMouse;
-      float d = length(fromMouse);
-      uv += normalize(fromMouse + 1e-4) * sin(d * 18.0 - uTime * 4.5) * 0.01 * uHover;
-      float e = 0.012;
-      vec2 grad = vec2(
-        texture2D(uTrail, vScreenUv + vec2(e, 0.0)).r - texture2D(uTrail, vScreenUv - vec2(e, 0.0)).r,
-        texture2D(uTrail, vScreenUv + vec2(0.0, e)).r - texture2D(uTrail, vScreenUv - vec2(0.0, e)).r
-      );
-      uv += grad * 0.04;
-      uv = uv * crop + 0.5;
-      float shift = 0.008 * uHover;
-      vec3 col;
-      col.r = texture2D(uMap, uv + vec2(shift, 0.0)).r;
-      col.g = texture2D(uMap, uv).g;
-      col.b = texture2D(uMap, uv - vec2(shift, 0.0)).b;
-      float gray = dot(col, vec3(0.299, 0.587, 0.114));
-      col = mix(vec3(gray) * 0.92, col, 0.78 + 0.22 * uHover);
-      col *= 0.92 + 0.12 * uHover;
-      // subtle edge vignette on plane
-      float edge = smoothstep(0.0, 0.08, vUv.x) * smoothstep(0.0, 0.08, vUv.y)
-                 * smoothstep(0.0, 0.08, 1.0 - vUv.x) * smoothstep(0.0, 0.08, 1.0 - vUv.y);
-      col *= mix(0.88, 1.0, edge);
-      gl_FragColor = vec4(col, 1.0);
-    }`;
-
-  const setupCovers = (): void => {
-    if (!coverEnabled) return;
-    const elements = Array.from(document.querySelectorAll<HTMLElement>("[data-gl-cover]"));
-    for (const el of elements) {
-      const img = el.querySelector("img");
-      const src = img?.currentSrc || img?.src;
-      if (!src) continue;
-      const material = new THREE.ShaderMaterial({
-        uniforms: {
-          uMap: { value: null },
-          uTrail: { value: trailB.texture },
-          uHover: { value: 0 },
-          uTime: { value: 0 },
-          uVelocity: { value: 0 },
-          uTexAspect: { value: 1.5 },
-          uPlaneAspect: { value: 1.5 },
-          uMouse: { value: new THREE.Vector2(0.5, 0.5) }
-        },
-        vertexShader: coverVert,
-        fragmentShader: coverFrag
-      });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 32, 16), material);
-      mesh.visible = false;
-      scene.add(mesh);
-
-      const cover: CoverPlane = {
-        el,
-        img: img ?? null,
-        mesh,
-        hover: 0,
-        hoverTarget: 0,
-        mouse: new THREE.Vector2(0.5, 0.5),
-        mouseTarget: new THREE.Vector2(0.5, 0.5),
-        ready: false,
-        enter: () => {
-          cover.hoverTarget = 1;
-        },
-        leave: () => {
-          cover.hoverTarget = 0;
-        },
-        move: (e: PointerEvent) => {
-          const rect = el.getBoundingClientRect();
-          cover.mouseTarget.set(
-            (e.clientX - rect.left) / Math.max(1, rect.width),
-            1 - (e.clientY - rect.top) / Math.max(1, rect.height)
-          );
-        }
-      };
-      el.addEventListener("pointerenter", cover.enter);
-      el.addEventListener("pointerleave", cover.leave);
-      el.addEventListener("pointermove", cover.move);
-
-      loader.load(
-        src,
-        (texture) => {
-          if (disposed) {
-            texture.dispose();
-            return;
-          }
-          texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-          material.uniforms.uMap.value = texture;
-          material.uniforms.uTexAspect.value = texture.image.width / Math.max(1, texture.image.height);
-          cover.ready = true;
-          mesh.visible = true;
-          el.classList.add("gl-ready");
-        },
-        undefined,
-        () => undefined
-      );
-      covers.push(cover);
-    }
-  };
-
-  // ---------- pointer / scroll ----------
-  const pointer = { x: -10, y: -10, lastX: -10, lastY: -10, strength: 0, vx: 0, vy: 0 };
-  const onPointerMove = (e: PointerEvent): void => {
-    const w = document.documentElement.clientWidth || 1;
-    const h = document.documentElement.clientHeight || 1;
-    const nx = e.clientX / w;
-    const ny = 1 - e.clientY / h;
-    if (pointer.x > -5) {
-      pointer.vx = (nx - pointer.x) * 60;
-      pointer.vy = (ny - pointer.y) * 60;
-      const speed = Math.hypot(nx - pointer.x, ny - pointer.y);
-      pointer.strength = Math.min(1, pointer.strength + speed * 16);
-    }
-    pointer.x = nx;
-    pointer.y = ny;
-  };
-  window.addEventListener("pointermove", onPointerMove, { passive: true });
-
-  let smoothVel = 0;
-  let lastScroll = scrollState.y || window.scrollY || 0;
-
-  const resize = (): void => {
-    const w = canvas.clientWidth || 1;
-    const h = canvas.clientHeight || 1;
-    camera.aspect = w / h;
-    camera.position.z = h / 2 / Math.tan(THREE.MathUtils.degToRad(FOV / 2));
-    camera.updateProjectionMatrix();
-    renderer.setSize(w, h, false);
-    bgMat.uniforms.uAspect.value = w / h;
-  };
-  resize();
-  window.addEventListener("resize", resize);
-
-  setupCovers();
-
-  // ---------- frame loop ----------
-  let rafId = 0;
-  let disposed = false;
-  const clock = new THREE.Clock();
-  const pointerLerped = new THREE.Vector2(0.5, 0.5);
-  const pointerScratch = new THREE.Vector2(0.5, 0.5);
-
-  const renderFrame = (): void => {
-    const dt = Math.min(0.1, clock.getDelta());
-    const t = clock.elapsedTime;
-    const k = dt * 60;
-    const w = canvas.clientWidth || 1;
-    const h = canvas.clientHeight || 1;
-    const scroll = scrollState.y || window.scrollY || 0;
-
-    smoothVel += (scroll - lastScroll - smoothVel) * 0.12;
-    lastScroll = scroll;
-
-    // trail
-    trailMat.uniforms.uPrev.value = trailA.texture;
-    trailMat.uniforms.uPointer.value.set(pointer.x, pointer.y);
-    trailMat.uniforms.uVel.value.set(pointer.vx, pointer.vy);
-    trailMat.uniforms.uStrength.value = pointer.strength * 0.55;
-    trailMat.uniforms.uDecay.value = Math.pow(0.958, k);
-    renderer.setRenderTarget(trailB);
-    renderer.clear();
-    renderer.render(trailScene, orthoCam);
-    renderer.setRenderTarget(null);
-    const swap = trailA;
-    trailA = trailB;
-    trailB = swap;
-    pointer.strength *= Math.pow(0.58, k);
-    pointer.vx *= Math.pow(0.8, k);
-    pointer.vy *= Math.pow(0.8, k);
-    const trailTex = trailA.texture;
-    bgMat.uniforms.uTrail.value = trailTex;
-
-    bgMat.uniforms.uTime.value = t;
-    const docH = Math.max(1, document.documentElement.scrollHeight - h);
-    const scrollN = Math.min(1, scroll / docH);
-    bgMat.uniforms.uScroll.value = scrollN;
-    bgMat.uniforms.uPointer.value.set(
-      pointer.x < -5 ? 0.5 : pointer.x,
-      pointer.y < -5 ? 0.5 : pointer.y
+  const torus = (radius: number, tube: number): THREE.TorusGeometry =>
+    new THREE.TorusGeometry(
+      radius,
+      tube,
+      quality.radialSegments,
+      quality.tubularSegments
     );
 
-    // core scrub through hero
-    const heroP = Math.min(1, scroll / (h * 0.95));
-    const coreScale = Math.min(w, h) * 0.28 * (1 - heroP * 0.4);
-    core.scale.setScalar(Math.max(1, coreScale));
-    const baseX = w < 780 ? 0 : w * 0.24;
-    core.position.set(baseX * (1 - heroP * 0.45), h * 0.04 + heroP * h * 0.9, -80);
-    const coreOpacity = Math.max(0, 1 - heroP * 1.1);
-    for (const m of coreMats) {
-      if (m === shellMat) (m as THREE.MeshStandardMaterial).opacity = 0.35 * coreOpacity;
-      else if (m === crystalMat) (m as THREE.MeshStandardMaterial).opacity = 0.85 * coreOpacity;
-      else if (m instanceof THREE.PointsMaterial) m.opacity = 0.55 * coreOpacity;
-      else (m as THREE.MeshStandardMaterial).opacity = coreOpacity;
+  const chromeLoopA = new THREE.Mesh(torus(1.5, 0.145), intactChrome);
+  chromeLoopA.scale.set(1.14, 0.76, 1);
+  chromeLoopA.rotation.set(0.73, 0.56, -0.28);
+  intact.add(chromeLoopA);
+
+  const chromeLoopB = new THREE.Mesh(torus(1.35, 0.105), intactChrome);
+  chromeLoopB.scale.set(1.02, 0.82, 1);
+  chromeLoopB.rotation.set(-0.63, 0.38, 0.66);
+  intact.add(chromeLoopB);
+
+  const glassLoop = new THREE.Mesh(torus(1.24, 0.185), intactGlass);
+  glassLoop.scale.set(1.17, 0.79, 1);
+  glassLoop.rotation.set(0.26, -0.78, 0.23);
+  intact.add(glassLoop);
+
+  const loopBaseRotations = [
+    chromeLoopA.rotation.clone(),
+    chromeLoopB.rotation.clone(),
+    glassLoop.rotation.clone()
+  ];
+
+  // Four related pieces replace the intact loops as the closing section arrives.
+  // Each piece combines a chrome outer arc with a slightly offset glass inner arc.
+  const fragments = new THREE.Group();
+  fragments.name = "creation-core-fragments";
+  root.add(fragments);
+
+  const fragmentGroups: THREE.Group[] = [];
+  const fragmentTargets = Array.from({ length: 4 }, () => new THREE.Vector3());
+  const fragmentOpenRotations = [
+    new THREE.Euler(0.12, -0.34, -0.3),
+    new THREE.Euler(-0.18, 0.32, 0.38),
+    new THREE.Euler(0.22, 0.26, -0.42),
+    new THREE.Euler(-0.12, -0.28, 0.34)
+  ];
+  const arcSegments = Math.max(28, Math.round(quality.tubularSegments * 0.56));
+
+  for (let i = 0; i < 4; i += 1) {
+    const fragment = new THREE.Group();
+    const start = i * Math.PI * 0.5 + 0.14;
+
+    const chromeArc = new THREE.Mesh(
+      new THREE.TorusGeometry(1.34, 0.15, quality.radialSegments, arcSegments, Math.PI * 0.58),
+      fragmentChrome
+    );
+    chromeArc.scale.set(1.06, 0.77, 1);
+    chromeArc.rotation.z = start;
+    fragment.add(chromeArc);
+
+    const glassArc = new THREE.Mesh(
+      new THREE.TorusGeometry(
+        1.02,
+        0.125,
+        quality.radialSegments,
+        Math.max(24, arcSegments - 8),
+        Math.PI * 0.47
+      ),
+      fragmentGlass
+    );
+    glassArc.scale.set(1.12, 0.8, 1);
+    glassArc.rotation.set(i % 2 === 0 ? 0.2 : -0.2, i % 2 === 0 ? -0.16 : 0.16, start + 0.12);
+    fragment.add(glassArc);
+
+    fragment.scale.setScalar(0.72);
+    fragments.add(fragment);
+    fragmentGroups.push(fragment);
+  }
+
+  // Two restrained signal paths tie the intact and open states together.
+  const orbit = new THREE.Group();
+  orbit.name = "creation-core-orbit";
+  root.add(orbit);
+  const orbitMain = ellipseLine(
+    ORBIT_RX,
+    ORBIT_RY,
+    quality.tier === "low" ? 72 : 128,
+    0x65718b,
+    0.23
+  );
+  orbit.add(orbitMain);
+  const orbitSecondary = ellipseLine(
+    ORBIT_RX * 1.1,
+    ORBIT_RY * 0.77,
+    quality.tier === "low" ? 64 : 112,
+    COBALT,
+    0.16
+  );
+  orbitSecondary.rotation.z = 0.26;
+  orbitSecondary.position.z = -0.25;
+  orbit.add(orbitSecondary);
+
+  const bead = new THREE.Group();
+  root.add(bead);
+  const beadMaterial = new THREE.MeshPhysicalMaterial({
+    color: VERMILION,
+    emissive: VERMILION,
+    emissiveIntensity: 0.72,
+    metalness: 0.08,
+    roughness: 0.16,
+    clearcoat: 1,
+    clearcoatRoughness: 0.04
+  });
+  bead.add(
+    new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, quality.tier === "low" ? 12 : 20, quality.tier === "low" ? 8 : 14),
+      beadMaterial
+    )
+  );
+  const beadGlowMaterial = new THREE.MeshBasicMaterial({
+    color: VERMILION,
+    transparent: true,
+    opacity: 0.14,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  const beadGlow = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 8), beadGlowMaterial);
+  bead.add(beadGlow);
+
+  const cobaltMaterial = new THREE.MeshStandardMaterial({
+    color: COBALT,
+    emissive: COBALT,
+    emissiveIntensity: 2.2,
+    roughness: 0.22,
+    metalness: 0.2
+  });
+  const cobaltPoints: THREE.Mesh[] = [];
+  const cobaltGeometry = new THREE.SphereGeometry(0.045, quality.tier === "low" ? 8 : 12, 8);
+  for (let i = 0; i < 3; i += 1) {
+    const point = new THREE.Mesh(cobaltGeometry, cobaltMaterial);
+    root.add(point);
+    cobaltPoints.push(point);
+  }
+
+  const key = new THREE.DirectionalLight(0xffffff, 3.4);
+  key.position.set(-4, 5, 7);
+  scene.add(key);
+  const coolRim = new THREE.PointLight(COBALT, 24, 14, 2);
+  coolRim.position.set(-3.5, -1.5, 3.6);
+  scene.add(coolRim);
+  const warmRim = new THREE.PointLight(VERMILION, 18, 11, 2);
+  root.add(warmRim);
+  const fill = new THREE.HemisphereLight(0xffffff, 0x65718b, 1.15);
+  scene.add(fill);
+
+  let disposed = false;
+  let rafId = 0;
+  let running = false;
+  let lastRenderedAt = 0;
+  let morph = 0;
+  let morphStart = 0;
+  let morphEnd = 1;
+  let worldWidth = 1;
+  let worldHeight = 1;
+  let heroX = 0;
+  let heroY = 0;
+  let heroScale = 1;
+  let closingTarget: Element | null = null;
+  const pointer = new THREE.Vector2();
+  const pointerTarget = new THREE.Vector2();
+
+  const resolveMorphRange = (): void => {
+    const scrollMax = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+    closingTarget = document.querySelector(CLOSING_SELECTORS);
+    if (closingTarget) {
+      const rect = closingTarget.getBoundingClientRect();
+      const top = rect.top + window.scrollY;
+      morphStart = Math.max(0, Math.min(scrollMax, top - window.innerHeight * 0.86));
+      morphEnd = Math.max(morphStart + 1, Math.min(scrollMax, top - window.innerHeight * 0.16));
+      return;
     }
-    core.visible = coreOpacity > 0.01;
+    morphStart = scrollMax * 0.68;
+    morphEnd = Math.max(morphStart + 1, scrollMax * 0.92);
+  };
 
-    if (quality.animate && core.visible) {
-      iris.rotation.z = t * 0.035;
-      nucleus.rotation.y = t * 0.12;
-      nucleus.rotation.x = t * 0.06;
-      shell.rotation.y = -t * 0.08;
-      shell.rotation.z = t * 0.04;
-      rings[0].rotation.z = t * 0.1;
-      rings[1].rotation.z = -t * 0.07;
-      rings[2].rotation.y = t * 0.05;
+  const resize = (): void => {
+    if (disposed) return;
+    const width = Math.max(1, canvas.clientWidth || window.innerWidth);
+    const height = Math.max(1, canvas.clientHeight || window.innerHeight);
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
 
-      for (let i = 0; i < bladeCount; i += 1) {
-        placeBlade(dummy, i, bladeCount, Math.sin(t * 0.45 + i * 0.22) * 0.06);
-        blades.setMatrixAt(i, dummy.matrix);
-      }
-      blades.instanceMatrix.needsUpdate = true;
+    worldHeight = 2 * Math.tan(THREE.MathUtils.degToRad(FOV * 0.5)) * CAMERA_Z;
+    worldWidth = worldHeight * camera.aspect;
+    const compact = width < 900;
+    heroX = compact ? worldWidth * 0.08 : worldWidth * 0.25;
+    heroY = compact ? -worldHeight * 0.12 : worldHeight * 0.015;
+    heroScale = compact ? 0.95 : Math.min(1.72, Math.max(1.5, worldWidth / 7.6));
 
-      for (const child of orbitGroup.children) {
-        const a = (child.userData.angle as number) + t * 0.35;
-        const r = child.userData.radius as number;
-        child.position.set(
-          Math.cos(a) * r,
-          Math.sin(a * 1.6 + t * 0.5) * (child.userData.yAmp as number),
-          Math.sin(a) * r
-        );
-        child.rotation.x = t * 0.8;
-        child.rotation.y = t * 1.1;
-      }
+    const x = worldWidth * (compact ? 0.22 : 0.31);
+    const y = worldHeight * (compact ? 0.22 : 0.24);
+    fragmentTargets[0].set(-x, y, -0.15);
+    fragmentTargets[1].set(x, y * 0.83, 0.05);
+    fragmentTargets[2].set(x * 0.9, -y, -0.1);
+    fragmentTargets[3].set(-x * 0.9, -y * 0.88, 0.08);
+    resolveMorphRange();
+  };
 
-      if (particleSystem) {
-        particleSystem.rotation.y = t * 0.04;
-        particleSystem.rotation.x = Math.sin(t * 0.1) * 0.08;
-      }
+  const onPointerMove = (event: PointerEvent): void => {
+    pointerTarget.set(
+      (event.clientX / Math.max(1, window.innerWidth) - 0.5) * 2,
+      (event.clientY / Math.max(1, window.innerHeight) - 0.5) * 2
+    );
+  };
+  const onPointerLeave = (): void => {
+    pointerTarget.set(0, 0);
+  };
 
-      pointerScratch.set(pointer.x < -5 ? 0.5 : pointer.x, pointer.y < -5 ? 0.5 : pointer.y);
-      pointerLerped.lerp(pointerScratch, 0.035);
-      core.rotation.y = (pointerLerped.x - 0.5) * 0.55;
-      core.rotation.x = -(pointerLerped.y - 0.5) * 0.4;
+  if (quality.parallax) {
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    document.documentElement.addEventListener("pointerleave", onPointerLeave);
+  }
+  window.addEventListener("resize", resize, { passive: true });
+
+  const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
+  resizeObserver?.observe(canvas);
+  resizeObserver?.observe(document.documentElement);
+
+  resize();
+  if (closingTarget) resizeObserver?.observe(closingTarget);
+  const initialScroll = window.scrollY || 0;
+  morph = smoothstep(morphStart, morphEnd, initialScroll);
+
+  const renderFrame = (timestamp: number, dt: number): void => {
+    const time = timestamp * 0.001;
+    const scroll = window.scrollY || 0;
+    const morphTarget = smoothstep(morphStart, morphEnd, scroll);
+    const response = 1 - Math.exp(-dt * 5.2);
+    morph += (morphTarget - morph) * response;
+    pointer.lerp(pointerTarget, 1 - Math.exp(-dt * 4.8));
+
+    const open = smoothstep(0.04, 0.98, morph);
+    const intactOpacity = 1 - smoothstep(0.06, 0.68, morph);
+    const fragmentOpacity = smoothstep(0.16, 0.82, morph);
+    intact.visible = intactOpacity > 0.002;
+    fragments.visible = fragmentOpacity > 0.002;
+    fading[0].material.opacity = fading[0].opacity * intactOpacity;
+    fading[1].material.opacity = fading[1].opacity * intactOpacity;
+    fading[2].material.opacity = fading[2].opacity * fragmentOpacity;
+    fading[3].material.opacity = fading[3].opacity * fragmentOpacity;
+
+    const pointerStrength = 1 - open * 0.64;
+    root.position.set(
+      THREE.MathUtils.lerp(heroX, 0, open),
+      THREE.MathUtils.lerp(heroY, 0, open),
+      0
+    );
+    const rootScale = THREE.MathUtils.lerp(heroScale, 1, open);
+    root.scale.setScalar(rootScale);
+    root.rotation.x = -pointer.y * 0.11 * pointerStrength + Math.sin(time * 0.23) * 0.018;
+    root.rotation.y = pointer.x * 0.16 * pointerStrength + Math.sin(time * 0.18) * 0.025;
+    root.rotation.z = THREE.MathUtils.lerp(-0.04, 0.015, open);
+
+    chromeLoopA.rotation.set(
+      loopBaseRotations[0].x + Math.sin(time * 0.27) * 0.025,
+      loopBaseRotations[0].y + time * 0.035,
+      loopBaseRotations[0].z
+    );
+    chromeLoopB.rotation.set(
+      loopBaseRotations[1].x,
+      loopBaseRotations[1].y - time * 0.028,
+      loopBaseRotations[1].z + Math.sin(time * 0.21) * 0.03
+    );
+    glassLoop.rotation.set(
+      loopBaseRotations[2].x + Math.sin(time * 0.19) * 0.03,
+      loopBaseRotations[2].y + time * 0.024,
+      loopBaseRotations[2].z
+    );
+    intact.scale.setScalar(THREE.MathUtils.lerp(1, 0.82, open));
+
+    for (let i = 0; i < fragmentGroups.length; i += 1) {
+      const fragment = fragmentGroups[i];
+      const targetRotation = fragmentOpenRotations[i];
+      fragment.position.copy(fragmentTargets[i]).multiplyScalar(open);
+      fragment.rotation.set(
+        targetRotation.x * open + Math.sin(time * 0.31 + i) * 0.015,
+        targetRotation.y * open + Math.cos(time * 0.27 + i) * 0.018,
+        targetRotation.z * open + Math.sin(time * 0.22 + i * 1.7) * 0.012
+      );
+      fragment.scale.setScalar(THREE.MathUtils.lerp(0.76, 0.58, open));
     }
 
-    // floaters — scroll parallax + idle drift
-    const floaterOp = THREE.MathUtils.clamp(1.15 - heroP * 0.55 - scrollN * 0.35, 0.15, 0.7);
-    floaterMat.opacity = floaterOp * 0.55;
-    floaterWireMat.opacity = floaterOp * 0.22;
-    for (const f of floaters) {
-      f.group.position.x = f.base.x + Math.sin(t * f.speed + f.phase) * f.amp;
-      f.group.position.y = f.base.y + Math.cos(t * f.speed * 0.8 + f.phase) * f.amp * 0.6 - scroll * 0.15;
-      f.group.position.z = f.base.z + Math.sin(t * 0.1 + f.phase) * 20;
-      f.group.rotation.x = t * f.spin.x + f.phase;
-      f.group.rotation.y = t * f.spin.y;
-      f.group.rotation.z = t * f.spin.z * 0.5;
-    }
+    const orbitScaleX = THREE.MathUtils.lerp(1, (worldWidth * 0.43) / ORBIT_RX, open);
+    const orbitScaleY = THREE.MathUtils.lerp(1, (worldHeight * 0.31) / ORBIT_RY, open);
+    orbit.scale.set(orbitScaleX, orbitScaleY, 1);
+    orbit.rotation.z = THREE.MathUtils.lerp(-0.16, -0.035, open);
+    orbitMain.material.opacity = THREE.MathUtils.lerp(0.23, 0.3, open);
+    orbitSecondary.material.opacity = THREE.MathUtils.lerp(0.16, 0.25, open);
 
-    rim.intensity = 1.0 + Math.sin(t * 1.2) * 0.25 + pointer.strength * 0.4;
+    const orbitAngle = time * 0.34 + open * 0.72;
+    const orbitCos = Math.cos(orbit.rotation.z);
+    const orbitSin = Math.sin(orbit.rotation.z);
+    const placeOnOrbit = (object: THREE.Object3D, angle: number, z: number): void => {
+      const x = Math.cos(angle) * ORBIT_RX * orbitScaleX;
+      const y = Math.sin(angle) * ORBIT_RY * orbitScaleY;
+      object.position.set(x * orbitCos - y * orbitSin, x * orbitSin + y * orbitCos, z);
+    };
+    placeOnOrbit(bead, orbitAngle, 0.48);
+    const beadPulse = 1 + Math.sin(time * 2.1) * 0.055;
+    bead.scale.setScalar(beadPulse);
+    warmRim.position.copy(bead.position);
+    warmRim.intensity = 16 + Math.sin(time * 1.9) * 3;
 
-    // covers
-    const velNorm = THREE.MathUtils.clamp(smoothVel / 60, -1, 1);
-    for (const cover of covers) {
-      if (!cover.ready) continue;
-      const rect = cover.el.getBoundingClientRect();
-      const visible = rect.bottom > -100 && rect.top < h + 100;
-      cover.mesh.visible = visible;
-      if (!visible) continue;
-      cover.mesh.position.set(rect.left + rect.width / 2 - w / 2, -(rect.top + rect.height / 2 - h / 2), 0);
-      cover.mesh.scale.set(Math.max(1, rect.width), Math.max(1, rect.height), 1);
-      cover.hover += (cover.hoverTarget - cover.hover) * 0.09;
-      cover.mouse.lerp(cover.mouseTarget, 0.12);
-      const u = cover.mesh.material.uniforms;
-      u.uHover.value = cover.hover;
-      u.uTime.value = t;
-      u.uVelocity.value = velNorm;
-      u.uTrail.value = trailTex;
-      u.uPlaneAspect.value = rect.width / Math.max(1, rect.height);
-      u.uMouse.value.copy(cover.mouse);
+    const cobaltPhases = [1.43, 3.42, 5.18];
+    for (let i = 0; i < cobaltPoints.length; i += 1) {
+      placeOnOrbit(cobaltPoints[i], -time * (0.075 + i * 0.012) + cobaltPhases[i], 0.24 - i * 0.08);
+      cobaltPoints[i].scale.setScalar(0.92 + Math.sin(time * 1.5 + i) * 0.12);
     }
 
     renderer.clear();
-    renderer.render(bgScene, orthoCam);
-    renderer.clearDepth();
     renderer.render(scene, camera);
   };
 
-  if (quality.animate) {
-    const loop = (): void => {
-      if (disposed) return;
-      renderFrame();
-      rafId = window.requestAnimationFrame(loop);
-    };
+  const minFrameDuration = 1000 / quality.maxFps;
+  const loop = (timestamp: number): void => {
+    if (disposed || !running) return;
+    const elapsed = timestamp - lastRenderedAt;
+    if (elapsed >= minFrameDuration - 0.5) {
+      const dt = lastRenderedAt === 0 ? 1 / quality.maxFps : Math.min(0.1, elapsed / 1000);
+      lastRenderedAt = timestamp;
+      renderFrame(timestamp, dt);
+    }
     rafId = window.requestAnimationFrame(loop);
-  } else {
-    renderFrame();
-  }
+  };
+
+  const stop = (): void => {
+    running = false;
+    window.cancelAnimationFrame(rafId);
+    rafId = 0;
+  };
+  const start = (): void => {
+    if (disposed || running || document.hidden) return;
+    running = true;
+    lastRenderedAt = 0;
+    rafId = window.requestAnimationFrame(loop);
+  };
+  const onVisibilityChange = (): void => {
+    if (document.hidden) stop();
+    else start();
+  };
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
+  // Paint once so the canvas can fade in immediately, then let visibility own RAF.
+  renderFrame(performance.now(), 1 / quality.maxFps);
+  start();
 
   return {
     dispose: () => {
+      if (disposed) return;
       disposed = true;
-      window.cancelAnimationFrame(rafId);
+      stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("resize", resize);
-      window.removeEventListener("pointermove", onPointerMove);
-      for (const cover of covers) {
-        cover.el.removeEventListener("pointerenter", cover.enter);
-        cover.el.removeEventListener("pointerleave", cover.leave);
-        cover.el.removeEventListener("pointermove", cover.move);
-        cover.el.classList.remove("gl-ready");
-        (cover.mesh.material.uniforms.uMap.value as THREE.Texture | null)?.dispose();
+      if (quality.parallax) {
+        window.removeEventListener("pointermove", onPointerMove);
+        document.documentElement.removeEventListener("pointerleave", onPointerLeave);
       }
+      resizeObserver?.disconnect();
+
+      const geometries = new Set<THREE.BufferGeometry>();
+      const materials = new Set<THREE.Material>();
       scene.traverse((object) => {
-        const mesh = object as THREE.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
-        const material = mesh.material as THREE.Material | THREE.Material[] | undefined;
-        if (Array.isArray(material)) material.forEach((m) => m.dispose());
-        else material?.dispose();
+        const drawable = object as THREE.Mesh | THREE.Line;
+        if (drawable.geometry) geometries.add(drawable.geometry as THREE.BufferGeometry);
+        const material = drawable.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(material)) material.forEach((item) => materials.add(item));
+        else if (material) materials.add(material);
       });
-      blades.dispose();
-      for (const s of [trailScene, bgScene]) {
-        s.traverse((o) => {
-          (o as THREE.Mesh).geometry?.dispose();
-        });
-      }
-      trailMat.dispose();
-      bgMat.dispose();
-      floaterMat.dispose();
-      floaterWireMat.dispose();
-      trailA.dispose();
-      trailB.dispose();
-      envRT.dispose();
+      geometries.forEach((geometry) => geometry.dispose());
+      materials.forEach((material) => material.dispose());
+      environment.dispose();
       renderer.dispose();
+      scene.clear();
     }
   };
-}
-
-function placeBlade(dummy: THREE.Object3D, index: number, count: number, breathe: number): void {
-  const angle = (index / count) * Math.PI * 2;
-  const radius = 1.55;
-  dummy.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
-  dummy.rotation.set(0, 0, angle + Math.PI / 2 + breathe);
-  dummy.updateMatrix();
 }

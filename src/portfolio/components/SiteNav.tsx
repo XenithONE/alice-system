@@ -1,16 +1,16 @@
 export function SiteNav() {
   return (
-    <header className="site-nav">
+    <header className="site-nav site-header">
       <div className="site-nav-shell">
-        <a className="wordmark" href="#top" data-magnetic>
-          AlicE <b>sYsTeM</b>
+        <a className="wordmark site-brand" href="#top" data-magnetic aria-label="AlicE sYsTeM ホーム">
+          AlicE sYsTeM
         </a>
-        <nav aria-label="sections">
+        <nav className="site-primary-nav" aria-label="主要セクション">
           <a href="#works" data-magnetic>
             WORKS
           </a>
           <a href="#ai-lab" data-magnetic>
-            AI LAB
+            LAB
           </a>
           <a href="#prompts" data-magnetic>
             PROMPTS

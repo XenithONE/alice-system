@@ -2,16 +2,15 @@ import { AI_TOOLS } from "../../data/works";
 
 export function StackStrip() {
   return (
-    <section className="stack-strip" aria-label="AI stack" data-reveal>
-      <div className="stack-inner">
-        <span className="stack-caption">AI STACK — 全ツール最上位プランで運用</span>
-        <div className="stack-row">
+    <section className="stack-rail" aria-labelledby="stack-title" data-reveal>
+      <div className="stack-rail-inner">
+        <h2 id="stack-title">AI STACK</h2>
+        <p className="stack-rail-caption">制作ごとに最適なモデルを選び、組み合わせて運用。</p>
+        <ul className="stack-rail-list">
           {AI_TOOLS.map((tool) => (
-            <span key={tool} className="stack-badge">
-              {tool}
-            </span>
+            <li key={tool}>{tool}</li>
           ))}
-        </div>
+        </ul>
       </div>
     </section>
   );

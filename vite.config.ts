@@ -9,7 +9,7 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   build: {
     target: "es2022",
-    sourcemap: true,
+    sourcemap: false,
     assetsInlineLimit: 4096,
     chunkSizeWarningLimit: 6000,
     rollupOptions: {
