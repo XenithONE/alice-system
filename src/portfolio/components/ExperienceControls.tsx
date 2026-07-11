@@ -39,7 +39,8 @@ export function useExperienceSettings(): ExperienceState {
 
   const setQuality = (nextQuality: ExperienceQuality): void => {
     // `?q=` is reserved for deterministic QA. Once a visitor chooses a visible
-    // preference, the DOM setting takes over and continues to respect reduced motion.
+    // preference, the DOM setting takes over. Motion preferences still soften
+    // animation, while the 3D composition itself remains visible by default.
     const url = new URL(window.location.href);
     url.searchParams.delete("q");
     window.history.replaceState(window.history.state, "", url);

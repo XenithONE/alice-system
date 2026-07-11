@@ -375,7 +375,9 @@ function initialiseScene(
   morph = smoothstep(morphStart, morphEnd, initialScroll);
 
   const renderFrame = (timestamp: number, dt: number): void => {
-    const time = timestamp * 0.001;
+    // Keep the 3D scene present for reduced-motion users while freezing the
+    // decorative time-based drift, orbiting and pulsing.
+    const time = timestamp * 0.001 * quality.motionScale;
     const scroll = window.scrollY || 0;
     const morphTarget = smoothstep(morphStart, morphEnd, scroll);
     const response = 1 - Math.exp(-dt * 5.2);
