@@ -23,6 +23,7 @@ export interface Work {
   description: string; // ja, 1-2 sentences
   href: string; // BASE-relative
   cover: string; // BASE-relative
+  poster?: string; // optional portrait artwork for the 3D works deck
   year: string;
   kind: "game" | "synth" | "experience";
   tags: string[];
@@ -38,6 +39,7 @@ export const WORKS: Work[] = [
     description: "ルームコードで友達とP2P対戦するタワーディフェンス。タワーで守り、クリープを送って攻める。ソロ(vs AI)対応。",
     href: "tower-defense.html",
     cover: "assets/tower-defense-cover.jpg",
+    poster: "assets/signal-siege-poster.webp",
     year: "2026",
     kind: "game",
     tags: ["Canvas 2D", "Versus TD", "P2P", "PeerJS"],
@@ -50,9 +52,10 @@ export const WORKS: Work[] = [
     description: "見られている間だけ動けない怪物ワードンを避け、懐中電灯でCASE FILEを集めて脱出する3Dホラー。",
     href: "hollow-ward.html",
     cover: "assets/og.jpg",
+    poster: "assets/hollow-ward-poster.webp",
     year: "2026",
     kind: "game",
-    tags: ["Three.js", "SparkJS", "WebGL2", "Procedural"],
+    tags: ["Three.js", "Spark 2.1", "WebGL2", "Procedural"],
     aiTools: ["Claude"]
   },
   {
@@ -62,6 +65,7 @@ export const WORKS: Work[] = [
     description: "懐中電灯ひとつで虚空を探索し、信号の断片を5つ集めて脱出する一人称コズミックホラー。",
     href: "games/the-eidolon.html",
     cover: "assets/the-eidolon-cover.jpg",
+    poster: "assets/the-eidolon-poster.webp",
     year: "2026",
     kind: "game",
     tags: ["Three.js", "Horror", "PointerLock"],

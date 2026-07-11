@@ -4,22 +4,38 @@
 export interface HeroQuality {
   tier: "high" | "balanced" | "low";
   dpr: number;
-  blades: number;
-  particles: number;
+  radialSegments: number;
+  tubularSegments: number;
+  maxFps: 60 | 30;
   animate: boolean;
   parallax: boolean;
 }
 
 function build(tier: "high" | "balanced" | "low", reducedMotion: boolean, coarse: boolean): HeroQuality {
   const table = {
-    high: { dpr: Math.min(2, window.devicePixelRatio || 1), blades: 144, particles: 450 },
-    balanced: { dpr: Math.min(1.5, window.devicePixelRatio || 1), blades: 96, particles: 220 },
-    low: { dpr: 1, blades: 64, particles: 0 }
+    high: {
+      dpr: Math.min(1.5, window.devicePixelRatio || 1),
+      radialSegments: 16,
+      tubularSegments: 128,
+      maxFps: 60 as const
+    },
+    balanced: {
+      dpr: Math.min(1.25, window.devicePixelRatio || 1),
+      radialSegments: 12,
+      tubularSegments: 88,
+      maxFps: 60 as const
+    },
+    low: {
+      dpr: 1,
+      radialSegments: 8,
+      tubularSegments: 56,
+      maxFps: 30 as const
+    }
   }[tier];
   return {
     tier,
     ...table,
-    animate: !reducedMotion && !(tier === "low" && coarse),
+    animate: !reducedMotion,
     parallax: !reducedMotion && !coarse
   };
 }
@@ -32,6 +48,13 @@ export function detectHeroQuality(): HeroQuality {
   if (forced === "high" || forced === "balanced" || forced === "low") {
     // QA override: force the tier and ignore reduced-motion (headless previews force it).
     return build(forced, false, false);
+  }
+
+  const preferred = document.documentElement.dataset.experienceQuality;
+  if (preferred === "high" || preferred === "low") {
+    // A visible experience control selected this tier. It still respects the OS
+    // motion preference; `?q=` above remains the explicit QA escape hatch.
+    return build(preferred, reducedMotion, coarse);
   }
 
   const memory = typeof navigator !== "undefined" && "deviceMemory" in navigator

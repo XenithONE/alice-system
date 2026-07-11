@@ -5,23 +5,12 @@ import { AiLab } from "./components/AiLab";
 import { Prompts } from "./components/Prompts";
 import { StackStrip } from "./components/StackStrip";
 import { Footer } from "./components/Footer";
-import { Marquee } from "./components/Marquee";
 import { CursorFX } from "./components/CursorFX";
+import { ExperienceControls, useExperienceSettings } from "./components/ExperienceControls";
 import { GlRoot } from "./gl/GlRoot";
 import { useReveal } from "./useReveal";
-import { useLenis, scrollState } from "./useLenis";
 
-function SplitTitle({ text, outline }: { text: string; outline?: boolean }) {
-  return (
-    <span className={outline ? "split outline" : "split"} aria-hidden="true">
-      {[...text].map((ch, i) => (
-        <i key={i} style={{ "--ch-i": i } as React.CSSProperties}>
-          {ch === " " ? "\u00a0" : ch}
-        </i>
-      ))}
-    </span>
-  );
-}
+const BASE = import.meta.env.BASE_URL;
 
 function ScrollProgress() {
   useEffect(() => {
@@ -30,14 +19,23 @@ function ScrollProgress() {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     let raf = 0;
-    const tick = (): void => {
-      const y = scrollState.y || window.scrollY || 0;
+    const update = (): void => {
+      raf = 0;
+      const y = window.scrollY || 0;
       const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
       el.style.width = `${Math.min(100, (y / max) * 100)}%`;
-      raf = window.requestAnimationFrame(tick);
     };
-    raf = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(raf);
+    const schedule = (): void => {
+      if (!raf) raf = window.requestAnimationFrame(update);
+    };
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule, { passive: true });
+    schedule();
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
   }, []);
 
   return <div className="scroll-progress" aria-hidden="true" />;
@@ -45,55 +43,99 @@ function ScrollProgress() {
 
 export default function PortfolioApp() {
   useReveal();
-  useLenis();
+
+  const experience = useExperienceSettings();
+  const posterUrl = `${BASE}assets/creation-core-poster.webp`;
+
+  useEffect(() => {
+    const targetId = window.location.hash.slice(1);
+    if (!targetId) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      const root = document.documentElement;
+      const previousBehavior = root.style.scrollBehavior;
+      root.style.scrollBehavior = "auto";
+      target.scrollIntoView({ block: "start" });
+      root.style.scrollBehavior = previousBehavior;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   return (
     <div id="top" className="portfolio">
+      <a className="skip-link" href="#main-content">
+        本文へ移動
+      </a>
       <GlRoot />
       <CursorFX />
       <ScrollProgress />
       <SiteNav />
-      <main>
-        <section className="hero" aria-label="AlicE sYsTeM">
-          <div className="hero-poster" aria-hidden="true" />
-          <div className="hero-content">
-            <div className="hero-main">
-              <p className="hero-kicker">AI CREATIVE PORTFOLIO</p>
-              <h1 className="hero-title">
-                <span className="visually-hidden">AlicE sYsTeM</span>
-                <SplitTitle text="AlicE" />
+      <ExperienceControls
+        threeDEnabled={experience.threeDEnabled}
+        quality={experience.quality}
+        onThreeDChange={experience.setThreeDEnabled}
+        onQualityChange={experience.setQuality}
+      />
+
+      <main id="main-content">
+        <section className="hero" aria-labelledby="hero-title" data-creation-hero>
+          <div
+            className="hero-poster"
+            style={{ backgroundImage: `url("${posterUrl}")` }}
+            aria-hidden="true"
+            data-fallback-poster
+          />
+
+          <div className="hero-shell">
+            <div className="hero-copy" data-reveal>
+              <h1 id="hero-title" className="hero-title">
+                AIと創る、
                 <br />
-                <SplitTitle text="sYsTeM" outline />
+                遊べる実験室。
               </h1>
-              <p className="hero-tagline">AIと創る、遊べる実験室。</p>
-            </div>
-            <aside className="hero-side" data-reveal>
-              <span className="hero-side-label">SCROLL TO EXPLORE</span>
-              <p>
-                Webゲーム、シンセ、モデル比較ラボ、プロンプト集。
-                AIと共作した作品をブラウザでそのまま体験できます。
+              <p className="hero-intro">
+                ゲーム、映像、プロンプト、モデル比較。
+                <br />
+                AIとの制作実験を、触れる作品として公開しています。
               </p>
-              <div className="hero-meta-row">
-                <span className="hero-chip">GAMES</span>
-                <span className="hero-chip">APPS</span>
-                <span className="hero-chip">PROMPTS</span>
-                <span className="hero-chip">MODEL LAB</span>
-                <span className="hero-chip">v{__APP_VERSION__}</span>
+              <div className="hero-actions" role="group" aria-label="サイトを探索">
+                <a className="hero-cta" href="#works" data-magnetic>
+                  作品を探索
+                </a>
+                <button
+                  className="hero-skip-3d"
+                  type="button"
+                  aria-pressed={!experience.threeDEnabled}
+                  onClick={() => experience.setThreeDEnabled(!experience.threeDEnabled)}
+                >
+                  {experience.threeDEnabled ? "3Dをスキップ" : "3Dを再開"}
+                </button>
               </div>
-            </aside>
+            </div>
+
+            <div className="hero-scroll-cue" aria-hidden="true">
+              <span>SCROLL</span>
+              <i />
+            </div>
           </div>
-          <div className="scroll-cue" aria-hidden="true">
-            <span>SCROLL</span>
-            <i />
-          </div>
+
+          <a className="hero-next-section" href="#works" aria-label="次のセクション、作品へ">
+            <span className="hero-next-index">01</span>
+            <strong className="hero-next-title">WORKS</strong>
+            <span className="hero-next-copy">AIで制作した、インタラクティブ作品のコレクション。</span>
+            <span className="hero-next-action">VIEW 01</span>
+          </a>
         </section>
-        <Marquee text="PLAY THE LAB — AI CREATIVE WORKS" />
+
         <Works />
         <AiLab />
         <Prompts />
-        <Marquee text="GAMES — APPS — PROMPTS — MODEL LAB" />
         <StackStrip />
       </main>
+
       <Footer />
       <div className="grain" aria-hidden="true" />
     </div>

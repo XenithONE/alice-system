@@ -1,12 +1,12 @@
 {
   "name": "AlicE sYsTeM",
   "short_name": "AlicE sYsTeM",
-  "description": "AIと共作したWebゲーム・シンセ・実験群のポートフォリオ。",
+  "description": "AIと共作したゲーム、映像、プロンプト、モデル比較を公開する3Dポートフォリオ。",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0a0a0c",
-  "theme_color": "#0a0a0c",
+  "background_color": "#fbf9f6",
+  "theme_color": "#fbf9f6",
   "icons": [
     { "src": "assets/favicon-64.png", "sizes": "64x64", "type": "image/png" },
     { "src": "assets/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
