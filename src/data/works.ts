@@ -48,14 +48,14 @@ export const WORKS: Work[] = [
   {
     id: "hollow-ward",
     title: "THE HOLLOW WARD",
-    titleJa: "廃病棟一人称ホラー",
-    description: "見られている間だけ動けない怪物ワードンを避け、懐中電灯でCASE FILEを集めて脱出する3Dホラー。",
+    titleJa: "廃病棟協力型3Dホラー",
+    description: "ルームコードで1〜3人が協力。CASE FILEを共有し、見られている間だけ動けない怪物ワードンから廃病棟を脱出する3Dホラー。ソロプレイ対応。",
     href: "hollow-ward.html",
     cover: "assets/og.jpg",
     poster: "assets/hollow-ward-poster.webp",
     year: "2026",
     kind: "game",
-    tags: ["Three.js", "Spark 2.1", "WebGL2", "Procedural"],
+    tags: ["Three.js", "Spark 2.1", "1–3P Co-op", "Room Code", "PeerJS"],
     aiTools: ["Claude"]
   },
   {

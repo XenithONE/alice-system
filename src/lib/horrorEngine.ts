@@ -1,11 +1,11 @@
 import * as THREE from "three";
-import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
+import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
+import type { SparkRenderer, SplatMesh } from "@sparkjsdev/spark";
 import type { QualityTier } from "./webgl";
 import { mulberry32, dailySeed } from "./seed";
 
@@ -14,6 +14,45 @@ import { mulberry32, dailySeed } from "./seed";
 export type GameMode = "menu" | "playing" | "paused" | "won" | "lost";
 export type JumpscareKind = "chase" | "mirror" | "locker" | "finale" | "ambient";
 export type LossKind = "caught" | "fear";
+export type HorrorSessionRole = "solo" | "host" | "guest";
+
+export interface HorrorSessionPlayer {
+  id: string;
+  name: string;
+  isHost: boolean;
+}
+
+export interface HorrorPlayerPose {
+  id: string;
+  seq: number;
+  x: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+  hiding: boolean;
+  flashlight: boolean;
+  watching: boolean;
+  alive: boolean;
+}
+
+export interface HorrorWorldState {
+  seq: number;
+  sentAt: number;
+  wardenX: number;
+  wardenZ: number;
+  wardenYaw: number;
+  wardenMode: "wander" | "hunt";
+  collected: number[];
+  exitOpen: boolean;
+  elapsedMs: number;
+}
+
+export interface HorrorSessionConfig {
+  role: HorrorSessionRole;
+  seed: number | null;
+  localId: string;
+  players: HorrorSessionPlayer[];
+}
 
 export interface GameInfo {
   quality: "HIGH" | "BALANCED" | "LOW";
@@ -29,6 +68,7 @@ export interface RunEndResult {
   scares: number;
   hides: number;
   lossKind?: LossKind;
+  downPlayerId?: string;
 }
 
 export interface HorrorCallbacks {
@@ -42,6 +82,9 @@ export interface HorrorCallbacks {
   onFlashlightChange: (on: boolean) => void;
   onModeChange: (mode: GameMode) => void;
   onRunEnd: (result: RunEndResult) => void;
+  onLocalPose?: (pose: HorrorPlayerPose) => void;
+  onAuthorityState?: (state: HorrorWorldState) => void;
+  onFileClaim?: (fileId: number) => void;
 }
 
 interface Box2D {
@@ -62,12 +105,26 @@ interface Cell {
 }
 
 interface GameItem {
+  id: number;
   mesh: THREE.Mesh;
   light: THREE.PointLight | null;
   x: number;
   z: number;
   phase: number;
   got: boolean;
+  pending: boolean;
+  pendingSince: number;
+}
+
+interface RemotePlayerRuntime {
+  info: HorrorSessionPlayer;
+  root: THREE.Group;
+  target: THREE.Vector3;
+  pose: HorrorPlayerPose;
+  light: THREE.SpotLight;
+  beam: THREE.Mesh;
+  nameplate: THREE.Sprite;
+  lastSeenAt: number;
 }
 
 interface HideSpot {
@@ -100,6 +157,7 @@ interface MirrorProp {
 
 interface FlickerLight {
   light: THREE.PointLight;
+  panel: THREE.MeshStandardMaterial;
   base: number;
   phase: number;
 }
@@ -126,6 +184,7 @@ const OBSERVE_COS = Math.cos((30 * Math.PI) / 180);
 const OBSERVE_DIST = 17;
 const PRE_EXIT_RADIUS = 7;
 const EXIT_RADIUS = 2.1;
+const PLAYER_COLORS = [0x72e4ff, 0xffd166, 0xff6680] as const;
 
 const TMP_VEC = new THREE.Vector3();
 const TMP_VEC_2 = new THREE.Vector3();
@@ -256,6 +315,10 @@ export class HorrorEngine {
   private readonly quality: QualityTier;
   private readonly callbacks: HorrorCallbacks;
   private loop: number;
+  private sessionRole: HorrorSessionRole = "solo";
+  private sessionSeed: number | null = null;
+  private localPlayerId = "solo";
+  private sessionPlayers: HorrorSessionPlayer[] = [{ id: "solo", name: "YOU", isHost: true }];
 
   private readonly scene = new THREE.Scene();
   // Holds every maze/prop/warden object that setLoop() needs to tear down and rebuild
@@ -267,15 +330,18 @@ export class HorrorEngine {
   private fearPass: ShaderPass | null = null;
   private bloomPass: UnrealBloomPass | null = null;
   private envRT: THREE.WebGLRenderTarget | null = null;
-  private hdrTexture: THREE.Texture | null = null;
+  private environmentGeneration = 0;
 
   private disposed = false;
   private animationId = 0;
-  private readonly clock = new THREE.Clock();
+  private readonly timer = new THREE.Timer();
 
   private mode: GameMode = "menu";
   private startedAt = 0;
+  private pausedAt = 0;
   private elapsedMs = 0;
+  private guestElapsedBaseMs = 0;
+  private guestElapsedReceivedAt = 0;
   private score = 0;
   private scaresThisRun = new Set<JumpscareKind>();
   private hidesThisRun = 0;
@@ -287,6 +353,7 @@ export class HorrorEngine {
 
   private items: GameItem[] = [];
   private filesFound = 0;
+  private readonly collectedFileIds = new Set<number>();
   private hideSpots: HideSpot[] = [];
   private lockers: LockerProp[] = [];
   private mirrors: MirrorProp[] = [];
@@ -294,7 +361,7 @@ export class HorrorEngine {
 
   private exitSign: THREE.Group | null = null;
   private exitTrulyOpen = false;
-  private financeFinaleFired = false;
+  private finaleFired = false;
 
   private warden: THREE.Group | null = null;
   private wardenEyes: THREE.Mesh[] = [];
@@ -305,6 +372,16 @@ export class HorrorEngine {
   private wardenMode: "wander" | "hunt" = "wander";
   private wardenHuntTimer = 0;
   private wardenRepathT = 0;
+  private readonly replicaWardenTarget = new THREE.Vector3();
+  private replicaWardenYaw = 0;
+  private lastWorldStateSeq = -1;
+
+  private readonly remotePlayers = new Map<string, RemotePlayerRuntime>();
+  private poseSeq = 0;
+  private worldSeq = 0;
+  private poseEmitT = 0;
+  private worldEmitT = 0;
+  private hudEmitT = 0;
 
   private fear = 0;
   private hiding = false;
@@ -345,7 +422,9 @@ export class HorrorEngine {
 
   private dustMesh: SplatMesh | null = null;
   private fogMesh: SplatMesh | null = null;
-  private sparkRendererReady = false;
+  private memoryMesh: SplatMesh | null = null;
+  private sparkRenderer: SparkRenderer | null = null;
+  private sparkGeneration = 0;
 
   private ac: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -359,9 +438,17 @@ export class HorrorEngine {
   private readonly onMouseMove = (e: MouseEvent): void => this.handleMouseMove(e);
   private readonly onMouseDown = (): void => this.handleMouseDown();
   private readonly onMouseUp = (): void => { this.dragging = false; };
+  private readonly onBlur = (): void => {
+    this.dragging = false;
+    this.clearMovementKeys();
+  };
   private readonly onPointerLockChange = (): void => this.handlePointerLockChange();
   private readonly onVisibility = (): void => {
-    if (!document.hidden && this.ac && this.ac.state !== "running") this.ac.resume().catch(() => undefined);
+    if (document.hidden) {
+      this.clearMovementKeys();
+    } else if (this.ac && this.ac.state !== "running") {
+      this.ac.resume().catch(() => undefined);
+    }
   };
   private readonly onResize = (): void => this.resize();
 
@@ -377,7 +464,9 @@ export class HorrorEngine {
 
     let renderer: THREE.WebGLRenderer;
     try {
-      renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.aa, powerPreference: "high-performance" });
+      // Spark's transparent Gaussian pass does not benefit from MSAA. Keeping it
+      // disabled on the Spark tier saves a meaningful amount of GPU bandwidth.
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: quality.aa && !quality.spark, powerPreference: "high-performance" });
     } catch (err) {
       callbacks.onError(`WebGL init failed: ${String(err)}`);
       throw err;
@@ -388,13 +477,14 @@ export class HorrorEngine {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = quality.shadows;
-    this.renderer.shadowMap.type = quality.label === "HIGH" ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.setClearColor(0x030408, 1);
 
     this.camera.rotation.order = "YXZ";
     this.scene.fog = new THREE.FogExp2(0x03040a, 0.052);
 
     this.scene.add(this.levelGroup);
+    this.timer.connect(document);
     this.buildMaze();
     this.buildLights();
     this.buildGeometry();
@@ -418,19 +508,28 @@ export class HorrorEngine {
     this.callbacks.onReady({
       quality: quality.label,
       webgl2: this.renderer.capabilities.isWebGL2,
-      spark: quality.spark,
+      // Spark is loaded lazily. Report it only after the renderer and splat
+      // collections have actually initialized successfully.
+      spark: false,
       bloom: quality.bloom
     });
 
     this.animationId = window.requestAnimationFrame(this.frame);
     window.addEventListener("resize", this.onResize);
-    window.addEventListener("visibilitychange", this.onVisibility);
+    window.addEventListener("blur", this.onBlur);
+    document.addEventListener("visibilitychange", this.onVisibility);
   }
 
   // ---------------------------------------------------------- MAZE GENERATION
 
+  private seedFor(salt: number): number {
+    return this.sessionSeed === null
+      ? dailySeed(this.loop, salt)
+      : (this.sessionSeed ^ Math.imul(salt, 0x9e3779b1)) >>> 0;
+  }
+
   private buildMaze(): void {
-    const rand = mulberry32(dailySeed(this.loop, 0x484f57));
+    const rand = mulberry32(this.seedFor(0x484f57));
     const cells: Cell[] = [];
     for (let z = 0; z < GRID; z += 1) {
       for (let x = 0; x < GRID; x += 1) {
@@ -586,11 +685,11 @@ export class HorrorEngine {
   // ---------------------------------------------------------- GEOMETRY / MATERIALS
 
   private buildLights(): void {
-    this.scene.add(new THREE.AmbientLight(0x0a1018, 0.55));
-    const hemi = new THREE.HemisphereLight(0x1a2436, 0x03040a, 0.5);
+    this.scene.add(new THREE.AmbientLight(0x08101a, 0.36));
+    const hemi = new THREE.HemisphereLight(0x162236, 0x020307, 0.34);
     this.scene.add(hemi);
 
-    this.flash = new THREE.SpotLight(0xeaf2ff, 105, 20, Math.PI / 6.6, 0.5, 1.2);
+    this.flash = new THREE.SpotLight(0xe7f0ff, 82, 19, Math.PI / 7.6, 0.46, 1.32);
     this.flash.castShadow = this.quality.shadows;
     if (this.quality.shadows) {
       this.flash.shadow.mapSize.set(this.quality.shadowSize, this.quality.shadowSize);
@@ -604,7 +703,7 @@ export class HorrorEngine {
     this.camera.add(this.flash);
     this.camera.add(this.flash.target);
 
-    this.handGlow = new THREE.PointLight(0x8fa6c0, 1.8, 5, 1.6);
+    this.handGlow = new THREE.PointLight(0x7892ac, 1.05, 4.2, 1.8);
     this.handGlow.position.set(0, -0.1, 0.2);
     this.camera.add(this.handGlow);
     this.scene.add(this.camera);
@@ -620,6 +719,7 @@ export class HorrorEngine {
     wallPbr.map.anisotropy = anisotropy;
 
     const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x73797a,
       map: floorPbr.map,
       normalMap: floorPbr.normalMap,
       roughnessMap: floorPbr.roughnessMap,
@@ -632,13 +732,22 @@ export class HorrorEngine {
     floor.receiveShadow = this.quality.shadows;
     this.levelGroup.add(floor);
 
-    const ceilMat = new THREE.MeshStandardMaterial({ color: 0x0a0c12, roughness: 1, metalness: 0 });
+    const ceilMat = new THREE.MeshStandardMaterial({
+      color: 0x30353a,
+      map: wallPbr.map,
+      normalMap: wallPbr.normalMap,
+      roughnessMap: wallPbr.roughnessMap,
+      roughness: 1,
+      metalness: 0,
+      envMapIntensity: 0.15
+    });
     const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(GRID * CELL, GRID * CELL), ceilMat);
     ceiling.rotation.x = Math.PI / 2;
     ceiling.position.y = WALL_H;
     this.levelGroup.add(ceiling);
 
     const wallMat = new THREE.MeshStandardMaterial({
+      color: 0x777c7b,
       map: wallPbr.map,
       normalMap: wallPbr.normalMap,
       roughnessMap: wallPbr.roughnessMap,
@@ -677,13 +786,23 @@ export class HorrorEngine {
       // setLoop() remixes call buildGeometry() again — drop the previous run's env
       // render target first so scene.environment never points at a disposed texture.
       if (this.envRT) { this.envRT.dispose(); this.envRT = null; this.scene.environment = null; }
-      const rgbeLoader = new RGBELoader();
-      rgbeLoader.load(
+      const environmentGeneration = ++this.environmentGeneration;
+      const hdrLoader = new HDRLoader();
+      hdrLoader.load(
         "assets/hdri/creepy_bathroom_1k.hdr",
         (texture) => {
-          if (this.disposed) return;
+          if (this.disposed || environmentGeneration !== this.environmentGeneration) {
+            texture.dispose();
+            return;
+          }
           const pmrem = new THREE.PMREMGenerator(this.renderer);
           const envRT = pmrem.fromEquirectangular(texture);
+          if (this.disposed || environmentGeneration !== this.environmentGeneration) {
+            envRT.dispose();
+            pmrem.dispose();
+            texture.dispose();
+            return;
+          }
           this.envRT = envRT;
           this.scene.environment = envRT.texture;
           this.scene.environmentIntensity = 0.18;
@@ -699,7 +818,7 @@ export class HorrorEngine {
   // ---------------------------------------------------------- PROPS
 
   private buildProps(): void {
-    const rand = mulberry32(dailySeed(this.loop, 0x9917));
+    const rand = mulberry32(this.seedFor(0x9917));
     const dist = this.bfsDistances(this.spawnCell.x, this.spawnCell.z);
     const order = Array.from(dist.keys())
       .filter((i) => dist[i] > 2 && i !== this.spawnCell.x + this.spawnCell.z * GRID && i !== this.exitCell.x + this.exitCell.z * GRID)
@@ -733,19 +852,29 @@ export class HorrorEngine {
       roughness: 0.5,
       metalness: 0.1
     });
-    for (const idx of pickSpread(NEEDED_FILES)) {
+    for (const [fileId, idx] of pickSpread(NEEDED_FILES).entries()) {
       const c = cellCenter(idx % GRID, Math.floor(idx / GRID));
       const jitterX = c.x + (rand() - 0.5) * (CELL * 0.4);
       const jitterZ = c.z + (rand() - 0.5) * (CELL * 0.4);
       const mesh = new THREE.Mesh(fileGeo, fileMat.clone());
       mesh.position.set(jitterX, 1.05, jitterZ);
       this.levelGroup.add(mesh);
-      const light = this.quality.label !== "LOW" ? new THREE.PointLight(0xffd166, 1.6, 4.5, 1.6) : null;
+      const light = this.quality.label !== "LOW" ? new THREE.PointLight(0xffd166, 8, 4.5, 1.7) : null;
       if (light) {
         light.position.set(jitterX, 1.1, jitterZ);
         this.levelGroup.add(light);
       }
-      this.items.push({ mesh, light, x: jitterX, z: jitterZ, phase: rand() * Math.PI * 2, got: false });
+      this.items.push({
+        id: fileId,
+        mesh,
+        light,
+        x: jitterX,
+        z: jitterZ,
+        phase: rand() * Math.PI * 2,
+        got: false,
+        pending: false,
+        pendingSince: 0
+      });
     }
 
     const lockerMat = new THREE.MeshStandardMaterial({ color: 0x1c2430, roughness: 0.6, metalness: 0.4 });
@@ -823,11 +952,29 @@ export class HorrorEngine {
       const flickerCells = pickSpread(this.quality.label === "HIGH" ? 8 : 5);
       for (const idx of flickerCells) {
         const c = cellCenter(idx % GRID, Math.floor(idx / GRID));
-        const base = 1.1 + rand() * 0.6;
+        const base = 7.5 + rand() * 4.5;
+        const fixture = new THREE.Group();
+        const housing = new THREE.Mesh(
+          new THREE.BoxGeometry(1.45, 0.12, 0.34),
+          new THREE.MeshStandardMaterial({ color: 0x151b20, roughness: 0.64, metalness: 0.58 })
+        );
+        const panel = new THREE.MeshStandardMaterial({
+          color: 0x8ba0ad,
+          emissive: 0x9fc5d8,
+          emissiveIntensity: 1.6,
+          roughness: 0.32,
+          metalness: 0.08
+        });
+        const tube = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.035, 0.16), panel);
+        tube.position.y = -0.075;
+        fixture.add(housing, tube);
+        fixture.position.set(c.x, WALL_H - 0.06, c.z);
+        fixture.rotation.y = rand() > 0.5 ? Math.PI / 2 : 0;
+        this.levelGroup.add(fixture);
         const light = new THREE.PointLight(0x8fb0c8, base, 6.5, 1.8);
         light.position.set(c.x, WALL_H - 0.3, c.z);
         this.levelGroup.add(light);
-        this.flickerLights.push({ light, base, phase: rand() * Math.PI * 2 });
+        this.flickerLights.push({ light, panel, base, phase: rand() * Math.PI * 2 });
       }
     }
 
@@ -838,7 +985,7 @@ export class HorrorEngine {
     const sign = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.32, 0.08), signMat);
     sign.position.set(exitCenter.x, WALL_H - 0.4, exitCenter.z);
     exitGroup.add(sign);
-    const exitLight = new THREE.PointLight(0xff5050, 1.6, 6, 1.7);
+    const exitLight = new THREE.PointLight(0xff5050, 13, 6, 1.7);
     exitLight.position.set(exitCenter.x, WALL_H - 0.5, exitCenter.z);
     exitGroup.add(exitLight);
     this.levelGroup.add(exitGroup);
@@ -849,22 +996,59 @@ export class HorrorEngine {
 
   private buildWarden(): void {
     const group = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x07080b, roughness: 1, metalness: 0, emissive: 0x040308, emissiveIntensity: 0.25 });
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 1.15, 6, 10), bodyMat);
-    body.position.y = 0;
-    body.castShadow = this.quality.shadows;
-    group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 14, 12), bodyMat);
-    head.position.y = 0.86;
-    head.castShadow = this.quality.shadows;
-    group.add(head);
-    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x1a0303, emissive: 0xff2b2b, emissiveIntensity: 1.6, roughness: 0.3 });
+    group.name = "the-warden";
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x05070a,
+      roughness: 0.96,
+      metalness: 0.02,
+      emissive: 0x07030a,
+      emissiveIntensity: 0.34
+    });
+    const coatMat = new THREE.MeshStandardMaterial({ color: 0x090c10, roughness: 0.88, metalness: 0.08 });
+    const boneMat = new THREE.MeshStandardMaterial({ color: 0x61686a, roughness: 0.82, metalness: 0.02 });
+
+    const coat = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 1.42, 10, 1, true), coatMat);
+    coat.position.y = 0.73;
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 1.12, 7, 12), bodyMat);
+    torso.position.y = 1.28;
+    torso.scale.set(0.9, 1.08, 0.72);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, 0.4, 8), boneMat);
+    neck.position.y = 1.93;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 18, 14), boneMat);
+    head.position.y = 2.2;
+    head.scale.set(0.83, 1.16, 0.86);
+
+    const armGeo = new THREE.CapsuleGeometry(0.075, 1.02, 5, 8);
+    const armL = new THREE.Mesh(armGeo, bodyMat);
+    armL.position.set(-0.36, 1.22, 0.01);
+    armL.rotation.z = -0.1;
+    const armR = armL.clone();
+    armR.position.x = 0.36;
+    armR.rotation.z = 0.1;
+    const handGeo = new THREE.SphereGeometry(0.105, 10, 8);
+    const handL = new THREE.Mesh(handGeo, boneMat);
+    handL.position.set(-0.42, 0.63, 0.02);
+    handL.scale.set(0.65, 1.4, 0.72);
+    const handR = handL.clone();
+    handR.position.x = 0.42;
+    group.add(coat, torso, neck, head, armL, armR, handL, handR);
+
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0x240203, emissive: 0xff2028, emissiveIntensity: 1.8, roughness: 0.22 });
     const eyeGeo = new THREE.SphereGeometry(0.045, 10, 8);
     const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeL.position.set(-0.09, 0.9, 0.22);
+    eyeL.position.set(-0.083, 2.23, 0.205);
     const eyeR = eyeL.clone();
     eyeR.position.x = 0.09;
-    group.add(eyeL, eyeR);
+    const mouth = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.018, 0.018),
+      new THREE.MeshStandardMaterial({ color: 0x120103, emissive: 0x7a0208, emissiveIntensity: 0.75, roughness: 0.4 })
+    );
+    mouth.position.set(0, 2.08, 0.23);
+    group.add(eyeL, eyeR, mouth);
+    group.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (mesh.isMesh) mesh.castShadow = this.quality.shadows;
+    });
     this.wardenEyes = [eyeL, eyeR];
     this.levelGroup.add(group);
     this.warden = group;
@@ -873,60 +1057,103 @@ export class HorrorEngine {
   // ---------------------------------------------------------- SPARKJS ATMOSPHERE
 
   private setupSparkAtmosphere(): void {
+    const generation = ++this.sparkGeneration;
+    const clearMesh = (mesh: SplatMesh | null): null => {
+      if (mesh) { this.scene.remove(mesh); mesh.dispose(); }
+      return null;
+    };
+    this.dustMesh = clearMesh(this.dustMesh);
+    this.fogMesh = clearMesh(this.fogMesh);
+    this.memoryMesh = clearMesh(this.memoryMesh);
     if (!this.quality.spark) return;
-    // Remixing (setLoop) calls this again — drop the previous run's splats first.
-    if (this.dustMesh) { this.scene.remove(this.dustMesh); this.dustMesh.dispose(); this.dustMesh = null; }
-    if (this.fogMesh) { this.scene.remove(this.fogMesh); this.fogMesh.dispose(); this.fogMesh = null; }
-    // SparkRenderer is a renderer-wide utility (not per-maze content) — create it once
-    // and reuse across setLoop() remixes instead of adding a duplicate every time.
-    if (!this.sparkRendererReady) {
-      try {
-        const sparkRenderer = new SparkRenderer({ renderer: this.renderer });
-        this.scene.add(sparkRenderer);
-        this.sparkRendererReady = true;
-      } catch {
+
+    // Dynamic import keeps Spark's worker/WASM-heavy bundle out of the initial
+    // shell. The playable Three.js ward is already visible while it initializes.
+    void import("@sparkjsdev/spark").then(({ SparkRenderer: SparkRendererImpl, SplatMesh: SplatMeshImpl }) => {
+      if (this.disposed || generation !== this.sparkGeneration) return;
+
+      if (!this.sparkRenderer) {
+        this.sparkRenderer = new SparkRendererImpl({
+          renderer: this.renderer,
+          maxStdDev: Math.sqrt(5),
+          minSortIntervalMs: 16
+        });
+        this.scene.add(this.sparkRenderer);
+      }
+
+      const rand = mulberry32(this.seedFor(0x5a17));
+      const center = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      const color = new THREE.Color();
+      const dustScale = new THREE.Vector3(0.008, 0.008, 0.008);
+      const dustCount = this.quality.motes;
+      const dust = new SplatMeshImpl({
+        constructSplats: (splats) => {
+          for (let i = 0; i < dustCount; i += 1) {
+            center.set((rand() - 0.5) * GRID * CELL, rand() * WALL_H * 0.85, (rand() - 0.5) * GRID * CELL);
+            color.setRGB(0.76, 0.77, 0.72).multiplyScalar(0.42 + rand() * 0.42);
+            splats.pushSplat(center, dustScale, quat, 0.13 + rand() * 0.19, color);
+          }
+        },
+        onFrame: ({ mesh, time }) => { mesh.rotation.y = Math.sin(time * 0.05) * 0.02; }
+      });
+
+      const fogScale = new THREE.Vector3(0.55, 0.12, 0.55);
+      const fogCount = Math.round(dustCount * 0.4);
+      const fog = new SplatMeshImpl({
+        constructSplats: (splats) => {
+          for (let i = 0; i < fogCount; i += 1) {
+            center.set((rand() - 0.5) * GRID * CELL, 0.15 + rand() * 0.5, (rand() - 0.5) * GRID * CELL);
+            color.setRGB(0.5, 0.55, 0.6).multiplyScalar(0.4 + rand() * 0.3);
+            splats.pushSplat(center, fogScale, quat, 0.18 + rand() * 0.14, color);
+          }
+        },
+        onFrame: ({ mesh, time }) => {
+          mesh.position.x = Math.sin(time * 0.03) * 0.5;
+          mesh.position.z = Math.cos(time * 0.026) * 0.5;
+        }
+      });
+
+      // Each CASE FILE leaves a volumetric memory wound: a warm core wrapped in
+      // bruised-red splats. These are spatial landmarks, not collision objects.
+      const woundScale = new THREE.Vector3(0.045, 0.018, 0.045);
+      const memory = new SplatMeshImpl({
+        constructSplats: (splats) => {
+          const perItem = Math.max(36, Math.round(dustCount / Math.max(1, this.items.length) * 0.45));
+          for (const item of this.items) {
+            for (let i = 0; i < perItem; i += 1) {
+              const a = rand() * Math.PI * 2;
+              const radius = 0.16 + rand() * 0.72;
+              center.set(item.x + Math.cos(a) * radius, 0.55 + rand() * 1.45, item.z + Math.sin(a) * radius);
+              const heat = 0.35 + rand() * 0.65;
+              color.setRGB(0.72 + heat * 0.28, 0.07 + heat * 0.16, 0.025);
+              splats.pushSplat(center, woundScale, quat, 0.16 + rand() * 0.34, color);
+            }
+          }
+        },
+        onFrame: ({ mesh, time }) => {
+          const breath = 0.98 + Math.sin(time * 0.72) * 0.025;
+          mesh.scale.setScalar(breath);
+        }
+      });
+
+      if (this.disposed || generation !== this.sparkGeneration) {
+        dust.dispose(); fog.dispose(); memory.dispose();
         return;
       }
-    }
-
-    const rand = mulberry32(dailySeed(this.loop, 0x5a17));
-    const scale = new THREE.Vector3(0.02, 0.02, 0.02);
-    const quat = new THREE.Quaternion();
-    const dustCount = this.quality.motes;
-    this.dustMesh = new SplatMesh({
-      constructSplats: (splats) => {
-        for (let i = 0; i < dustCount; i += 1) {
-          const x = (rand() - 0.5) * GRID * CELL;
-          const y = rand() * WALL_H * 0.85;
-          const z = (rand() - 0.5) * GRID * CELL;
-          TMP_COLOR.setRGB(0.85, 0.82, 0.7).multiplyScalar(0.5 + rand() * 0.5);
-          splats.pushSplat(new THREE.Vector3(x, y, z), scale, quat, 0.35 + rand() * 0.3, TMP_COLOR.clone());
-        }
-      },
-      onFrame: ({ mesh, time }) => {
-        mesh.rotation.y = Math.sin(time * 0.05) * 0.02;
-      }
+      this.dustMesh = dust;
+      this.fogMesh = fog;
+      this.memoryMesh = memory;
+      this.scene.add(dust, fog, memory);
+      this.callbacks.onReady({
+        quality: this.quality.label,
+        webgl2: this.renderer.capabilities.isWebGL2,
+        spark: true,
+        bloom: this.quality.bloom
+      });
+    }).catch(() => {
+      // Spark is a visual enhancement; the Three.js game remains fully playable.
     });
-    this.scene.add(this.dustMesh);
-
-    const fogScale = new THREE.Vector3(0.55, 0.12, 0.55);
-    const fogCount = Math.round(dustCount * 0.4);
-    this.fogMesh = new SplatMesh({
-      constructSplats: (splats) => {
-        for (let i = 0; i < fogCount; i += 1) {
-          const x = (rand() - 0.5) * GRID * CELL;
-          const y = 0.15 + rand() * 0.5;
-          const z = (rand() - 0.5) * GRID * CELL;
-          TMP_COLOR.setRGB(0.5, 0.55, 0.6).multiplyScalar(0.4 + rand() * 0.3);
-          splats.pushSplat(new THREE.Vector3(x, y, z), fogScale, quat, 0.18 + rand() * 0.14, TMP_COLOR.clone());
-        }
-      },
-      onFrame: ({ mesh, time }) => {
-        mesh.position.x = Math.sin(time * 0.03) * 0.5;
-        mesh.position.z = Math.cos(time * 0.026) * 0.5;
-      }
-    });
-    this.scene.add(this.fogMesh);
   }
 
   // ---------------------------------------------------------- POST-PROCESSING
@@ -1061,12 +1288,22 @@ export class HorrorEngine {
     document.addEventListener("pointerlockchange", this.onPointerLockChange);
   }
 
+  private clearMovementKeys(): void {
+    this.keys.f = false;
+    this.keys.b = false;
+    this.keys.l = false;
+    this.keys.r = false;
+  }
+
   private handleKeyDown(e: KeyboardEvent): void {
+    const target = e.target;
+    if (target instanceof HTMLElement && (target.isContentEditable || target.matches("input, textarea, select, button"))) return;
+    if (this.mode !== "playing") return;
     const mapped = this.keyMap[e.key];
     if (mapped) { this.keys[mapped] = true; e.preventDefault(); }
-    if (e.key === "e" || e.key === "E") this.toggleHide();
-    if (e.key === "f" || e.key === "F") this.toggleFlashlight();
-    if (e.key === "Escape" && this.mode === "playing") this.pause();
+    if (!e.repeat && (e.key === "e" || e.key === "E")) this.toggleHide();
+    if (!e.repeat && (e.key === "f" || e.key === "F")) this.toggleFlashlight();
+    if (e.key === "Escape") this.pause();
   }
 
   private handleKeyUp(e: KeyboardEvent): void {
@@ -1095,7 +1332,8 @@ export class HorrorEngine {
 
   private lockPointer(): void {
     try {
-      this.canvas.requestPointerLock?.();
+      const request = this.canvas.requestPointerLock?.();
+      if (request && typeof request.catch === "function") void request.catch(() => undefined);
     } catch {
       /* ignore */
     }
@@ -1168,7 +1406,7 @@ export class HorrorEngine {
     try {
       this.ac = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
       this.master = this.ac.createGain();
-      this.master.gain.value = 0.7;
+      this.master.gain.value = this.muted ? 0.0001 : 0.7;
       this.master.connect(this.ac.destination);
       this.droneGain = this.ac.createGain();
       this.droneGain.gain.value = 0.05;
@@ -1241,14 +1479,7 @@ export class HorrorEngine {
 
   // ---------------------------------------------------------- GAME FLOW
 
-  // Rebuilds the maze/props/warden/atmosphere for a new NG+ loop. Call before start()
-  // whenever the persisted loop counter has advanced since this engine was constructed
-  // (the engine instance otherwise lives for the whole page session and would keep
-  // replaying the same construction-time layout forever).
-  setLoop(loop: number): void {
-    if (loop === this.loop) return;
-    this.loop = loop;
-
+  private rebuildLevel(): void {
     this.scene.remove(this.levelGroup);
     for (const item of this.items) disposeMaterials(item.mesh.material as THREE.Material | THREE.Material[] | undefined);
     this.levelGroup.traverse((object) => {
@@ -1266,6 +1497,8 @@ export class HorrorEngine {
     this.exitSign = null;
     this.wardenEyes = [];
     this.warden = null;
+    this.remotePlayers.clear();
+    this.collectedFileIds.clear();
 
     this.levelGroup = new THREE.Group();
     this.scene.add(this.levelGroup);
@@ -1277,13 +1510,161 @@ export class HorrorEngine {
     this.setupSparkAtmosphere();
   }
 
+  // Rebuilds the maze/props/warden/atmosphere for a new NG+ loop. Call before start()
+  // whenever the persisted loop counter has advanced since this engine was constructed
+  // (the engine instance otherwise lives for the whole page session and would keep
+  // replaying the same construction-time layout forever).
+  setLoop(loop: number): void {
+    if (loop === this.loop) return;
+    this.loop = loop;
+    this.rebuildLevel();
+    this.buildRemotePlayers();
+  }
+
+  configureSession(config: HorrorSessionConfig): void {
+    this.sessionRole = config.role;
+    this.sessionSeed = config.role === "solo" ? null : (config.seed ?? 0) >>> 0;
+    this.localPlayerId = config.localId || "solo";
+    this.sessionPlayers = config.players.length > 0
+      ? config.players.slice(0, 3)
+      : [{ id: this.localPlayerId, name: "YOU", isHost: true }];
+    this.poseSeq = 0;
+    this.worldSeq = 0;
+    this.lastWorldStateSeq = -1;
+    this.rebuildLevel();
+    this.buildRemotePlayers();
+  }
+
+  private makeNameplate(name: string, color: number): THREE.Sprite {
+    const canvas = document.createElement("canvas");
+    canvas.width = 384;
+    canvas.height = 96;
+    const ctx = canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "rgba(3,4,8,.72)";
+    ctx.fillRect(12, 18, 360, 60);
+    ctx.strokeStyle = `#${new THREE.Color(color).getHexString()}`;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(12, 18, 360, 60);
+    ctx.fillStyle = "#eef7f5";
+    ctx.font = "600 30px ui-monospace, monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(name.trim().slice(0, 16).toUpperCase(), 192, 49);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true, depthWrite: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.position.set(0, 2.25, 0);
+    sprite.scale.set(1.8, 0.45, 1);
+    return sprite;
+  }
+
+  private createRemoteAvatar(info: HorrorSessionPlayer, index: number): RemotePlayerRuntime {
+    const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
+    const root = new THREE.Group();
+    root.name = `echo-${info.id}`;
+
+    const cloth = new THREE.MeshStandardMaterial({ color: 0x172028, roughness: 0.92, metalness: 0.04 });
+    const skin = new THREE.MeshStandardMaterial({ color: 0x9ba7a7, roughness: 0.88, metalness: 0 });
+    const accent = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 2.4,
+      roughness: 0.32,
+      metalness: 0.2
+    });
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 0.72, 5, 10), cloth);
+    torso.position.y = 1.08;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), skin);
+    head.position.y = 1.72;
+    const badge = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.025), accent);
+    badge.position.set(0.13, 1.27, -0.245);
+    const limbGeo = new THREE.CapsuleGeometry(0.08, 0.54, 4, 7);
+    const armL = new THREE.Mesh(limbGeo, cloth);
+    armL.position.set(-0.31, 1.12, 0);
+    armL.rotation.z = -0.1;
+    const armR = armL.clone();
+    armR.position.x = 0.31;
+    armR.rotation.z = 0.1;
+    const legGeo = new THREE.CapsuleGeometry(0.1, 0.56, 4, 7);
+    const legL = new THREE.Mesh(legGeo, cloth);
+    legL.position.set(-0.13, 0.38, 0);
+    const legR = legL.clone();
+    legR.position.x = 0.13;
+    root.add(torso, head, badge, armL, armR, legL, legR);
+    root.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (mesh.isMesh) mesh.castShadow = this.quality.shadows;
+    });
+
+    const beamMaterial = new THREE.MeshBasicMaterial({
+      color: 0xd9eeff,
+      transparent: true,
+      opacity: 0.055,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide
+    });
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.95, 7, 18, 1, true), beamMaterial);
+    beam.rotation.x = -Math.PI / 2;
+    beam.position.set(0, 1.52, -3.45);
+    root.add(beam);
+
+    const light = new THREE.SpotLight(0xddeeff, 22, 10, Math.PI / 7, 0.62, 1.5);
+    light.position.set(0, 1.52, -0.1);
+    light.target.position.set(0, 1.35, -5);
+    root.add(light, light.target);
+
+    const nameplate = this.makeNameplate(info.name, color);
+    root.add(nameplate);
+    this.levelGroup.add(root);
+
+    const spawn = cellCenter(this.spawnCell.x, this.spawnCell.z);
+    root.position.set(spawn.x, 0, spawn.z);
+    const initialPose: HorrorPlayerPose = {
+      id: info.id,
+      seq: 0,
+      x: spawn.x,
+      z: spawn.z,
+      yaw: 0,
+      pitch: 0,
+      hiding: false,
+      flashlight: true,
+      watching: false,
+      alive: true
+    };
+    return {
+      info,
+      root,
+      target: new THREE.Vector3(spawn.x, 0, spawn.z),
+      pose: initialPose,
+      light,
+      beam,
+      nameplate,
+      lastSeenAt: performance.now()
+    };
+  }
+
+  private buildRemotePlayers(): void {
+    this.remotePlayers.clear();
+    this.sessionPlayers.forEach((player, index) => {
+      if (player.id === this.localPlayerId) return;
+      this.remotePlayers.set(player.id, this.createRemoteAvatar(player, index));
+    });
+  }
+
   start(): void {
     this.audioInit();
+    this.clearMovementKeys();
     this.resetTouchSticks();
     this.filesFound = 0;
+    this.collectedFileIds.clear();
     for (const item of this.items) {
       if (item.got) { this.levelGroup.add(item.mesh); if (item.light) this.levelGroup.add(item.light); }
       item.got = false;
+      item.pending = false;
+      item.pendingSince = 0;
     }
     this.fear = 0;
     this.hiding = false;
@@ -1294,15 +1675,51 @@ export class HorrorEngine {
     this.scaresThisRun.clear();
     this.hidesThisRun = 0;
     this.exitTrulyOpen = false;
-    this.financeFinaleFired = false;
+    this.finaleFired = false;
     for (const m of this.mirrors) { m.triggered = false; m.flashT = 0; m.faceMat.opacity = 0; }
     for (const l of this.lockers) l.lastScare = -999;
     this.lastLockerScare = -30;
     this.lastAmbientScare = -12;
+    this.poseEmitT = 0;
+    this.worldEmitT = 0;
+    this.hudEmitT = 0;
 
     const spawn = cellCenter(this.spawnCell.x, this.spawnCell.z);
-    this.camera.position.set(spawn.x, EYE_H, spawn.z);
-    this.yaw = 0; this.pitch = 0; this.camera.fov = 72; this.camera.updateProjectionMatrix();
+    const spawnMazeCell = this.cells[cellIndex(this.spawnCell.x, this.spawnCell.z)];
+    const opening = [
+      { open: spawnMazeCell.n, dx: 0, dz: -1 },
+      { open: spawnMazeCell.e, dx: 1, dz: 0 },
+      { open: spawnMazeCell.s, dx: 0, dz: 1 },
+      { open: spawnMazeCell.w, dx: -1, dz: 0 }
+    ].find((direction) => direction.open) ?? { open: true, dx: 0, dz: -1 };
+    const spawnYaw = Math.atan2(-opening.dx, -opening.dz);
+    const lateralX = -opening.dz;
+    const lateralZ = opening.dx;
+    const playerIndex = Math.max(0, this.sessionPlayers.findIndex((player) => player.id === this.localPlayerId));
+    const spawnOffsets = [
+      [0, 0],
+      [lateralX * 0.78, lateralZ * 0.78],
+      [-lateralX * 0.78, -lateralZ * 0.78]
+    ] as const;
+    const offset = spawnOffsets[playerIndex] ?? spawnOffsets[0];
+    const [spawnX, spawnZ] = this.collide(spawn.x + offset[0], spawn.z + offset[1], PLAYER_R);
+    this.camera.position.set(spawnX, EYE_H, spawnZ);
+    this.yaw = spawnYaw;
+    this.pitch = 0;
+    this.camera.rotation.set(this.pitch, this.yaw, 0);
+    this.camera.fov = 72;
+    this.camera.updateProjectionMatrix();
+
+    this.sessionPlayers.forEach((player, index) => {
+      const remote = this.remotePlayers.get(player.id);
+      if (!remote) return;
+      const remoteOffset = spawnOffsets[index] ?? spawnOffsets[0];
+      remote.target.set(spawn.x + remoteOffset[0], 0, spawn.z + remoteOffset[1]);
+      remote.root.position.copy(remote.target);
+      remote.root.rotation.y = spawnYaw;
+      remote.root.visible = true;
+      remote.pose = { ...remote.pose, seq: 0, x: remote.target.x, z: remote.target.z, yaw: spawnYaw, hiding: false, flashlight: true, alive: true };
+    });
 
     this.wardenCell = this.farthestCellFrom(this.spawnCell.x, this.spawnCell.z, 0.35).idx;
     this.wardenPos.copy(this.cellWorldPos(this.wardenCell));
@@ -1311,10 +1728,15 @@ export class HorrorEngine {
     this.wardenPath = [];
     this.wardenPathIdx = 0;
     if (this.warden) this.warden.position.copy(this.wardenPos);
+    this.replicaWardenTarget.copy(this.wardenPos);
+    this.replicaWardenYaw = this.warden?.rotation.y ?? 0;
 
     this.mode = "playing";
     this.startedAt = performance.now();
+    this.pausedAt = 0;
     this.elapsedMs = 0;
+    this.guestElapsedBaseMs = 0;
+    this.guestElapsedReceivedAt = 0;
     this.callbacks.onModeChange("playing");
     this.callbacks.onFilesUpdate(0, NEEDED_FILES);
     this.callbacks.onFear(0);
@@ -1322,9 +1744,99 @@ export class HorrorEngine {
     if (!this.isTouch) this.lockPointer();
   }
 
+  applyRemotePose(pose: HorrorPlayerPose): void {
+    if (pose.id === this.localPlayerId || !Number.isFinite(pose.x) || !Number.isFinite(pose.z)) return;
+    const remote = this.remotePlayers.get(pose.id);
+    if (!remote || pose.seq <= remote.pose.seq) return;
+    const now = performance.now();
+    const secondsSincePose = Math.max(0.05, (now - remote.lastSeenAt) / 1_000);
+    const maxTravel = 1.35 + secondsSincePose * PLAYER_SPEED * 1.8;
+    if (Math.hypot(pose.x - remote.pose.x, pose.z - remote.pose.z) > maxTravel) return;
+    const limit = HALF - PLAYER_R;
+    const rawX = clamp(pose.x, -limit, limit);
+    const rawZ = clamp(pose.z, -limit, limit);
+    const [safeX, safeZ] = this.collide(rawX, rawZ, PLAYER_R);
+    const validHiding = pose.hiding && this.hideSpots.some((spot) => Math.hypot(safeX - spot.x, safeZ - spot.z) < 1.8);
+    remote.pose = {
+      ...pose,
+      x: safeX,
+      z: safeZ,
+      yaw: clamp(pose.yaw, -Math.PI * 8, Math.PI * 8),
+      pitch: clamp(pose.pitch, -Math.PI / 2, Math.PI / 2),
+      hiding: validHiding
+    };
+    remote.target.set(remote.pose.x, 0, remote.pose.z);
+    remote.lastSeenAt = now;
+  }
+
+  applyAuthorityState(state: HorrorWorldState): void {
+    if (this.sessionRole !== "guest" || state.seq <= this.lastWorldStateSeq) return;
+    this.lastWorldStateSeq = state.seq;
+    this.replicaWardenTarget.set(state.wardenX, 0, state.wardenZ);
+    this.replicaWardenYaw = state.wardenYaw;
+    this.wardenMode = state.wardenMode;
+    this.exitTrulyOpen = state.exitOpen;
+    this.guestElapsedBaseMs = state.elapsedMs;
+    this.guestElapsedReceivedAt = performance.now();
+    this.elapsedMs = Math.max(this.elapsedMs, state.elapsedMs);
+    for (const fileId of state.collected) this.confirmFileCollected(fileId, false);
+  }
+
+  acceptFileClaim(fileId: number, playerId: string): boolean {
+    if (this.sessionRole !== "host") return false;
+    const item = this.items.find((entry) => entry.id === fileId);
+    if (!item || item.got) return false;
+    const remote = this.remotePlayers.get(playerId);
+    const px = playerId === this.localPlayerId ? this.camera.position.x : remote?.pose.x;
+    const pz = playerId === this.localPlayerId ? this.camera.position.z : remote?.pose.z;
+    if (px === undefined || pz === undefined || remote?.pose.alive === false || remote?.pose.hiding) return false;
+    if (Math.hypot(px - item.x, pz - item.z) > 2.15) return false;
+    this.confirmFileCollected(fileId, true);
+    return true;
+  }
+
+  markRemoteDisconnected(playerId: string): void {
+    const remote = this.remotePlayers.get(playerId);
+    if (!remote) return;
+    remote.pose = { ...remote.pose, alive: false, hiding: true };
+    remote.root.visible = false;
+  }
+
+  finishNetworkRun(
+    won: boolean,
+    lossKind?: LossKind,
+    downPlayerId?: string,
+    localFeedback = false,
+    authoritativeElapsedMs?: number
+  ): void {
+    if (typeof authoritativeElapsedMs === "number" && Number.isFinite(authoritativeElapsedMs)) {
+      this.elapsedMs = Math.max(0, authoritativeElapsedMs);
+    }
+    if (!won && localFeedback && lossKind === "caught" && this.mode === "playing") this.triggerJumpscare("chase");
+    this.endRun(won, lossKind, downPlayerId);
+  }
+
+  returnToMenu(): void {
+    this.mode = "menu";
+    this.clearMovementKeys();
+    this.resetTouchSticks();
+    if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
+    this.callbacks.onModeChange("menu");
+  }
+
   pause(): void {
     if (this.mode !== "playing") return;
+    // A network session cannot pause the host-authoritative world. Releasing
+    // pointer lock is still allowed; clicking the canvas captures it again.
+    if (this.sessionRole !== "solo") {
+      this.clearMovementKeys();
+      this.resetTouchSticks();
+      if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
+      return;
+    }
     this.mode = "paused";
+    this.clearMovementKeys();
+    this.pausedAt = performance.now();
     this.resetTouchSticks();
     if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
     this.callbacks.onModeChange("paused");
@@ -1332,6 +1844,8 @@ export class HorrorEngine {
 
   resume(): void {
     if (this.mode !== "paused") return;
+    if (this.pausedAt > 0) this.startedAt += performance.now() - this.pausedAt;
+    this.pausedAt = 0;
     this.mode = "playing";
     this.resetTouchSticks();
     this.callbacks.onModeChange("playing");
@@ -1366,8 +1880,19 @@ export class HorrorEngine {
     this.callbacks.onFlashlightChange(this.flashlightOn);
   }
 
+  /** Prime Web Audio from a click before an asynchronous guest start arrives. */
+  primeAudio(): void {
+    this.audioInit();
+  }
+
   setMuted(muted: boolean): void {
     this.muted = muted;
+    if (this.master && this.ac) {
+      const now = this.ac.currentTime;
+      this.master.gain.cancelScheduledValues(now);
+      this.master.gain.setValueAtTime(Math.max(0.0001, this.master.gain.value), now);
+      this.master.gain.exponentialRampToValueAtTime(muted ? 0.0001 : 0.7, now + 0.08);
+    }
   }
 
   setBloomEnabled(enabled: boolean): void {
@@ -1383,9 +1908,10 @@ export class HorrorEngine {
     this.lookSens = v;
   }
 
-  private endRun(won: boolean, lossKind?: LossKind): void {
+  private endRun(won: boolean, lossKind?: LossKind, downPlayerId?: string): void {
     if (this.mode !== "playing") return;
     this.mode = won ? "won" : "lost";
+    this.clearMovementKeys();
     this.resetTouchSticks();
     if (document.pointerLockElement === this.canvas) document.exitPointerLock?.();
     if (won) {
@@ -1400,7 +1926,8 @@ export class HorrorEngine {
       score: this.score,
       scares: this.scaresThisRun.size,
       hides: this.hidesThisRun,
-      lossKind
+      lossKind,
+      downPlayerId: won ? undefined : (downPlayerId ?? this.localPlayerId)
     });
   }
 
@@ -1422,10 +1949,11 @@ export class HorrorEngine {
 
   // ---------------------------------------------------------- PER-FRAME UPDATE
 
-  private readonly frame = (): void => {
+  private readonly frame = (timestamp: number): void => {
     if (this.disposed) return;
-    const dt = Math.min(0.05, this.clock.getDelta());
-    const time = this.clock.elapsedTime;
+    this.timer.update(timestamp);
+    const dt = Math.min(0.05, this.timer.getDelta());
+    const time = this.timer.getElapsed();
     this.update(dt, time);
     if (this.composer) this.composer.render();
     else this.renderer.render(this.scene, this.camera);
@@ -1436,16 +1964,27 @@ export class HorrorEngine {
     this.invuln = Math.max(0, this.invuln - dt);
 
     if (this.mode === "playing") {
-      this.elapsedMs = performance.now() - this.startedAt;
-      this.callbacks.onTime(this.elapsedMs);
+      const now = performance.now();
+      this.elapsedMs = this.sessionRole === "guest" && this.guestElapsedReceivedAt > 0
+        ? Math.max(this.elapsedMs, this.guestElapsedBaseMs + now - this.guestElapsedReceivedAt)
+        : now - this.startedAt;
       this.updatePlayer(dt);
+      this.updateRemotePlayers(dt);
       this.updateItems(dt, time);
-      this.updateWarden(dt, time);
+      if (this.sessionRole === "guest") this.updateWardenReplica(dt, time);
+      else this.updateWarden(dt, time);
       this.updateMirrors(dt);
       this.updateLockers(dt, time);
       this.updateAmbientScare(dt);
       this.updateFear(dt);
-      this.updateExit();
+      if (this.sessionRole !== "guest") this.updateExit();
+      this.emitNetworkState(dt);
+      this.hudEmitT += dt;
+      if (this.hudEmitT >= 0.1) {
+        this.hudEmitT %= 0.1;
+        this.callbacks.onTime(this.elapsedMs);
+        this.callbacks.onFear(this.fear);
+      }
     }
 
     this.updateFlicker(time);
@@ -1491,8 +2030,8 @@ export class HorrorEngine {
     this.camera.position.x = cx;
     this.camera.position.z = cz;
 
-    this.flash.intensity = this.flashlightOn ? 105 : 0;
-    this.handGlow.intensity = this.flashlightOn ? 1.8 : 0.4;
+    this.flash.intensity = this.flashlightOn ? 82 : 0;
+    this.handGlow.intensity = this.flashlightOn ? 1.05 : 0.24;
 
     if (this.shakeEnabled && (this.fovKick > 0.001 || Math.abs(this.punchX) > 0.0005 || Math.abs(this.punchZ) > 0.0005)) {
       this.camera.fov = 72 + this.fovKick;
@@ -1508,43 +2047,155 @@ export class HorrorEngine {
     }
   }
 
+  private confirmFileCollected(fileId: number, localFeedback: boolean): void {
+    const item = this.items.find((entry) => entry.id === fileId);
+    if (!item || item.got) return;
+    item.got = true;
+    item.pending = false;
+    item.pendingSince = 0;
+    this.levelGroup.remove(item.mesh);
+    if (item.light) this.levelGroup.remove(item.light);
+    this.collectedFileIds.add(fileId);
+    this.filesFound = this.collectedFileIds.size;
+    this.score += 500;
+    if (localFeedback) this.pulse(560 + this.filesFound * 30, 0.09, "triangle", 0.05);
+    this.callbacks.onFilesUpdate(this.filesFound, NEEDED_FILES);
+  }
+
   private updateItems(_dt: number, time: number): void {
     for (const item of this.items) {
       if (item.got) continue;
       item.mesh.rotation.y = time * 1.6;
       item.mesh.position.y = 1.05 + Math.sin(time * 2 + item.phase) * 0.08;
-      if (this.hiding) continue;
+      // A rejected/lost guest claim must not deadlock that CASE FILE forever.
+      // The host snapshot normally confirms it within one round trip; after a
+      // short grace period the guest may safely retry while still in range.
+      if (item.pending && performance.now() - item.pendingSince > 1_250) {
+        item.pending = false;
+        item.pendingSince = 0;
+      }
+      if (this.hiding || item.pending) continue;
       const d = Math.hypot(this.camera.position.x - item.x, this.camera.position.z - item.z);
       if (d < 1.5) {
-        item.got = true;
-        this.levelGroup.remove(item.mesh);
-        if (item.light) this.levelGroup.remove(item.light);
-        this.filesFound += 1;
-        this.score += 500;
-        this.pulse(560 + this.filesFound * 30, 0.09, "triangle", 0.05);
-        this.callbacks.onFilesUpdate(this.filesFound, NEEDED_FILES);
+        if (this.sessionRole === "guest") {
+          item.pending = true;
+          item.pendingSince = performance.now();
+          this.callbacks.onFileClaim?.(item.id);
+        } else {
+          this.confirmFileCollected(item.id, true);
+        }
       }
+    }
+  }
+
+  private observesWarden(x: number, z: number, yaw: number, hiding: boolean, alive = true): boolean {
+    if (!alive || hiding) return false;
+    const dx = this.wardenPos.x - x;
+    const dz = this.wardenPos.z - z;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 0.001 || distance >= OBSERVE_DIST) return false;
+    const inv = 1 / distance;
+    const forwardX = -Math.sin(yaw);
+    const forwardZ = -Math.cos(yaw);
+    const dot = forwardX * dx * inv + forwardZ * dz * inv;
+    return dot > OBSERVE_COS && this.los(x, z, this.wardenPos.x, this.wardenPos.z);
+  }
+
+  private updateRemotePlayers(dt: number): void {
+    const response = 1 - Math.exp(-dt * 12);
+    const now = performance.now();
+    for (const remote of this.remotePlayers.values()) {
+      const pose = remote.pose;
+      const live = pose.alive && now - remote.lastSeenAt < 12_000;
+      remote.root.visible = live && !pose.hiding;
+      if (!live) continue;
+      remote.root.position.lerp(remote.target, response);
+      const angleDelta = Math.atan2(Math.sin(pose.yaw - remote.root.rotation.y), Math.cos(pose.yaw - remote.root.rotation.y));
+      remote.root.rotation.y += angleDelta * response;
+      const lightOn = pose.flashlight && !pose.hiding;
+      remote.light.intensity = lightOn ? 22 : 0;
+      remote.beam.visible = lightOn;
+      const distance = Math.hypot(this.camera.position.x - remote.root.position.x, this.camera.position.z - remote.root.position.z);
+      remote.nameplate.visible = distance < 13 && this.los(this.camera.position.x, this.camera.position.z, remote.root.position.x, remote.root.position.z);
+    }
+  }
+
+  private emitNetworkState(dt: number): void {
+    if (this.sessionRole === "solo" || this.mode !== "playing") return;
+    this.poseEmitT += dt;
+    this.worldEmitT += dt;
+    if (this.poseEmitT >= 1 / 15) {
+      this.poseEmitT %= 1 / 15;
+      this.callbacks.onLocalPose?.({
+        id: this.localPlayerId,
+        seq: ++this.poseSeq,
+        x: this.camera.position.x,
+        z: this.camera.position.z,
+        yaw: this.yaw,
+        pitch: this.pitch,
+        hiding: this.hiding,
+        flashlight: this.flashlightOn,
+        watching: this.observesWarden(this.camera.position.x, this.camera.position.z, this.yaw, this.hiding),
+        alive: this.mode === "playing"
+      });
+    }
+    if (this.sessionRole === "host" && this.worldEmitT >= 1 / 12) {
+      this.worldEmitT %= 1 / 12;
+      this.callbacks.onAuthorityState?.({
+        seq: ++this.worldSeq,
+        sentAt: performance.now(),
+        wardenX: this.wardenPos.x,
+        wardenZ: this.wardenPos.z,
+        wardenYaw: this.warden?.rotation.y ?? 0,
+        wardenMode: this.wardenMode,
+        collected: [...this.collectedFileIds].sort((a, b) => a - b),
+        exitOpen: this.exitTrulyOpen,
+        elapsedMs: this.elapsedMs
+      });
+    }
+  }
+
+  private updateWardenReplica(dt: number, time: number): void {
+    if (!this.warden) return;
+    const response = 1 - Math.exp(-dt * 14);
+    this.wardenPos.lerp(this.replicaWardenTarget, response);
+    const angleDelta = Math.atan2(Math.sin(this.replicaWardenYaw - this.warden.rotation.y), Math.cos(this.replicaWardenYaw - this.warden.rotation.y));
+    this.warden.rotation.y += angleDelta * response;
+    this.warden.position.set(this.wardenPos.x, Math.sin(time * 5) * 0.02, this.wardenPos.z);
+    const observed = this.observesWarden(this.camera.position.x, this.camera.position.z, this.yaw, this.hiding);
+    for (const eye of this.wardenEyes) {
+      const mat = eye.material as THREE.MeshStandardMaterial;
+      mat.emissiveIntensity = observed ? 2.2 : 1.4 + Math.sin(time * 6) * 0.3;
     }
   }
 
   private updateWarden(dt: number, time: number): void {
     if (!this.warden) return;
-    const camDist = this.camera.position.distanceTo(this.wardenPos);
-    const toWarden = TMP_VEC.set(this.wardenPos.x - this.camera.position.x, 0, this.wardenPos.z - this.camera.position.z);
-    const toWardenLen = toWarden.length();
-    let observed = false;
-    if (toWardenLen > 0.001 && camDist < OBSERVE_DIST) {
-      toWarden.normalize();
-      const forward = TMP_VEC_2.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
-      forward.y = 0;
-      forward.normalize();
-      const dot = forward.dot(toWarden);
-      if (dot > OBSERVE_COS && this.los(this.camera.position.x, this.camera.position.z, this.wardenPos.x, this.wardenPos.z)) {
-        observed = true;
+    let observed = this.observesWarden(this.camera.position.x, this.camera.position.z, this.yaw, this.hiding);
+    let targetX = this.camera.position.x;
+    let targetZ = this.camera.position.z;
+    let targetDist = this.hiding ? Number.POSITIVE_INFINITY : Math.hypot(targetX - this.wardenPos.x, targetZ - this.wardenPos.z);
+    let contactDist = targetDist;
+    let contactPlayerId: string | null = this.hiding ? null : this.localPlayerId;
+    const now = performance.now();
+    for (const remote of this.remotePlayers.values()) {
+      const pose = remote.pose;
+      if (!pose.alive || now - remote.lastSeenAt > 10_000) continue;
+      observed ||= this.observesWarden(pose.x, pose.z, pose.yaw, pose.hiding, pose.alive);
+      if (pose.hiding) continue;
+      const distance = Math.hypot(pose.x - this.wardenPos.x, pose.z - this.wardenPos.z);
+      if (distance < contactDist) {
+        contactDist = distance;
+        contactPlayerId = pose.id;
+      }
+      if (distance < targetDist) {
+        targetDist = distance;
+        targetX = pose.x;
+        targetZ = pose.z;
       }
     }
 
-    if (!this.hiding && camDist < DETECT_RADIUS) {
+    if (targetDist < DETECT_RADIUS) {
       this.wardenMode = "hunt";
       this.wardenHuntTimer = HUNT_DECAY;
     } else if (this.wardenMode === "hunt") {
@@ -1556,8 +2207,8 @@ export class HorrorEngine {
     if (this.wardenRepathT <= 0) {
       this.wardenRepathT = 0.5;
       const target =
-        this.wardenMode === "hunt" && !this.hiding
-          ? worldToCell(this.camera.position.x, this.camera.position.z)
+        this.wardenMode === "hunt" && Number.isFinite(targetDist)
+          ? worldToCell(targetX, targetZ)
           : worldToCell(this.wardenPos.x + (Math.random() - 0.5) * GRID * CELL, this.wardenPos.z + (Math.random() - 0.5) * GRID * CELL);
       const fromIdx = cellIndex(worldToCell(this.wardenPos.x, this.wardenPos.z).x, worldToCell(this.wardenPos.x, this.wardenPos.z).z);
       const toIdx = cellIndex(target.x, target.z);
@@ -1590,16 +2241,16 @@ export class HorrorEngine {
       mat.emissiveIntensity = observed ? 2.2 : 1.4 + Math.sin(time * 6) * 0.3;
     }
 
-    if (!this.hiding && this.invuln <= 0 && camDist < CONTACT_RADIUS && this.wardenMode === "hunt" && !observed) {
-      this.triggerJumpscare("chase");
-      this.endRun(false, "caught");
+    if (this.invuln <= 0 && contactDist < CONTACT_RADIUS && this.wardenMode === "hunt" && !observed) {
+      if (contactPlayerId === this.localPlayerId) this.triggerJumpscare("chase");
+      this.endRun(false, "caught", contactPlayerId ?? this.localPlayerId);
     }
   }
 
-  private updateMirrors(_dt: number): void {
+  private updateMirrors(dt: number): void {
     for (const mirror of this.mirrors) {
       if (mirror.flashT > 0) {
-        mirror.flashT -= 0.016;
+        mirror.flashT -= dt;
         mirror.faceMat.opacity = clamp(mirror.flashT / 0.18, 0, 1) * 0.85;
         continue;
       }
@@ -1637,7 +2288,7 @@ export class HorrorEngine {
   }
 
   private updateAmbientScare(dt: number): void {
-    const time = this.clock.elapsedTime;
+    const time = this.timer.getElapsed();
     if (time - this.lastAmbientScare < 16) return;
     const chance = (this.fear > 15 ? 0.09 : 0.03) * dt;
     if (Math.random() < chance) {
@@ -1658,16 +2309,21 @@ export class HorrorEngine {
       if (!this.flashlightOn) delta += dt * 2.2;
       this.fear = clamp(this.fear + delta, 0, 100);
     }
-    this.callbacks.onFear(this.fear);
     if (this.fear >= 100 && this.mode === "playing") this.endRun(false, "fear");
   }
 
   private updateExit(): void {
     if (this.filesFound < NEEDED_FILES) return;
     const exitCenter = cellCenter(this.exitCell.x, this.exitCell.z);
-    const d = Math.hypot(this.camera.position.x - exitCenter.x, this.camera.position.z - exitCenter.z);
-    if (!this.financeFinaleFired && d < PRE_EXIT_RADIUS) {
-      this.financeFinaleFired = true;
+    let d = this.hiding
+      ? Number.POSITIVE_INFINITY
+      : Math.hypot(this.camera.position.x - exitCenter.x, this.camera.position.z - exitCenter.z);
+    for (const remote of this.remotePlayers.values()) {
+      if (!remote.pose.alive || remote.pose.hiding) continue;
+      d = Math.min(d, Math.hypot(remote.pose.x - exitCenter.x, remote.pose.z - exitCenter.z));
+    }
+    if (!this.finaleFired && d < PRE_EXIT_RADIUS) {
+      this.finaleFired = true;
       this.exitTrulyOpen = true;
       this.triggerJumpscare("finale");
       return;
@@ -1682,6 +2338,7 @@ export class HorrorEngine {
       const flicker = Math.sin(time * 9 + f.phase) * 0.15 + Math.sin(time * 23 + f.phase * 2) * 0.08;
       const dip = Math.random() < 0.002 ? 0.15 : 1;
       f.light.intensity = Math.max(0, f.base + flicker) * dip;
+      f.panel.emissiveIntensity = (1.35 + flicker * 0.3) * Math.max(0.18, dip);
     }
     if (this.exitSign) {
       const sign = this.exitSign.children[0] as THREE.Mesh | undefined;
@@ -1704,9 +2361,11 @@ export class HorrorEngine {
 
   dispose(): void {
     this.disposed = true;
+    this.timer.dispose();
     window.cancelAnimationFrame(this.animationId);
     window.removeEventListener("resize", this.onResize);
-    window.removeEventListener("visibilitychange", this.onVisibility);
+    window.removeEventListener("blur", this.onBlur);
+    document.removeEventListener("visibilitychange", this.onVisibility);
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("mousemove", this.onMouseMove);
@@ -1723,8 +2382,12 @@ export class HorrorEngine {
       this.stickEls.left.remove();
       this.stickEls.right.remove();
     }
+    this.sparkGeneration += 1;
+    this.environmentGeneration += 1;
     if (this.dustMesh) { this.scene.remove(this.dustMesh); this.dustMesh.dispose(); }
     if (this.fogMesh) { this.scene.remove(this.fogMesh); this.fogMesh.dispose(); }
+    if (this.memoryMesh) { this.scene.remove(this.memoryMesh); this.memoryMesh.dispose(); }
+    if (this.sparkRenderer) { this.scene.remove(this.sparkRenderer); this.sparkRenderer.dispose(); }
     this.scene.traverse((object) => {
       if (object instanceof THREE.InstancedMesh) object.dispose();
       const mesh = object as THREE.Mesh;
@@ -1736,7 +2399,6 @@ export class HorrorEngine {
     for (const item of this.items) disposeMaterials(item.mesh.material as THREE.Material | THREE.Material[] | undefined);
     this.composer?.dispose();
     if (this.envRT) { this.envRT.dispose(); this.envRT = null; }
-    if (this.hdrTexture) { this.hdrTexture.dispose(); this.hdrTexture = null; }
     this.renderer.dispose();
     if (this.ac) this.ac.close().catch(() => undefined);
   }

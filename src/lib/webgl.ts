@@ -70,7 +70,11 @@ export function detectQuality(): QualityTier {
   }
 
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const mobile = window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 780;
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  // Touch-enabled laptops are not low-end mobile devices. Width is the useful
+  // signal here; pointer type alone caused capable Windows PCs to default to
+  // LOW and silently disable the Spark atmosphere.
+  const mobile = window.innerWidth < 780 || (coarsePointer && window.innerWidth < 980);
 
   // In-site persisted user choice = an explicit opt-in, so deliver the FULL experience
   // (ignore OS reduced-motion). AUTO (below) still respects the OS setting.
@@ -82,8 +86,10 @@ export function detectQuality(): QualityTier {
   const memory = typeof navigator !== "undefined" && "deviceMemory" in navigator
     ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 4)
     : 4;
-  const low = reducedMotion || memory < 3 || mobile;
-  const high = !low && !mobile && memory >= 4 && hasWebGL2();
+  // Reduced-motion controls camera shake/motion, not texture, lighting, or
+  // splat fidelity. Respect it without downgrading the entire 3D renderer.
+  const low = memory < 3 || mobile;
+  const high = !low && memory >= 4 && hasWebGL2();
 
   if (high) return { label: "HIGH", dpr: Math.min(2, window.devicePixelRatio || 1), shadowSize: 1024, shadows: true, bloom: true, spark: true, aa: true, motes: 900, reducedMotion, mobile };
   if (!low) return { label: "BALANCED", dpr: Math.min(1.35, window.devicePixelRatio || 1), shadowSize: 512, shadows: true, bloom: true, spark: false, aa: false, motes: 360, reducedMotion, mobile };
