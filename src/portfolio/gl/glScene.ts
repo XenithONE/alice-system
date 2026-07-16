@@ -21,6 +21,8 @@ const VERMILION = 0xff3b1f;
 const COBALT = 0x164cff;
 const ORBIT_RX = 2.34;
 const ORBIT_RY = 1.24;
+const ORBIT_INK = new THREE.Color(0x363a46);
+const ORBIT_SILVER = new THREE.Color(0x9aa4b8);
 const CLOSING_SELECTORS = "[data-creation-close], #closing, .closing-section, footer";
 
 function clamp01(value: number): number {
@@ -32,14 +34,17 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
   return x * x * (3 - 2 * x);
 }
 
-function createChromeMaterial(opacity = 1): THREE.MeshPhysicalMaterial {
+// Gunmetal, not silver: near-white chrome disappears into the paper background
+// (its highlights blow out to the paper tone). A dark body keeps the sculpture
+// legible on paper while the white env speculars carry the "chrome" read.
+function createChromeMaterial(opacity = 1, color = 0x2b2e36): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
-    color: 0xf3f5f7,
+    color,
     metalness: 1,
-    roughness: 0.105,
+    roughness: 0.12,
     clearcoat: 1,
-    clearcoatRoughness: 0.045,
-    envMapIntensity: 2.3,
+    clearcoatRoughness: 0.05,
+    envMapIntensity: 2.1,
     transparent: true,
     opacity,
     depthWrite: false,
@@ -47,22 +52,49 @@ function createChromeMaterial(opacity = 1): THREE.MeshPhysicalMaterial {
   });
 }
 
-function createGlassMaterial(opacity = 0.68): THREE.MeshPhysicalMaterial {
+// Cobalt-tinted glass with real body — transmission 0.94 rendered as an
+// invisible ghost against the paper.
+function createGlassMaterial(opacity = 0.85, color = 0x4f6cff): THREE.MeshPhysicalMaterial {
   return new THREE.MeshPhysicalMaterial({
-    color: 0xe7efff,
-    metalness: 0.03,
-    roughness: 0.045,
-    transmission: 0.94,
-    thickness: 0.72,
+    color,
+    metalness: 0.05,
+    roughness: 0.06,
+    transmission: 0.55,
+    thickness: 0.9,
     ior: 1.46,
     clearcoat: 1,
-    clearcoatRoughness: 0.025,
-    envMapIntensity: 2.5,
+    clearcoatRoughness: 0.03,
+    envMapIntensity: 2.2,
     transparent: true,
     opacity,
     depthWrite: false,
     side: THREE.DoubleSide
   });
+}
+
+/** Soft radial ink wash behind the sculpture so it sits ON the paper instead of
+ * dissolving into it. Faded out as the closing morph takes over (dark bg). */
+function createHaloTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    gradient.addColorStop(0, "rgba(18, 19, 26, 0.34)");
+    gradient.addColorStop(0.45, "rgba(18, 19, 26, 0.16)");
+    gradient.addColorStop(1, "rgba(18, 19, 26, 0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  // Intentionally left untagged (NoColorSpace): the bytes are read as linear and
+  // the output sRGB encode lightens them, so the wash RENDERS as ~rgb(75,77,90)
+  // at these alphas — the look was tuned and verified this way. Tagging it
+  // SRGBColorSpace (or retuning stops by face value) would change the halo.
+  texture.needsUpdate = true;
+  return texture;
 }
 
 function ellipseLine(
@@ -127,14 +159,29 @@ function initialiseScene(
   root.name = "creation-core";
   scene.add(root);
 
+  const haloTexture = createHaloTexture();
+  const haloMaterial = new THREE.MeshBasicMaterial({
+    map: haloTexture,
+    transparent: true,
+    depthWrite: false,
+    toneMapped: false
+  });
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 6.4), haloMaterial);
+  halo.name = "creation-core-halo";
+  halo.position.z = -1.4;
+  halo.renderOrder = -1;
+  root.add(halo);
+
   const intact = new THREE.Group();
   intact.name = "creation-core-intact";
   root.add(intact);
 
+  // Intact loops live on the light hero paper -> gunmetal for contrast.
+  // Fragments only exist over the dark closing section -> bright silver there.
   const intactChrome = createChromeMaterial();
   const intactGlass = createGlassMaterial(0.7);
-  const fragmentChrome = createChromeMaterial(0);
-  const fragmentGlass = createGlassMaterial(0);
+  const fragmentChrome = createChromeMaterial(0, 0xdfe4ec);
+  const fragmentGlass = createGlassMaterial(0, 0x9db4ff);
 
   const fading: FadingMaterial[] = [
     { material: intactChrome, opacity: 1 },
@@ -227,8 +274,8 @@ function initialiseScene(
     ORBIT_RX,
     ORBIT_RY,
     quality.tier === "low" ? 72 : 128,
-    0x65718b,
-    0.23
+    0x363a46,
+    0.52
   );
   orbit.add(orbitMain);
   const orbitSecondary = ellipseLine(
@@ -236,7 +283,7 @@ function initialiseScene(
     ORBIT_RY * 0.77,
     quality.tier === "low" ? 64 : 112,
     COBALT,
-    0.16
+    0.36
   );
   orbitSecondary.rotation.z = 0.26;
   orbitSecondary.position.z = -0.25;
@@ -247,7 +294,7 @@ function initialiseScene(
   const beadMaterial = new THREE.MeshPhysicalMaterial({
     color: VERMILION,
     emissive: VERMILION,
-    emissiveIntensity: 0.72,
+    emissiveIntensity: 1.15,
     metalness: 0.08,
     roughness: 0.16,
     clearcoat: 1,
@@ -255,18 +302,18 @@ function initialiseScene(
   });
   bead.add(
     new THREE.Mesh(
-      new THREE.SphereGeometry(0.13, quality.tier === "low" ? 12 : 20, quality.tier === "low" ? 8 : 14),
+      new THREE.SphereGeometry(0.17, quality.tier === "low" ? 12 : 20, quality.tier === "low" ? 8 : 14),
       beadMaterial
     )
   );
   const beadGlowMaterial = new THREE.MeshBasicMaterial({
     color: VERMILION,
     transparent: true,
-    opacity: 0.14,
+    opacity: 0.28,
     blending: THREE.AdditiveBlending,
     depthWrite: false
   });
-  const beadGlow = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 8), beadGlowMaterial);
+  const beadGlow = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), beadGlowMaterial);
   bead.add(beadGlow);
 
   const cobaltMaterial = new THREE.MeshStandardMaterial({
@@ -277,7 +324,7 @@ function initialiseScene(
     metalness: 0.2
   });
   const cobaltPoints: THREE.Mesh[] = [];
-  const cobaltGeometry = new THREE.SphereGeometry(0.045, quality.tier === "low" ? 8 : 12, 8);
+  const cobaltGeometry = new THREE.SphereGeometry(0.075, quality.tier === "low" ? 8 : 12, 8);
   for (let i = 0; i < 3; i += 1) {
     const point = new THREE.Mesh(cobaltGeometry, cobaltMaterial);
     root.add(point);
@@ -338,7 +385,18 @@ function initialiseScene(
     const compact = width < 900;
     heroX = compact ? worldWidth * 0.08 : worldWidth * 0.25;
     heroY = compact ? -worldHeight * 0.12 : worldHeight * 0.015;
-    heroScale = compact ? 0.95 : Math.min(1.72, Math.max(1.5, worldWidth / 7.6));
+    // Third clamp: on squarish windows (5:4, portrait-ish desktop) the right
+    // margin shrinks and the knot would crop ~10%vw; cap it by the available
+    // margin (knot +x extent ≈1.6 world at scale 1) with a 1.5 floor. At 16:9
+    // and 16:10 this clamp stays above the other terms — the slight intentional
+    // edge bleed of the verified look is preserved.
+    heroScale = compact
+      ? 1.08
+      : Math.min(
+          1.95,
+          Math.max(1.68, worldWidth / 6.8),
+          Math.max(1.5, (worldWidth / 2 - heroX) / 1.6)
+        );
 
     const x = worldWidth * (compact ? 0.22 : 0.31);
     const y = worldHeight * (compact ? 0.22 : 0.24);
@@ -387,6 +445,10 @@ function initialiseScene(
     const open = smoothstep(0.04, 0.98, morph);
     const intactOpacity = 1 - smoothstep(0.06, 0.68, morph);
     const fragmentOpacity = smoothstep(0.16, 0.82, morph);
+    // The ink wash anchors the sculpture on the light hero paper; the dark
+    // closing section doesn't need it.
+    haloMaterial.opacity = 1 - open;
+    halo.visible = haloMaterial.opacity > 0.02;
     intact.visible = intactOpacity > 0.002;
     fragments.visible = fragmentOpacity > 0.002;
     fading[0].material.opacity = fading[0].opacity * intactOpacity;
@@ -439,10 +501,15 @@ function initialiseScene(
     const orbitScaleY = THREE.MathUtils.lerp(1, (worldHeight * 0.31) / ORBIT_RY, open);
     orbit.scale.set(orbitScaleX, orbitScaleY, 1);
     orbit.rotation.z = THREE.MathUtils.lerp(-0.16, -0.035, open);
-    orbitMain.material.opacity = THREE.MathUtils.lerp(0.23, 0.3, open);
-    orbitSecondary.material.opacity = THREE.MathUtils.lerp(0.16, 0.25, open);
+    orbitMain.material.opacity = THREE.MathUtils.lerp(0.52, 0.42, open);
+    orbitSecondary.material.opacity = THREE.MathUtils.lerp(0.36, 0.32, open);
+    // Ink lines on paper, silver lines on the dark closing.
+    orbitMain.material.color.lerpColors(ORBIT_INK, ORBIT_SILVER, open);
 
-    const orbitAngle = time * 0.34 + open * 0.72;
+    // +2.4 base phase: reduced-motion freezes time at 0, and angle 0 parks the
+    // bead off the right viewport edge at every common aspect. This keeps the
+    // frozen pose on-screen; for animated users it is an invisible offset.
+    const orbitAngle = time * 0.34 + open * 0.72 + 2.4;
     const orbitCos = Math.cos(orbit.rotation.z);
     const orbitSin = Math.sin(orbit.rotation.z);
     const placeOnOrbit = (object: THREE.Object3D, angle: number, z: number): void => {
@@ -523,6 +590,7 @@ function initialiseScene(
       });
       geometries.forEach((geometry) => geometry.dispose());
       materials.forEach((material) => material.dispose());
+      haloTexture.dispose();
       environment.dispose();
       renderer.dispose();
       scene.clear();

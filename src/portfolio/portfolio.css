@@ -464,12 +464,14 @@ pre {
   inset: 0 0 116px;
   z-index: 1;
   pointer-events: none;
+  /* Veil only the text column — the sculpture zone (right half) must stay
+     fully clear or the 3D reads as an invisible background. */
   background: linear-gradient(
     90deg,
-    rgba(251, 249, 246, 0.99) 0%,
-    rgba(251, 249, 246, 0.97) 25%,
-    rgba(251, 249, 246, 0.72) 40%,
-    rgba(251, 249, 246, 0) 60%
+    rgba(251, 249, 246, 0.96) 0%,
+    rgba(251, 249, 246, 0.88) 22%,
+    rgba(251, 249, 246, 0.4) 38%,
+    rgba(251, 249, 246, 0) 52%
   );
 }
 
@@ -1989,12 +1991,16 @@ pre {
 
   .hero::after {
     inset: 0 0 112px;
+    /* Mobile stacks text on top and the sculpture below (~62vh), so the veil
+       must be vertical: protect the copy block, keep the sculpture zone clear.
+       The old horizontal veil left a 0.6-1.0 paper wash over the sculpture and
+       negated the 3D-visibility fix on every phone width. */
     background: linear-gradient(
-      90deg,
-      rgba(251, 249, 246, 1) 0%,
-      rgba(251, 249, 246, 0.96) 47%,
-      rgba(251, 249, 246, 0.6) 70%,
-      rgba(251, 249, 246, 0.12) 100%
+      180deg,
+      rgba(251, 249, 246, 0.95) 0%,
+      rgba(251, 249, 246, 0.85) 34%,
+      rgba(251, 249, 246, 0.25) 48%,
+      rgba(251, 249, 246, 0) 60%
     );
   }
 
