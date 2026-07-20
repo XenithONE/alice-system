@@ -210,7 +210,7 @@ function LabEmptyState() {
 
 export function AiLab() {
   return (
-    <section id="ai-lab" className="section lab-notebook" aria-labelledby="lab-title">
+    <section id="ai-lab" className="section lab-notebook" data-chapter aria-labelledby="lab-title">
       <div className="lab-notebook-grid">
         <div className="lab-editorial" data-reveal>
           <p className="section-index">02 / AI LAB</p>

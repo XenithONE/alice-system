@@ -2,18 +2,18 @@ const GITHUB_REPOSITORY = "https://github.com/XenithONE/alice-system";
 
 export function Footer() {
   return (
-    <footer id="closing" className="site-footer" data-creation-close aria-labelledby="closing-title">
+    <footer id="closing" className="site-footer" data-chapter data-creation-close aria-labelledby="closing-title">
       <section className="closing-cta">
-        <p className="section-index">04 / NEXT EXPERIMENT</p>
+        <p className="section-index">04 / 落款 — NEXT EXPERIMENT</p>
         <h2 id="closing-title">次の実験へ。</h2>
-        <p>AIと人のあいだに、まだ名前のない遊びをつくる。</p>
-        <a
-          className="closing-cta-link"
-          href={GITHUB_REPOSITORY}
-          target="_blank"
-          rel="noreferrer"
-          data-magnetic
-        >
+        <p className="closing-copy">壊しては、金で継ぐ。AIと人のあいだの遊びは、まだ終わらない。</p>
+
+        <div className="seal-wrap" data-reveal aria-hidden="true">
+          <span className="seal">完</span>
+          <span className="seal-caption">ALICE SYSTEM — SEALED 2026</span>
+        </div>
+
+        <a className="closing-cta-link" href={GITHUB_REPOSITORY} target="_blank" rel="noreferrer" data-magnetic>
           GitHubで制作を見る
         </a>
       </section>

@@ -17,7 +17,7 @@ export function Prompts() {
   const [expandedId, setExpandedId] = useState(PROMPTS[0]?.id ?? "");
 
   return (
-    <section id="prompts" className="section prompt-archive" aria-labelledby="prompts-title">
+    <section id="prompts" className="section prompt-archive" data-chapter aria-labelledby="prompts-title">
       <header className="prompts-editorial" data-reveal>
         <p className="section-index">03 / PROMPT ARCHIVE</p>
         <h2 id="prompts-title">

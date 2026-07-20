@@ -101,7 +101,9 @@ export function GlRoot() {
     window.addEventListener("alice:experience-change", onExperienceChange);
 
     if (typeof window.requestIdleCallback === "function") {
-      idleId = window.requestIdleCallback(() => void boot());
+      // timeout: hidden/busy tabs may never reach "idle" — force the boot task
+      // after 2s so the scene is ready the moment the tab becomes visible.
+      idleId = window.requestIdleCallback(() => void boot(), { timeout: 2000 });
     } else {
       timeoutId = window.setTimeout(() => void boot(), 200);
     }

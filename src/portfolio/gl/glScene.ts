@@ -1,596 +1,547 @@
 import * as THREE from "three";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import type { HeroQuality } from "../quality";
 
-// A transparent, persistent creation object shared by the light hero and dark
-// closing section. The DOM owns the page and backgrounds; WebGL only contributes
-// the chrome/glass sculpture and its signal orbit.
+// KINTSUGI — 金継のモノリス. One obsidian monolith repaired with molten gold
+// seams, alone in a void. The GL canvas is the page background (opaque void):
+// the DOM catalog floats above it. Scroll drives a camera spine through five
+// chapters (hero / works / lab / prompts / footer); the monolith bisects at the
+// lab and swallows the camera at the footer. Reduced motion freezes ambient
+// drift but keeps the composed pose and scroll framing.
 
 export interface GlScene {
   dispose: () => void;
+  /** test seam: force chapter progress 0..4 and render one frame */
+  _debugSetProgress?: (p: number) => void;
 }
 
-interface FadingMaterial {
-  material: THREE.Material & { opacity: number };
-  opacity: number;
-}
-
-const FOV = 38;
-const CAMERA_Z = 10;
-const VERMILION = 0xff3b1f;
+const VOID_BG = 0x0a0a0c;
+const GOLD = 0xcdaa6d;
+const BLOOM_GOLD = 0xf0d9a6;
+const VERMILION = 0xfb3516;
 const COBALT = 0x164cff;
-const ORBIT_RX = 2.34;
-const ORBIT_RY = 1.24;
-const ORBIT_INK = new THREE.Color(0x363a46);
-const ORBIT_SILVER = new THREE.Color(0x9aa4b8);
-const CLOSING_SELECTORS = "[data-creation-close], #closing, .closing-section, footer";
+const FOV = 42;
 
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+const smooth = (v: number): number => v * v * (3 - 2 * v);
+
+/** Deterministic value noise from position (no RNG: identical look every load). */
+function vnoise(x: number, y: number, z: number): number {
+  const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+  return s - Math.floor(s);
 }
-
-function smoothstep(edge0: number, edge1: number, value: number): number {
-  const x = clamp01((value - edge0) / Math.max(0.0001, edge1 - edge0));
-  return x * x * (3 - 2 * x);
-}
-
-// Gunmetal, not silver: near-white chrome disappears into the paper background
-// (its highlights blow out to the paper tone). A dark body keeps the sculpture
-// legible on paper while the white env speculars carry the "chrome" read.
-function createChromeMaterial(opacity = 1, color = 0x2b2e36): THREE.MeshPhysicalMaterial {
-  return new THREE.MeshPhysicalMaterial({
-    color,
-    metalness: 1,
-    roughness: 0.12,
-    clearcoat: 1,
-    clearcoatRoughness: 0.05,
-    envMapIntensity: 2.1,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-}
-
-// Cobalt-tinted glass with real body — transmission 0.94 rendered as an
-// invisible ghost against the paper.
-function createGlassMaterial(opacity = 0.85, color = 0x4f6cff): THREE.MeshPhysicalMaterial {
-  return new THREE.MeshPhysicalMaterial({
-    color,
-    metalness: 0.05,
-    roughness: 0.06,
-    transmission: 0.55,
-    thickness: 0.9,
-    ior: 1.46,
-    clearcoat: 1,
-    clearcoatRoughness: 0.03,
-    envMapIntensity: 2.2,
-    transparent: true,
-    opacity,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-}
-
-/** Soft radial ink wash behind the sculpture so it sits ON the paper instead of
- * dissolving into it. Faded out as the closing morph takes over (dark bg). */
-function createHaloTexture(): THREE.CanvasTexture {
-  const size = 256;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-    gradient.addColorStop(0, "rgba(18, 19, 26, 0.34)");
-    gradient.addColorStop(0.45, "rgba(18, 19, 26, 0.16)");
-    gradient.addColorStop(1, "rgba(18, 19, 26, 0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, size, size);
+function fbm(x: number, y: number, z: number): number {
+  let amp = 0.5;
+  let f = 1.4;
+  let sum = 0;
+  for (let o = 0; o < 4; o += 1) {
+    sum += amp * (vnoise(x * f, y * f, z * f) - 0.5);
+    amp *= 0.5;
+    f *= 2.1;
   }
-  const texture = new THREE.CanvasTexture(canvas);
-  // Intentionally left untagged (NoColorSpace): the bytes are read as linear and
-  // the output sRGB encode lightens them, so the wash RENDERS as ~rgb(75,77,90)
-  // at these alphas — the look was tuned and verified this way. Tagging it
-  // SRGBColorSpace (or retuning stops by face value) would change the halo.
-  texture.needsUpdate = true;
-  return texture;
+  return sum;
 }
 
-function ellipseLine(
-  radiusX: number,
-  radiusY: number,
-  segments: number,
-  color: number,
-  opacity: number
-): THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial> {
-  const curve = new THREE.EllipseCurve(0, 0, radiusX, radiusY, 0, Math.PI * 2, false, 0);
-  const points = curve.getPoints(segments).map((point) => new THREE.Vector3(point.x, point.y, 0));
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({
-    color,
-    transparent: true,
-    opacity,
-    depthWrite: false
-  });
-  return new THREE.LineLoop(geometry, material);
+/** Split a geometry into (x<0, x>=0) halves by triangle centroid. */
+function bisect(geo: THREE.BufferGeometry): [THREE.BufferGeometry, THREE.BufferGeometry] {
+  const src = geo.toNonIndexed();
+  const pos = src.getAttribute("position") as THREE.BufferAttribute;
+  const nor = src.getAttribute("normal") as THREE.BufferAttribute;
+  const L: number[] = [];
+  const R: number[] = [];
+  const LN: number[] = [];
+  const RN: number[] = [];
+  for (let i = 0; i < pos.count; i += 3) {
+    const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3;
+    const [p, n] = cx < 0 ? [L, LN] : [R, RN];
+    for (let k = 0; k < 3; k += 1) {
+      p.push(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
+      n.push(nor.getX(i + k), nor.getY(i + k), nor.getZ(i + k));
+    }
+  }
+  const make = (p: number[], n: number[]): THREE.BufferGeometry => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
+    g.setAttribute("normal", new THREE.Float32BufferAttribute(n, 3));
+    return g;
+  };
+  src.dispose();
+  return [make(L, LN), make(R, RN)];
+}
+
+/** A crack path riding just above the displaced monolith surface. */
+function seamCurve(seed: number, turns: number): THREE.CatmullRomCurve3 {
+  const pts: THREE.Vector3[] = [];
+  const n = 9;
+  for (let i = 0; i < n; i += 1) {
+    const t = i / (n - 1);
+    const phi = (0.16 + 0.68 * t) * Math.PI;
+    const theta = seed * 2.4 + turns * t * Math.PI + Math.sin(seed * 7 + t * 9) * 0.35;
+    const dir = new THREE.Vector3(
+      Math.sin(phi) * Math.cos(theta),
+      Math.cos(phi),
+      Math.sin(phi) * Math.sin(theta)
+    );
+    const r = 1.1 * (1.035 + fbm(dir.x * 2 + seed, dir.y * 2, dir.z * 2) * 0.05);
+    pts.push(new THREE.Vector3(dir.x * r, dir.y * r * 1.85, dir.z * r));
+  }
+  return new THREE.CatmullRomCurve3(pts);
 }
 
 export function createGlScene(canvas: HTMLCanvasElement, quality: HeroQuality): GlScene {
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    alpha: true,
+    alpha: false,
     antialias: quality.tier !== "low",
-    powerPreference: "high-performance",
-    premultipliedAlpha: true
+    powerPreference: "high-performance"
   });
-
   try {
-    return initialiseScene(canvas, renderer, quality);
+    return init(canvas, renderer, quality);
   } catch (error) {
     renderer.dispose();
     throw error;
   }
 }
 
-function initialiseScene(
-  canvas: HTMLCanvasElement,
-  renderer: THREE.WebGLRenderer,
-  quality: HeroQuality
-): GlScene {
+function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality: HeroQuality): GlScene {
   renderer.setPixelRatio(quality.dpr);
-  renderer.setClearColor(0x000000, 0);
+  renderer.setClearColor(VOID_BG, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.02;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 60);
-  camera.position.set(0, 0, CAMERA_Z);
+  scene.background = new THREE.Color(VOID_BG);
+  const camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 60);
+  camera.position.set(-1.5, 0.25, 6.3);
 
   const pmrem = new THREE.PMREMGenerator(renderer);
   const room = new RoomEnvironment();
-  const environment = pmrem.fromScene(room, 0.03);
+  const environment = pmrem.fromScene(room, 0.04);
   scene.environment = environment.texture;
   room.dispose();
   pmrem.dispose();
 
-  const root = new THREE.Group();
-  root.name = "creation-core";
-  scene.add(root);
+  // ---------------------------------------------------------------- monolith
+  const detail = quality.tier === "low" ? 14 : 26;
+  // PolyhedronGeometry ships duplicated (flat-shaded) vertices — merge them so
+  // the displaced surface shades SMOOTH obsidian, not disco facets.
+  const base = mergeVertices(new THREE.IcosahedronGeometry(1.1, detail));
+  {
+    const p = base.getAttribute("position") as THREE.BufferAttribute;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i += 1) {
+      v.fromBufferAttribute(p, i).normalize();
+      const d = 1 + fbm(v.x * 1.7, v.y * 1.7, v.z * 1.7) * 0.14 + fbm(v.x * 4.4, v.y * 4.4, v.z * 4.4) * 0.008;
+      p.setXYZ(i, v.x * 1.1 * d, v.y * 1.1 * d * 1.85, v.z * 1.1 * d);
+    }
+    base.computeVertexNormals();
+  }
+  const [leftGeo, rightGeo] = bisect(base);
+  base.dispose();
 
-  const haloTexture = createHaloTexture();
-  const haloMaterial = new THREE.MeshBasicMaterial({
-    map: haloTexture,
+  const obsidian = new THREE.MeshPhysicalMaterial({
+    color: 0x0b0b0e,
+    roughness: 0.68,
+    metalness: 0.03,
+    specularIntensity: 0.32,
+    clearcoat: 0.16,
+    clearcoatRoughness: 0.5,
+    envMapIntensity: 0.14,
+    sheen: 0.12,
+    sheenColor: new THREE.Color(GOLD),
+    sheenRoughness: 0.65
+  });
+
+  const root = new THREE.Group();
+  root.name = "kintsugi-monolith";
+  scene.add(root);
+  const halfL = new THREE.Group();
+  const halfR = new THREE.Group();
+  halfL.add(new THREE.Mesh(leftGeo, obsidian));
+  halfR.add(new THREE.Mesh(rightGeo, obsidian));
+  root.add(halfL, halfR);
+
+  // ---------------------------------------------------------------- seams
+  const seamSpecs = [
+    { seed: 1.3, turns: 1.7 },
+    { seed: 2.9, turns: -1.2 },
+    { seed: 4.1, turns: 2.3 },
+    { seed: 5.6, turns: -1.9 },
+    { seed: 0.4, turns: 1.1 }
+  ];
+  const seamSegments = quality.tier === "low" ? 72 : 128;
+  interface Seam {
+    mesh: THREE.Mesh<THREE.TubeGeometry, THREE.MeshBasicMaterial>;
+    total: number;
+    pulse: number;
+  }
+  const seams: Seam[] = [];
+  for (let i = 0; i < seamSpecs.length; i += 1) {
+    const spec = seamSpecs[i];
+    const geo = new THREE.TubeGeometry(seamCurve(spec.seed, spec.turns), seamSegments, 0.021, 5, false);
+    const mat = new THREE.MeshBasicMaterial({ color: BLOOM_GOLD, toneMapped: false });
+    const mesh = new THREE.Mesh(geo, mat);
+    const total = geo.index ? geo.index.count : 0;
+    mesh.geometry.setDrawRange(0, 0); // SEAM IGNITION draws these in
+    (mesh.position.x < 0 ? halfL : halfR).add(mesh);
+    // assign by curve midpoint side
+    const mid = seamCurve(spec.seed, spec.turns).getPoint(0.5);
+    mesh.removeFromParent();
+    (mid.x < 0 ? halfL : halfR).add(mesh);
+    seams.push({ mesh, total, pulse: 0 });
+  }
+
+  // Inner gold core: visible through the footer crack approach.
+  const core = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.92, 3),
+    new THREE.MeshBasicMaterial({ color: 0x8a6c38, toneMapped: false, side: THREE.BackSide, transparent: true, opacity: 0 })
+  );
+  core.scale.y = 1.85;
+  root.add(core);
+
+  // ---------------------------------------------------------------- gold dust
+  const dustCount = quality.tier === "low" ? 420 : 1300;
+  const dustGeo = new THREE.BufferGeometry();
+  {
+    const arr = new Float32Array(dustCount * 3);
+    const phase = new Float32Array(dustCount);
+    for (let i = 0; i < dustCount; i += 1) {
+      const r = 2.2 + vnoise(i * 0.31, 1, 7) * 6.5;
+      const a = vnoise(i * 0.17, 3, 2) * Math.PI * 2;
+      const y = (vnoise(i * 0.53, 5, 9) - 0.5) * 7;
+      arr[i * 3] = Math.cos(a) * r;
+      arr[i * 3 + 1] = y;
+      arr[i * 3 + 2] = Math.sin(a) * r - 1.2;
+      phase[i] = vnoise(i * 0.77, 2, 4) * Math.PI * 2;
+    }
+    dustGeo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+    dustGeo.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
+  }
+  const dustMat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    toneMapped: false
-  });
-  const halo = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 6.4), haloMaterial);
-  halo.name = "creation-core-halo";
-  halo.position.z = -1.4;
-  halo.renderOrder = -1;
-  root.add(halo);
-
-  const intact = new THREE.Group();
-  intact.name = "creation-core-intact";
-  root.add(intact);
-
-  // Intact loops live on the light hero paper -> gunmetal for contrast.
-  // Fragments only exist over the dark closing section -> bright silver there.
-  const intactChrome = createChromeMaterial();
-  const intactGlass = createGlassMaterial(0.7);
-  const fragmentChrome = createChromeMaterial(0, 0xdfe4ec);
-  const fragmentGlass = createGlassMaterial(0, 0x9db4ff);
-
-  const fading: FadingMaterial[] = [
-    { material: intactChrome, opacity: 1 },
-    { material: intactGlass, opacity: 0.7 },
-    { material: fragmentChrome, opacity: 0.97 },
-    { material: fragmentGlass, opacity: 0.62 }
-  ];
-
-  const torus = (radius: number, tube: number): THREE.TorusGeometry =>
-    new THREE.TorusGeometry(
-      radius,
-      tube,
-      quality.radialSegments,
-      quality.tubularSegments
-    );
-
-  const chromeLoopA = new THREE.Mesh(torus(1.5, 0.145), intactChrome);
-  chromeLoopA.scale.set(1.14, 0.76, 1);
-  chromeLoopA.rotation.set(0.73, 0.56, -0.28);
-  intact.add(chromeLoopA);
-
-  const chromeLoopB = new THREE.Mesh(torus(1.35, 0.105), intactChrome);
-  chromeLoopB.scale.set(1.02, 0.82, 1);
-  chromeLoopB.rotation.set(-0.63, 0.38, 0.66);
-  intact.add(chromeLoopB);
-
-  const glassLoop = new THREE.Mesh(torus(1.24, 0.185), intactGlass);
-  glassLoop.scale.set(1.17, 0.79, 1);
-  glassLoop.rotation.set(0.26, -0.78, 0.23);
-  intact.add(glassLoop);
-
-  const loopBaseRotations = [
-    chromeLoopA.rotation.clone(),
-    chromeLoopB.rotation.clone(),
-    glassLoop.rotation.clone()
-  ];
-
-  // Four related pieces replace the intact loops as the closing section arrives.
-  // Each piece combines a chrome outer arc with a slightly offset glass inner arc.
-  const fragments = new THREE.Group();
-  fragments.name = "creation-core-fragments";
-  root.add(fragments);
-
-  const fragmentGroups: THREE.Group[] = [];
-  const fragmentTargets = Array.from({ length: 4 }, () => new THREE.Vector3());
-  const fragmentOpenRotations = [
-    new THREE.Euler(0.12, -0.34, -0.3),
-    new THREE.Euler(-0.18, 0.32, 0.38),
-    new THREE.Euler(0.22, 0.26, -0.42),
-    new THREE.Euler(-0.12, -0.28, 0.34)
-  ];
-  const arcSegments = Math.max(28, Math.round(quality.tubularSegments * 0.56));
-
-  for (let i = 0; i < 4; i += 1) {
-    const fragment = new THREE.Group();
-    const start = i * Math.PI * 0.5 + 0.14;
-
-    const chromeArc = new THREE.Mesh(
-      new THREE.TorusGeometry(1.34, 0.15, quality.radialSegments, arcSegments, Math.PI * 0.58),
-      fragmentChrome
-    );
-    chromeArc.scale.set(1.06, 0.77, 1);
-    chromeArc.rotation.z = start;
-    fragment.add(chromeArc);
-
-    const glassArc = new THREE.Mesh(
-      new THREE.TorusGeometry(
-        1.02,
-        0.125,
-        quality.radialSegments,
-        Math.max(24, arcSegments - 8),
-        Math.PI * 0.47
-      ),
-      fragmentGlass
-    );
-    glassArc.scale.set(1.12, 0.8, 1);
-    glassArc.rotation.set(i % 2 === 0 ? 0.2 : -0.2, i % 2 === 0 ? -0.16 : 0.16, start + 0.12);
-    fragment.add(glassArc);
-
-    fragment.scale.setScalar(0.72);
-    fragments.add(fragment);
-    fragmentGroups.push(fragment);
-  }
-
-  // Two restrained signal paths tie the intact and open states together.
-  const orbit = new THREE.Group();
-  orbit.name = "creation-core-orbit";
-  root.add(orbit);
-  const orbitMain = ellipseLine(
-    ORBIT_RX,
-    ORBIT_RY,
-    quality.tier === "low" ? 72 : 128,
-    0x363a46,
-    0.52
-  );
-  orbit.add(orbitMain);
-  const orbitSecondary = ellipseLine(
-    ORBIT_RX * 1.1,
-    ORBIT_RY * 0.77,
-    quality.tier === "low" ? 64 : 112,
-    COBALT,
-    0.36
-  );
-  orbitSecondary.rotation.z = 0.26;
-  orbitSecondary.position.z = -0.25;
-  orbit.add(orbitSecondary);
-
-  const bead = new THREE.Group();
-  root.add(bead);
-  const beadMaterial = new THREE.MeshPhysicalMaterial({
-    color: VERMILION,
-    emissive: VERMILION,
-    emissiveIntensity: 1.15,
-    metalness: 0.08,
-    roughness: 0.16,
-    clearcoat: 1,
-    clearcoatRoughness: 0.04
-  });
-  bead.add(
-    new THREE.Mesh(
-      new THREE.SphereGeometry(0.17, quality.tier === "low" ? 12 : 20, quality.tier === "low" ? 8 : 14),
-      beadMaterial
-    )
-  );
-  const beadGlowMaterial = new THREE.MeshBasicMaterial({
-    color: VERMILION,
-    transparent: true,
-    opacity: 0.28,
     blending: THREE.AdditiveBlending,
-    depthWrite: false
+    uniforms: { uTime: { value: 0 }, uGlobal: { value: 1 }, uColor: { value: new THREE.Color(GOLD) } },
+    vertexShader: `
+      attribute float aPhase;
+      uniform float uTime;
+      varying float vFade;
+      void main() {
+        vec3 p = position;
+        p.y += sin(uTime * 0.35 + aPhase) * 0.22;
+        p.x += cos(uTime * 0.22 + aPhase * 1.7) * 0.16;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float dist = -mv.z;
+        vFade = smoothstep(14.0, 4.5, dist) * (0.35 + 0.65 * fract(aPhase * 3.1));
+        gl_PointSize = 26.0 / dist;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor;
+      uniform float uGlobal;
+      varying float vFade;
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = smoothstep(0.5, 0.05, length(uv));
+        gl_FragColor = vec4(uColor, d * vFade * 0.55 * uGlobal);
+      }`
   });
-  const beadGlow = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 8), beadGlowMaterial);
-  bead.add(beadGlow);
+  const dust = new THREE.Points(dustGeo, dustMat);
+  scene.add(dust);
 
-  const cobaltMaterial = new THREE.MeshStandardMaterial({
-    color: COBALT,
-    emissive: COBALT,
-    emissiveIntensity: 2.2,
-    roughness: 0.22,
-    metalness: 0.2
-  });
-  const cobaltPoints: THREE.Mesh[] = [];
-  const cobaltGeometry = new THREE.SphereGeometry(0.075, quality.tier === "low" ? 8 : 12, 8);
-  for (let i = 0; i < 3; i += 1) {
-    const point = new THREE.Mesh(cobaltGeometry, cobaltMaterial);
-    root.add(point);
-    cobaltPoints.push(point);
+  // ---------------------------------------------------------------- lights
+  const key = new THREE.SpotLight(0xfff2dc, 0, 40, 0.62, 0.55, 1.2);
+  key.position.set(-6, 7, 5);
+  key.target = root;
+  scene.add(key);
+  const fill = new THREE.HemisphereLight(0x2a3242, 0x05050a, 0.32);
+  scene.add(fill);
+  const torch = new THREE.PointLight(0xcdaa6d, 0, 9, 1.6);
+  scene.add(torch);
+  const crackLight = new THREE.PointLight(0xf0d9a6, 0, 12, 1.4);
+  crackLight.position.set(-0.4, 0.4, 1.4);
+  root.add(crackLight);
+  const labRed = new THREE.PointLight(VERMILION, 0, 14, 1.6);
+  labRed.position.set(-3.4, 0.6, 2.6);
+  scene.add(labRed);
+  const labBlue = new THREE.PointLight(COBALT, 0, 14, 1.6);
+  labBlue.position.set(3.4, -0.2, 2.6);
+  scene.add(labBlue);
+
+  // Lab axis: a hairline gold plane between the halves.
+  const axis = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.01, 4.6),
+    new THREE.MeshBasicMaterial({ color: BLOOM_GOLD, toneMapped: false, transparent: true, opacity: 0 })
+  );
+  scene.add(axis);
+
+  // ---------------------------------------------------------------- composer
+  const size = new THREE.Vector2();
+  renderer.getSize(size);
+  const useBloom = quality.tier !== "low";
+  let composer: EffectComposer | null = null;
+  let bloomPass: UnrealBloomPass | null = null;
+  if (useBloom) {
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.78);
+    composer.addPass(bloomPass);
   }
 
-  const key = new THREE.DirectionalLight(0xffffff, 3.4);
-  key.position.set(-4, 5, 7);
-  scene.add(key);
-  const coolRim = new THREE.PointLight(COBALT, 24, 14, 2);
-  coolRim.position.set(-3.5, -1.5, 3.6);
-  scene.add(coolRim);
-  const warmRim = new THREE.PointLight(VERMILION, 18, 11, 2);
-  root.add(warmRim);
-  const fill = new THREE.HemisphereLight(0xffffff, 0x65718b, 1.15);
-  scene.add(fill);
+  // ---------------------------------------------------------------- chapters
+  // Camera keyframes per chapter: hero, works, lab, prompts, footer.
+  const camPos = [
+    new THREE.Vector3(-1.55, 0.3, 6.4),
+    new THREE.Vector3(2.7, -0.25, 7.6),
+    new THREE.Vector3(0, 0.15, 8.1),
+    new THREE.Vector3(0.5, 2.7, 7.2),
+    new THREE.Vector3(-0.15, 0.2, 3.0)
+  ];
+  const camLook = [
+    new THREE.Vector3(-1.4, 0.05, 0),
+    new THREE.Vector3(3.7, 0.1, 0),
+    new THREE.Vector3(0, 0, 0),
+    new THREE.Vector3(0.1, 0.7, 0),
+    new THREE.Vector3(-0.3, 0.25, 0)
+  ];
+  const keyIntensity = [26, 13, 18, 10, 6];
+  const dustFactor = [1, 0.75, 0.35, 0.9, 0.2];
 
+  let chapterTops: number[] = [0, 1000, 2000, 3000, 4000];
+  const resolveChapters = (): void => {
+    const els = Array.from(document.querySelectorAll<HTMLElement>("[data-chapter]"));
+    if (els.length >= 2) {
+      chapterTops = els
+        .map((el) => el.getBoundingClientRect().top + window.scrollY)
+        .sort((a, b) => a - b);
+    }
+    while (chapterTops.length < 5) chapterTops.push((chapterTops[chapterTops.length - 1] ?? 0) + 900);
+  };
+
+  const progressFromScroll = (): number => {
+    const y = window.scrollY + window.innerHeight * 0.42;
+    if (y <= chapterTops[0]) return 0;
+    for (let i = 0; i < 4; i += 1) {
+      if (y < chapterTops[i + 1]) {
+        return i + clamp01((y - chapterTops[i]) / Math.max(1, chapterTops[i + 1] - chapterTops[i]));
+      }
+    }
+    return 4;
+  };
+
+  // ---------------------------------------------------------------- state
   let disposed = false;
   let rafId = 0;
   let running = false;
-  let lastRenderedAt = 0;
-  let morph = 0;
-  let morphStart = 0;
-  let morphEnd = 1;
-  let worldWidth = 1;
-  let worldHeight = 1;
-  let heroX = 0;
-  let heroY = 0;
-  let heroScale = 1;
-  let closingTarget: Element | null = null;
-  const pointer = new THREE.Vector2();
-  const pointerTarget = new THREE.Vector2();
-
-  const resolveMorphRange = (): void => {
-    const scrollMax = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-    closingTarget = document.querySelector(CLOSING_SELECTORS);
-    if (closingTarget) {
-      const rect = closingTarget.getBoundingClientRect();
-      const top = rect.top + window.scrollY;
-      morphStart = Math.max(0, Math.min(scrollMax, top - window.innerHeight * 0.86));
-      morphEnd = Math.max(morphStart + 1, Math.min(scrollMax, top - window.innerHeight * 0.16));
-      return;
-    }
-    morphStart = scrollMax * 0.68;
-    morphEnd = Math.max(morphStart + 1, scrollMax * 0.92);
-  };
+  let last = 0;
+  let progress = 0;
+  let forcedProgress: number | null = null;
+  let ignition = quality.motionScale === 0 ? 1 : 0;
+  let hoverSeam = -1;
+  let goldMode = false;
+  let fpsAcc = 0;
+  let fpsN = 0;
+  let bloomDropped = false;
+  const pointer = new THREE.Vector2(0.3, 0.2);
+  const pointerTarget = new THREE.Vector2(0.3, 0.2);
+  const tmpLook = new THREE.Vector3();
+  const curLook = camLook[0].clone();
 
   const resize = (): void => {
     if (disposed) return;
-    const width = Math.max(1, canvas.clientWidth || window.innerWidth);
-    const height = Math.max(1, canvas.clientHeight || window.innerHeight);
-    renderer.setSize(width, height, false);
-    camera.aspect = width / height;
+    const w = Math.max(1, canvas.clientWidth || window.innerWidth);
+    const h = Math.max(1, canvas.clientHeight || window.innerHeight);
+    renderer.setSize(w, h, false);
+    composer?.setSize(Math.floor(w / 2), Math.floor(h / 2));
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-
-    worldHeight = 2 * Math.tan(THREE.MathUtils.degToRad(FOV * 0.5)) * CAMERA_Z;
-    worldWidth = worldHeight * camera.aspect;
-    const compact = width < 900;
-    heroX = compact ? worldWidth * 0.08 : worldWidth * 0.25;
-    heroY = compact ? -worldHeight * 0.12 : worldHeight * 0.015;
-    // Third clamp: on squarish windows (5:4, portrait-ish desktop) the right
-    // margin shrinks and the knot would crop ~10%vw; cap it by the available
-    // margin (knot +x extent ≈1.6 world at scale 1) with a 1.5 floor. At 16:9
-    // and 16:10 this clamp stays above the other terms — the slight intentional
-    // edge bleed of the verified look is preserved.
-    heroScale = compact
-      ? 1.08
-      : Math.min(
-          1.95,
-          Math.max(1.68, worldWidth / 6.8),
-          Math.max(1.5, (worldWidth / 2 - heroX) / 1.6)
-        );
-
-    const x = worldWidth * (compact ? 0.22 : 0.31);
-    const y = worldHeight * (compact ? 0.22 : 0.24);
-    fragmentTargets[0].set(-x, y, -0.15);
-    fragmentTargets[1].set(x, y * 0.83, 0.05);
-    fragmentTargets[2].set(x * 0.9, -y, -0.1);
-    fragmentTargets[3].set(-x * 0.9, -y * 0.88, 0.08);
-    resolveMorphRange();
+    resolveChapters();
   };
-
-  const onPointerMove = (event: PointerEvent): void => {
-    pointerTarget.set(
-      (event.clientX / Math.max(1, window.innerWidth) - 0.5) * 2,
-      (event.clientY / Math.max(1, window.innerHeight) - 0.5) * 2
-    );
-  };
-  const onPointerLeave = (): void => {
-    pointerTarget.set(0, 0);
-  };
-
-  if (quality.parallax) {
-    window.addEventListener("pointermove", onPointerMove, { passive: true });
-    document.documentElement.addEventListener("pointerleave", onPointerLeave);
-  }
   window.addEventListener("resize", resize, { passive: true });
-
-  const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
-  resizeObserver?.observe(canvas);
-  resizeObserver?.observe(document.documentElement);
-
+  const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
+  ro?.observe(document.documentElement);
   resize();
-  if (closingTarget) resizeObserver?.observe(closingTarget);
-  const initialScroll = window.scrollY || 0;
-  morph = smoothstep(morphStart, morphEnd, initialScroll);
 
+  const onPointer = (e: PointerEvent): void => {
+    pointerTarget.set((e.clientX / window.innerWidth - 0.5) * 2, (e.clientY / window.innerHeight - 0.5) * 2);
+  };
+  if (quality.parallax) window.addEventListener("pointermove", onPointer, { passive: true });
+
+  const onWorkHover = (e: Event): void => {
+    const idx = (e as CustomEvent<{ index: number | null }>).detail?.index;
+    hoverSeam = typeof idx === "number" ? idx % seams.length : -1;
+  };
+  window.addEventListener("alice:work-hover", onWorkHover);
+
+  // ---------------------------------------------------------------- frame
   const renderFrame = (timestamp: number, dt: number): void => {
-    // Keep the 3D scene present for reduced-motion users while freezing the
-    // decorative time-based drift, orbiting and pulsing.
     const time = timestamp * 0.001 * quality.motionScale;
-    const scroll = window.scrollY || 0;
-    const morphTarget = smoothstep(morphStart, morphEnd, scroll);
-    const response = 1 - Math.exp(-dt * 5.2);
-    morph += (morphTarget - morph) * response;
-    pointer.lerp(pointerTarget, 1 - Math.exp(-dt * 4.8));
+    const damp = 1 - Math.exp(-dt * 4.2);
 
-    const open = smoothstep(0.04, 0.98, morph);
-    const intactOpacity = 1 - smoothstep(0.06, 0.68, morph);
-    const fragmentOpacity = smoothstep(0.16, 0.82, morph);
-    // The ink wash anchors the sculpture on the light hero paper; the dark
-    // closing section doesn't need it.
-    haloMaterial.opacity = 1 - open;
-    halo.visible = haloMaterial.opacity > 0.02;
-    intact.visible = intactOpacity > 0.002;
-    fragments.visible = fragmentOpacity > 0.002;
-    fading[0].material.opacity = fading[0].opacity * intactOpacity;
-    fading[1].material.opacity = fading[1].opacity * intactOpacity;
-    fading[2].material.opacity = fading[2].opacity * fragmentOpacity;
-    fading[3].material.opacity = fading[3].opacity * fragmentOpacity;
+    progress = forcedProgress ?? progressFromScroll();
+    const ci = Math.min(3, Math.floor(progress));
+    const ct = smooth(clamp01(progress - ci));
 
-    const pointerStrength = 1 - open * 0.64;
-    root.position.set(
-      THREE.MathUtils.lerp(heroX, 0, open),
-      THREE.MathUtils.lerp(heroY, 0, open),
-      0
-    );
-    const rootScale = THREE.MathUtils.lerp(heroScale, 1, open);
-    root.scale.setScalar(rootScale);
-    root.rotation.x = -pointer.y * 0.11 * pointerStrength + Math.sin(time * 0.23) * 0.018;
-    root.rotation.y = pointer.x * 0.16 * pointerStrength + Math.sin(time * 0.18) * 0.025;
-    root.rotation.z = THREE.MathUtils.lerp(-0.04, 0.015, open);
+    if (ignition < 1) ignition = Math.min(1, ignition + dt / 1.25);
+    const ign = smooth(ignition);
 
-    chromeLoopA.rotation.set(
-      loopBaseRotations[0].x + Math.sin(time * 0.27) * 0.025,
-      loopBaseRotations[0].y + time * 0.035,
-      loopBaseRotations[0].z
-    );
-    chromeLoopB.rotation.set(
-      loopBaseRotations[1].x,
-      loopBaseRotations[1].y - time * 0.028,
-      loopBaseRotations[1].z + Math.sin(time * 0.21) * 0.03
-    );
-    glassLoop.rotation.set(
-      loopBaseRotations[2].x + Math.sin(time * 0.19) * 0.03,
-      loopBaseRotations[2].y + time * 0.024,
-      loopBaseRotations[2].z
-    );
-    intact.scale.setScalar(THREE.MathUtils.lerp(1, 0.82, open));
-
-    for (let i = 0; i < fragmentGroups.length; i += 1) {
-      const fragment = fragmentGroups[i];
-      const targetRotation = fragmentOpenRotations[i];
-      fragment.position.copy(fragmentTargets[i]).multiplyScalar(open);
-      fragment.rotation.set(
-        targetRotation.x * open + Math.sin(time * 0.31 + i) * 0.015,
-        targetRotation.y * open + Math.cos(time * 0.27 + i) * 0.018,
-        targetRotation.z * open + Math.sin(time * 0.22 + i * 1.7) * 0.012
-      );
-      fragment.scale.setScalar(THREE.MathUtils.lerp(0.76, 0.58, open));
+    // seams draw in + pulse
+    for (let i = 0; i < seams.length; i += 1) {
+      const s = seams[i];
+      const local = clamp01(ign * 1.6 - i * 0.12);
+      s.mesh.geometry.setDrawRange(0, Math.floor(s.total * local));
+      const target = hoverSeam === i ? 1 : 0;
+      s.pulse += (target - s.pulse) * damp;
+      const breathe = 3 <= progress && progress < 4 ? 0.25 + 0.25 * Math.sin(time * 1.6 + i) : 0;
+      const footerBoost = Math.max(0, progress - 3) * 1.4;
+      (s.mesh.material as THREE.MeshBasicMaterial).color
+        .setHex(BLOOM_GOLD)
+        .multiplyScalar(1.35 + s.pulse * 1.2 + breathe + footerBoost);
     }
 
-    const orbitScaleX = THREE.MathUtils.lerp(1, (worldWidth * 0.43) / ORBIT_RX, open);
-    const orbitScaleY = THREE.MathUtils.lerp(1, (worldHeight * 0.31) / ORBIT_RY, open);
-    orbit.scale.set(orbitScaleX, orbitScaleY, 1);
-    orbit.rotation.z = THREE.MathUtils.lerp(-0.16, -0.035, open);
-    orbitMain.material.opacity = THREE.MathUtils.lerp(0.52, 0.42, open);
-    orbitSecondary.material.opacity = THREE.MathUtils.lerp(0.36, 0.32, open);
-    // Ink lines on paper, silver lines on the dark closing.
-    orbitMain.material.color.lerpColors(ORBIT_INK, ORBIT_SILVER, open);
+    // ignition light flicker
+    const flick = ign < 1 ? (vnoise(timestamp * 0.05, 1, 1) > 0.4 ? 1 : 0.25) : 1;
+    const keyTarget = THREE.MathUtils.lerp(keyIntensity[ci], keyIntensity[Math.min(4, ci + 1)], ct);
+    key.intensity += (keyTarget * ign * flick - key.intensity) * damp;
 
-    // +2.4 base phase: reduced-motion freezes time at 0, and angle 0 parks the
-    // bead off the right viewport edge at every common aspect. This keeps the
-    // frozen pose on-screen; for animated users it is an invisible offset.
-    const orbitAngle = time * 0.34 + open * 0.72 + 2.4;
-    const orbitCos = Math.cos(orbit.rotation.z);
-    const orbitSin = Math.sin(orbit.rotation.z);
-    const placeOnOrbit = (object: THREE.Object3D, angle: number, z: number): void => {
-      const x = Math.cos(angle) * ORBIT_RX * orbitScaleX;
-      const y = Math.sin(angle) * ORBIT_RY * orbitScaleY;
-      object.position.set(x * orbitCos - y * orbitSin, x * orbitSin + y * orbitCos, z);
-    };
-    placeOnOrbit(bead, orbitAngle, 0.48);
-    const beadPulse = 1 + Math.sin(time * 2.1) * 0.055;
-    bead.scale.setScalar(beadPulse);
-    warmRim.position.copy(bead.position);
-    warmRim.intensity = 16 + Math.sin(time * 1.9) * 3;
+    // camera spine
+    camera.position.lerpVectors(camPos[ci], camPos[Math.min(4, ci + 1)], ct);
+    tmpLook.lerpVectors(camLook[ci], camLook[Math.min(4, ci + 1)], ct);
+    // pointer parallax (fades toward footer)
+    pointer.lerp(pointerTarget, 1 - Math.exp(-dt * 4));
+    const par = (1 - Math.max(0, progress - 3)) * 0.32;
+    camera.position.x += pointer.x * par;
+    camera.position.y += -pointer.y * par * 0.6;
+    curLook.lerp(tmpLook, damp);
+    camera.lookAt(curLook);
 
-    const cobaltPhases = [1.43, 3.42, 5.18];
-    for (let i = 0; i < cobaltPoints.length; i += 1) {
-      placeOnOrbit(cobaltPoints[i], -time * (0.075 + i * 0.012) + cobaltPhases[i], 0.24 - i * 0.08);
-      cobaltPoints[i].scale.setScalar(0.92 + Math.sin(time * 1.5 + i) * 0.12);
+    // ambient drift
+    root.rotation.y = Math.sin(time * 0.11) * 0.05 + time * 0.014;
+    root.rotation.z = Math.sin(time * 0.07) * 0.02;
+
+    // lab bisection
+    const split = smooth(clamp01((progress - 1.55) / 0.9)) * (1 - smooth(clamp01((progress - 2.7) / 0.6)));
+    halfL.position.x = -1.15 * split;
+    halfR.position.x = 1.15 * split;
+    labRed.intensity += (split * 70 - labRed.intensity) * damp;
+    labBlue.intensity += (split * 70 - labBlue.intensity) * damp;
+    (axis.material as THREE.MeshBasicMaterial).opacity += (split * 0.85 - (axis.material as THREE.MeshBasicMaterial).opacity) * damp;
+
+    // works crack light + torch
+    const worksT = ci === 0 ? ct : ci >= 1 && progress < 2 ? 1 - clamp01(progress - 1.7) : 0;
+    crackLight.intensity += ((worksT + (hoverSeam >= 0 ? 1.4 : 0)) * 16 * ign - crackLight.intensity) * damp;
+    if (quality.parallax) {
+      torch.position.set(pointer.x * 4.2, -pointer.y * 3.2, 3.4);
+      torch.intensity += (11 * ign - torch.intensity) * damp;
     }
 
-    renderer.clear();
-    renderer.render(scene, camera);
+    // footer swallow
+    const swallow = smooth(clamp01((progress - 3.2) / 0.8));
+    (core.material as THREE.MeshBasicMaterial).opacity += (swallow * 0.9 - (core.material as THREE.MeshBasicMaterial).opacity) * damp;
+    fill.intensity = 0.55 + swallow * 0.8;
+    const wantGold = swallow > 0.55;
+    if (wantGold !== goldMode) {
+      goldMode = wantGold;
+      document.documentElement.classList.toggle("gold-mode", goldMode);
+    }
+
+    // dust
+    (dustMat.uniforms.uTime as { value: number }).value = time;
+    const dustT = THREE.MathUtils.lerp(dustFactor[ci], dustFactor[Math.min(4, ci + 1)], ct);
+    dust.visible = dustT > 0.05;
+    (dustMat.uniforms.uGlobal as { value: number }).value = dustT;
+
+    if (composer && !bloomDropped) composer.render();
+    else renderer.render(scene, camera);
+
+    // FPS ladder: sustained low frame rate drops bloom permanently. Accumulate
+    // frame TIME (not 1/dt — the harmonic-mean bias hides bimodal jank), and
+    // keep the floor below the frame cap so a healthy 30fps-capped session
+    // (reduced motion) never trips it.
+    if (dt > 0 && dt < 0.5) {
+      fpsAcc += dt;
+      fpsN += 1;
+      if (fpsN >= 90) {
+        const fps = fpsN / fpsAcc;
+        const floor = quality.maxFps === 30 ? 18 : 30;
+        if (fps < floor && !bloomDropped) {
+          bloomDropped = true;
+          bloomPass?.dispose();
+          composer?.dispose();
+          bloomPass = null;
+          composer = null;
+        }
+        fpsAcc = 0;
+        fpsN = 0;
+      }
+    }
   };
 
-  const minFrameDuration = 1000 / quality.maxFps;
+  const minFrame = 1000 / quality.maxFps;
   const loop = (timestamp: number): void => {
     if (disposed || !running) return;
-    const elapsed = timestamp - lastRenderedAt;
-    if (elapsed >= minFrameDuration - 0.5) {
-      const dt = lastRenderedAt === 0 ? 1 / quality.maxFps : Math.min(0.1, elapsed / 1000);
-      lastRenderedAt = timestamp;
+    const elapsed = timestamp - last;
+    if (elapsed >= minFrame - 0.5) {
+      const dt = last === 0 ? 1 / quality.maxFps : Math.min(0.1, elapsed / 1000);
+      last = timestamp;
       renderFrame(timestamp, dt);
     }
     rafId = window.requestAnimationFrame(loop);
   };
-
   const stop = (): void => {
     running = false;
     window.cancelAnimationFrame(rafId);
-    rafId = 0;
   };
   const start = (): void => {
     if (disposed || running || document.hidden) return;
     running = true;
-    lastRenderedAt = 0;
+    last = 0;
     rafId = window.requestAnimationFrame(loop);
   };
-  const onVisibilityChange = (): void => {
+  const onVisibility = (): void => {
     if (document.hidden) stop();
     else start();
   };
-  document.addEventListener("visibilitychange", onVisibilityChange);
+  document.addEventListener("visibilitychange", onVisibility);
 
-  // Paint once so the canvas can fade in immediately, then let visibility own RAF.
   renderFrame(performance.now(), 1 / quality.maxFps);
   start();
 
   return {
+    _debugSetProgress: (p: number) => {
+      forcedProgress = p;
+      renderFrame(performance.now(), 1 / 30);
+      forcedProgress = null;
+    },
     dispose: () => {
       if (disposed) return;
       disposed = true;
       stop();
-      document.removeEventListener("visibilitychange", onVisibilityChange);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("resize", resize);
-      if (quality.parallax) {
-        window.removeEventListener("pointermove", onPointerMove);
-        document.documentElement.removeEventListener("pointerleave", onPointerLeave);
-      }
-      resizeObserver?.disconnect();
+      window.removeEventListener("alice:work-hover", onWorkHover);
+      if (quality.parallax) window.removeEventListener("pointermove", onPointer);
+      ro?.disconnect();
+      document.documentElement.classList.remove("gold-mode");
 
-      const geometries = new Set<THREE.BufferGeometry>();
-      const materials = new Set<THREE.Material>();
-      scene.traverse((object) => {
-        const drawable = object as THREE.Mesh | THREE.Line;
-        if (drawable.geometry) geometries.add(drawable.geometry as THREE.BufferGeometry);
-        const material = drawable.material as THREE.Material | THREE.Material[] | undefined;
-        if (Array.isArray(material)) material.forEach((item) => materials.add(item));
-        else if (material) materials.add(material);
+      const geos = new Set<THREE.BufferGeometry>();
+      const mats = new Set<THREE.Material>();
+      scene.traverse((o) => {
+        const d = o as THREE.Mesh;
+        if (d.geometry) geos.add(d.geometry as THREE.BufferGeometry);
+        const m = d.material as THREE.Material | THREE.Material[] | undefined;
+        if (Array.isArray(m)) m.forEach((x) => mats.add(x));
+        else if (m) mats.add(m);
       });
-      geometries.forEach((geometry) => geometry.dispose());
-      materials.forEach((material) => material.dispose());
-      haloTexture.dispose();
+      geos.forEach((g) => g.dispose());
+      mats.forEach((m) => m.dispose());
+      bloomPass?.dispose();
+      composer?.dispose();
       environment.dispose();
       renderer.dispose();
       scene.clear();

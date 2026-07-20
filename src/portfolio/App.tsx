@@ -81,53 +81,48 @@ export default function PortfolioApp() {
       />
 
       <main id="main-content">
-        <section className="hero" aria-labelledby="hero-title" data-creation-hero>
+        <section className="hero" data-chapter aria-labelledby="hero-title">
           <div
             className="hero-poster"
             style={{ backgroundImage: `url("${posterUrl}")` }}
             aria-hidden="true"
             data-fallback-poster
           />
+          <span className="hero-ghost" aria-hidden="true">
+            金継
+          </span>
 
           <div className="hero-shell">
-            <div className="hero-copy" data-reveal>
-              <h1 id="hero-title" className="hero-title">
-                AIと創る、
-                <br />
-                遊べる実験室。
-              </h1>
-              <p className="hero-intro">
-                ゲーム、映像、プロンプト、モデル比較。
-                <br />
-                AIとの制作実験を、触れる作品として公開しています。
-              </p>
-              <div className="hero-actions" role="group" aria-label="サイトを探索">
-                <a className="hero-cta" href="#works" data-magnetic>
-                  作品を探索
-                </a>
-                <button
-                  className="hero-skip-3d"
-                  type="button"
-                  aria-pressed={!experience.threeDEnabled}
-                  onClick={() => experience.setThreeDEnabled(!experience.threeDEnabled)}
-                >
-                  {experience.threeDEnabled ? "3Dをスキップ" : "3Dを再開"}
-                </button>
-              </div>
-            </div>
-
-            <div className="hero-scroll-cue" aria-hidden="true">
-              <span>SCROLL</span>
-              <i />
+            <p className="hero-kicker" aria-hidden="true">
+              KINTSUGI ARCHIVE — EXPERIMENTS WITH AI
+            </p>
+            <h1 id="hero-title" className="hero-title">
+              AlicE sYsTeM
+            </h1>
+            <p className="hero-wall">
+              壊れたものを、金で継ぐ。
+              <span>ゲーム、映像、プロンプト — AIと共に壊し、直し、遊べる形にした実験の保管庫。</span>
+            </p>
+            <div className="hero-actions" role="group" aria-label="サイトを探索">
+              <a className="hero-cta" href="#works" data-magnetic>
+                作品保管庫へ<i aria-hidden="true">↓</i>
+              </a>
+              <button
+                className="hero-skip-3d"
+                type="button"
+                aria-pressed={!experience.threeDEnabled}
+                onClick={() => experience.setThreeDEnabled(!experience.threeDEnabled)}
+              >
+                {experience.threeDEnabled ? "3Dをスキップ" : "3Dを再開"}
+              </button>
             </div>
           </div>
 
-          <a className="hero-next-section" href="#works" aria-label="次のセクション、作品へ">
-            <span className="hero-next-index">01</span>
-            <strong className="hero-next-title">WORKS</strong>
-            <span className="hero-next-copy">AIで制作した、インタラクティブ作品のコレクション。</span>
-            <span className="hero-next-action">VIEW 01</span>
-          </a>
+          <p className="hero-accession" aria-hidden="true">
+            <span>No.00 / HERO</span>
+            <span>SCROLL TO UNSEAL</span>
+            <i />
+          </p>
         </section>
 
         <Works />
