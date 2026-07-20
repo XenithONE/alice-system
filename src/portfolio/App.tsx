@@ -89,19 +89,19 @@ export default function PortfolioApp() {
             data-fallback-poster
           />
           <span className="hero-ghost" aria-hidden="true">
-            金継
+            工房
           </span>
 
           <div className="hero-shell">
             <p className="hero-kicker" aria-hidden="true">
-              KINTSUGI ARCHIVE — EXPERIMENTS WITH AI
+              LEONARDO PROTOCOL — MECHANICAL EXPERIMENTS WITH AI
             </p>
             <h1 id="hero-title" className="hero-title">
               AlicE sYsTeM
             </h1>
             <p className="hero-wall">
-              壊れたものを、金で継ぐ。
-              <span>ゲーム、映像、プロンプト — AIと共に壊し、直し、遊べる形にした実験の保管庫。</span>
+              五百年前の夢を、AIと組み立てる。
+              <span>ゲーム、映像、プロンプト — 閉館後の工房に並ぶ、AIと組み上げた機械仕掛けの実験群。</span>
             </p>
             <div className="hero-actions" role="group" aria-label="サイトを探索">
               <a className="hero-cta" href="#works" data-magnetic>
@@ -119,8 +119,8 @@ export default function PortfolioApp() {
           </div>
 
           <p className="hero-accession" aria-hidden="true">
-            <span>No.00 / HERO</span>
-            <span>SCROLL TO UNSEAL</span>
+            <span>No.00 / ATELIER</span>
+            <span>SCROLL TO WIND THE MECHANISM</span>
             <i />
           </p>
         </section>

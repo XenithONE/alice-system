@@ -24,9 +24,9 @@ export function Works() {
       <header className="catalog-head" data-reveal>
         <p className="section-index">01 / WORKS — 作品保管庫</p>
         <h2 id="works-title">
-          十の実験を、
+          十の機械を、
           <br />
-          金で継いだ。
+          組み上げた。
         </h2>
         <p className="catalog-lede">
           ブラウザで遊べるゲーム、実験的なプロトタイプ。

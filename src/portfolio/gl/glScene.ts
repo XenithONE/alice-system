@@ -1,17 +1,18 @@
 import * as THREE from "three";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { buildOrnithopter } from "./machines/ornithopter";
+import { buildBallista } from "./machines/ballista";
+import type { MachineMaterials } from "./machines/types";
 import type { HeroQuality } from "../quality";
 
-// KINTSUGI — 金継のモノリス. One obsidian monolith repaired with molten gold
-// seams, alone in a void. The GL canvas is the page background (opaque void):
-// the DOM catalog floats above it. Scroll drives a camera spine through five
-// chapters (hero / works / lab / prompts / footer); the monolith bisects at the
-// lab and swallows the camera at the footer. Reduced motion freezes ambient
-// drift but keeps the composed pose and scroll framing.
+// THE ATELIER — Leonardo protocol. A dark workshop-museum: two mechanical
+// reconstructions (da Vinci ornithopter, giant ballista) in real PBR timber and
+// brass under warm exhibit light. The GL canvas is the opaque page background;
+// the DOM catalog floats above. Scroll walks a camera spine through five
+// chapters; the machines' mechanisms are driven by scroll and work-row hover.
 
 export interface GlScene {
   dispose: () => void;
@@ -20,76 +21,32 @@ export interface GlScene {
 }
 
 const VOID_BG = 0x0a0a0c;
-const GOLD = 0xcdaa6d;
-const BLOOM_GOLD = 0xf0d9a6;
-const VERMILION = 0xfb3516;
-const COBALT = 0x164cff;
-const FOV = 42;
+const BASE = import.meta.env.BASE_URL;
 
 const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 const smooth = (v: number): number => v * v * (3 - 2 * v);
 
-/** Deterministic value noise from position (no RNG: identical look every load). */
-function vnoise(x: number, y: number, z: number): number {
-  const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453;
+function vnoise(x: number, y: number): number {
+  const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
   return s - Math.floor(s);
 }
-function fbm(x: number, y: number, z: number): number {
-  let amp = 0.5;
-  let f = 1.4;
-  let sum = 0;
-  for (let o = 0; o < 4; o += 1) {
-    sum += amp * (vnoise(x * f, y * f, z * f) - 0.5);
-    amp *= 0.5;
-    f *= 2.1;
-  }
-  return sum;
-}
 
-/** Split a geometry into (x<0, x>=0) halves by triangle centroid. */
-function bisect(geo: THREE.BufferGeometry): [THREE.BufferGeometry, THREE.BufferGeometry] {
-  const src = geo.toNonIndexed();
-  const pos = src.getAttribute("position") as THREE.BufferAttribute;
-  const nor = src.getAttribute("normal") as THREE.BufferAttribute;
-  const L: number[] = [];
-  const R: number[] = [];
-  const LN: number[] = [];
-  const RN: number[] = [];
-  for (let i = 0; i < pos.count; i += 3) {
-    const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3;
-    const [p, n] = cx < 0 ? [L, LN] : [R, RN];
-    for (let k = 0; k < 3; k += 1) {
-      p.push(pos.getX(i + k), pos.getY(i + k), pos.getZ(i + k));
-      n.push(nor.getX(i + k), nor.getY(i + k), nor.getZ(i + k));
-    }
+/** Radial soft-shadow texture for cheap grounded contact shadows. */
+function contactShadowTexture(): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    g.addColorStop(0, "rgba(0,0,0,0.62)");
+    g.addColorStop(0.55, "rgba(0,0,0,0.28)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
   }
-  const make = (p: number[], n: number[]): THREE.BufferGeometry => {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
-    g.setAttribute("normal", new THREE.Float32BufferAttribute(n, 3));
-    return g;
-  };
-  src.dispose();
-  return [make(L, LN), make(R, RN)];
-}
-
-/** A crack path riding just above the displaced monolith surface. */
-function seamCurve(seed: number, turns: number): THREE.CatmullRomCurve3 {
-  const pts: THREE.Vector3[] = [];
-  const n = 9;
-  for (let i = 0; i < n; i += 1) {
-    const t = i / (n - 1);
-    const phi = (0.16 + 0.68 * t) * Math.PI;
-    const theta = seed * 2.4 + turns * t * Math.PI + Math.sin(seed * 7 + t * 9) * 0.35;
-    const dir = new THREE.Vector3(
-      Math.sin(phi) * Math.cos(theta),
-      Math.cos(phi),
-      Math.sin(phi) * Math.sin(theta)
-    );
-    const r = 1.1 * (1.035 + fbm(dir.x * 2 + seed, dir.y * 2, dir.z * 2) * 0.05);
-    pts.push(new THREE.Vector3(dir.x * r, dir.y * r * 1.85, dir.z * r));
-  }
-  return new THREE.CatmullRomCurve3(pts);
+  return new THREE.CanvasTexture(canvas);
 }
 
 export function createGlScene(canvas: HTMLCanvasElement, quality: HeroQuality): GlScene {
@@ -112,112 +69,176 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
   renderer.setClearColor(VOID_BG, 1);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.02;
+  renderer.toneMappingExposure = 1.0;
+  renderer.shadowMap.enabled = quality.tier !== "low";
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(VOID_BG);
-  const camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 60);
-  camera.position.set(-1.5, 0.25, 6.3);
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 80);
+  camera.position.set(-1.6, 1.1, 7.2);
 
+  // ------------------------------------------------------------- materials
+  const texLoader = new THREE.TextureLoader();
+  const loadedTextures: THREE.Texture[] = [];
+  const tex = (file: string, srgb: boolean, repeat = 1): THREE.Texture => {
+    const t = texLoader.load(BASE + "assets/pbr/" + file, undefined, undefined, () => {
+      // A 404 diffuse map would render the material black; observability only —
+      // the material still has plausible base colors underneath.
+      if (import.meta.env.DEV) console.warn("[atelier] texture missing:", file);
+    });
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeat, repeat);
+    loadedTextures.push(t);
+    return t;
+  };
+
+  const wood = new THREE.MeshStandardMaterial({
+    map: tex("brown_planks_09_diff.jpg", true, 1.6),
+    normalMap: tex("brown_planks_09_nor_gl.jpg", false, 1.6),
+    roughnessMap: tex("brown_planks_09_rough.jpg", false, 1.6),
+    roughness: 1,
+    metalness: 0,
+    envMapIntensity: 0.55
+  });
+  const woodDark = new THREE.MeshStandardMaterial({
+    map: tex("dark_wooden_planks_diff.jpg", true, 1.3),
+    normalMap: tex("dark_wooden_planks_nor_gl.jpg", false, 1.3),
+    roughnessMap: tex("dark_wooden_planks_rough.jpg", false, 1.3),
+    roughness: 1,
+    metalness: 0,
+    envMapIntensity: 0.5
+  });
+  const brass = new THREE.MeshStandardMaterial({
+    color: 0xa9853f,
+    metalness: 0.96,
+    roughness: 0.28,
+    envMapIntensity: 1.1
+  });
+  const canvasMat = new THREE.MeshStandardMaterial({
+    color: 0xd9cbae,
+    roughness: 0.94,
+    metalness: 0,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.94,
+    envMapIntensity: 0.45
+  });
+  const rope = new THREE.MeshStandardMaterial({
+    color: 0x8f7145,
+    roughness: 0.98,
+    metalness: 0,
+    envMapIntensity: 0.4
+  });
+  const iron = new THREE.MeshStandardMaterial({
+    color: 0x232327,
+    metalness: 0.88,
+    roughness: 0.52,
+    envMapIntensity: 0.7
+  });
+  const materials: MachineMaterials = { wood, woodDark, brass, canvas: canvasMat, rope, iron };
+
+  // Warm workshop image-based lighting (loads async; lights carry the frame
+  // until it lands). Background stays void — env is lighting only.
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const room = new RoomEnvironment();
-  const environment = pmrem.fromScene(room, 0.04);
-  scene.environment = environment.texture;
-  room.dispose();
-  pmrem.dispose();
-
-  // ---------------------------------------------------------------- monolith
-  const detail = quality.tier === "low" ? 14 : 26;
-  // PolyhedronGeometry ships duplicated (flat-shaded) vertices — merge them so
-  // the displaced surface shades SMOOTH obsidian, not disco facets.
-  const base = mergeVertices(new THREE.IcosahedronGeometry(1.1, detail));
-  {
-    const p = base.getAttribute("position") as THREE.BufferAttribute;
-    const v = new THREE.Vector3();
-    for (let i = 0; i < p.count; i += 1) {
-      v.fromBufferAttribute(p, i).normalize();
-      const d = 1 + fbm(v.x * 1.7, v.y * 1.7, v.z * 1.7) * 0.14 + fbm(v.x * 4.4, v.y * 4.4, v.z * 4.4) * 0.008;
-      p.setXYZ(i, v.x * 1.1 * d, v.y * 1.1 * d * 1.85, v.z * 1.1 * d);
+  let envRT: THREE.WebGLRenderTarget | null = null;
+  new RGBELoader().load(
+    BASE + "assets/pbr/artist_workshop_1k.hdr",
+    (hdr) => {
+      if (disposed) {
+        hdr.dispose();
+        return;
+      }
+      envRT = pmrem.fromEquirectangular(hdr);
+      scene.environment = envRT.texture;
+      scene.environmentIntensity = 0.45;
+      hdr.dispose();
+      pmrem.dispose();
+    },
+    undefined,
+    () => {
+      // Direct lights still carry the scene; free the generator either way.
+      pmrem.dispose();
+      if (import.meta.env.DEV) console.warn("[atelier] env HDR failed to load — direct lights only");
     }
-    base.computeVertexNormals();
-  }
-  const [leftGeo, rightGeo] = bisect(base);
-  base.dispose();
+  );
 
-  const obsidian = new THREE.MeshPhysicalMaterial({
-    color: 0x0b0b0e,
-    roughness: 0.68,
-    metalness: 0.03,
-    specularIntensity: 0.32,
-    clearcoat: 0.16,
-    clearcoatRoughness: 0.5,
-    envMapIntensity: 0.14,
-    sheen: 0.12,
-    sheenColor: new THREE.Color(GOLD),
-    sheenRoughness: 0.65
+  // ------------------------------------------------------------- exhibits
+  const orni = buildOrnithopter(materials);
+  orni.group.position.set(0, 0.55, 0);
+  orni.group.rotation.y = -0.5;
+  scene.add(orni.group);
+
+  const bal = buildBallista(materials);
+  bal.group.position.set(7.4, 0.32, -1.6);
+  bal.group.rotation.y = -0.5;
+  scene.add(bal.group);
+
+  scene.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) {
+      mesh.castShadow = renderer.shadowMap.enabled;
+      mesh.receiveShadow = false;
+    }
   });
 
-  const root = new THREE.Group();
-  root.name = "kintsugi-monolith";
-  scene.add(root);
-  const halfL = new THREE.Group();
-  const halfR = new THREE.Group();
-  halfL.add(new THREE.Mesh(leftGeo, obsidian));
-  halfR.add(new THREE.Mesh(rightGeo, obsidian));
-  root.add(halfL, halfR);
-
-  // ---------------------------------------------------------------- seams
-  const seamSpecs = [
-    { seed: 1.3, turns: 1.7 },
-    { seed: 2.9, turns: -1.2 },
-    { seed: 4.1, turns: 2.3 },
-    { seed: 5.6, turns: -1.9 },
-    { seed: 0.4, turns: 1.1 }
-  ];
-  const seamSegments = quality.tier === "low" ? 72 : 128;
-  interface Seam {
-    mesh: THREE.Mesh<THREE.TubeGeometry, THREE.MeshBasicMaterial>;
-    total: number;
-    pulse: number;
-  }
-  const seams: Seam[] = [];
-  for (let i = 0; i < seamSpecs.length; i += 1) {
-    const spec = seamSpecs[i];
-    const geo = new THREE.TubeGeometry(seamCurve(spec.seed, spec.turns), seamSegments, 0.021, 5, false);
-    const mat = new THREE.MeshBasicMaterial({ color: BLOOM_GOLD, toneMapped: false });
-    const mesh = new THREE.Mesh(geo, mat);
-    const total = geo.index ? geo.index.count : 0;
-    mesh.geometry.setDrawRange(0, 0); // SEAM IGNITION draws these in
-    (mesh.position.x < 0 ? halfL : halfR).add(mesh);
-    // assign by curve midpoint side
-    const mid = seamCurve(spec.seed, spec.turns).getPoint(0.5);
-    mesh.removeFromParent();
-    (mid.x < 0 ? halfL : halfR).add(mesh);
-    seams.push({ mesh, total, pulse: 0 });
-  }
-
-  // Inner gold core: visible through the footer crack approach.
-  const core = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.92, 3),
-    new THREE.MeshBasicMaterial({ color: 0x8a6c38, toneMapped: false, side: THREE.BackSide, transparent: true, opacity: 0 })
+  // Floor + plinths + contact shadows.
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(26, 48),
+    new THREE.MeshStandardMaterial({ color: 0x0d0d11, roughness: 0.96, metalness: 0, envMapIntensity: 0.25 })
   );
-  core.scale.y = 1.85;
-  root.add(core);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = -0.02;
+  floor.receiveShadow = renderer.shadowMap.enabled;
+  scene.add(floor);
 
-  // ---------------------------------------------------------------- gold dust
-  const dustCount = quality.tier === "low" ? 420 : 1300;
+  const plinthGeo = new THREE.CylinderGeometry(2.5, 2.62, 0.14, 44);
+  for (const [x, z, r] of [
+    [0, 0, 2.5],
+    [7.4, -1.6, 2.2]
+  ] as const) {
+    const plinth = new THREE.Mesh(plinthGeo, woodDark);
+    // XZ-only scale: keep height 0.14 so both tops sit at y=0.14, flush with
+    // the floor and 0.005 under the shared shadow decals.
+    plinth.scale.set(r / 2.5, 1, r / 2.5);
+    plinth.position.set(x, 0.07, z);
+    plinth.receiveShadow = renderer.shadowMap.enabled;
+    scene.add(plinth);
+  }
+  const shadowTex = contactShadowTexture();
+  const shadowGeo = new THREE.PlaneGeometry(1, 1);
+  const shadowMat = new THREE.MeshBasicMaterial({
+    map: shadowTex,
+    transparent: true,
+    depthWrite: false
+  });
+  for (const [x, z, s] of [
+    [0, 0, 6.2],
+    [7.4, -1.6, 5.2]
+  ] as const) {
+    const sh = new THREE.Mesh(shadowGeo, shadowMat);
+    sh.rotation.x = -Math.PI / 2;
+    sh.position.set(x, 0.145, z);
+    sh.scale.setScalar(s);
+    sh.renderOrder = 1;
+    scene.add(sh);
+  }
+
+  // ------------------------------------------------------------- dust motes
+  const dustCount = quality.tier === "low" ? 380 : 1100;
   const dustGeo = new THREE.BufferGeometry();
   {
     const arr = new Float32Array(dustCount * 3);
     const phase = new Float32Array(dustCount);
     for (let i = 0; i < dustCount; i += 1) {
-      const r = 2.2 + vnoise(i * 0.31, 1, 7) * 6.5;
-      const a = vnoise(i * 0.17, 3, 2) * Math.PI * 2;
-      const y = (vnoise(i * 0.53, 5, 9) - 0.5) * 7;
-      arr[i * 3] = Math.cos(a) * r;
-      arr[i * 3 + 1] = y;
-      arr[i * 3 + 2] = Math.sin(a) * r - 1.2;
-      phase[i] = vnoise(i * 0.77, 2, 4) * Math.PI * 2;
+      const r = 1.6 + vnoise(i * 0.31, 7) * 8.5;
+      const a = vnoise(i * 0.17, 2) * Math.PI * 2;
+      arr[i * 3] = Math.cos(a) * r + 2.4;
+      arr[i * 3 + 1] = 0.3 + vnoise(i * 0.53, 9) * 4.6;
+      arr[i * 3 + 2] = Math.sin(a) * r - 1.0;
+      phase[i] = vnoise(i * 0.77, 4) * Math.PI * 2;
     }
     dustGeo.setAttribute("position", new THREE.BufferAttribute(arr, 3));
     dustGeo.setAttribute("aPhase", new THREE.BufferAttribute(phase, 1));
@@ -226,19 +247,19 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    uniforms: { uTime: { value: 0 }, uGlobal: { value: 1 }, uColor: { value: new THREE.Color(GOLD) } },
+    uniforms: { uTime: { value: 0 }, uGlobal: { value: 1 }, uColor: { value: new THREE.Color(0xd8b678) } },
     vertexShader: `
       attribute float aPhase;
       uniform float uTime;
       varying float vFade;
       void main() {
         vec3 p = position;
-        p.y += sin(uTime * 0.35 + aPhase) * 0.22;
-        p.x += cos(uTime * 0.22 + aPhase * 1.7) * 0.16;
+        p.y += sin(uTime * 0.3 + aPhase) * 0.2;
+        p.x += cos(uTime * 0.18 + aPhase * 1.7) * 0.14;
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         float dist = -mv.z;
-        vFade = smoothstep(14.0, 4.5, dist) * (0.35 + 0.65 * fract(aPhase * 3.1));
-        gl_PointSize = 26.0 / dist;
+        vFade = smoothstep(16.0, 4.0, dist) * (0.3 + 0.7 * fract(aPhase * 3.1));
+        gl_PointSize = 20.0 / dist;
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
@@ -248,69 +269,62 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
       void main() {
         vec2 uv = gl_PointCoord - 0.5;
         float d = smoothstep(0.5, 0.05, length(uv));
-        gl_FragColor = vec4(uColor, d * vFade * 0.55 * uGlobal);
+        gl_FragColor = vec4(uColor, d * vFade * 0.4 * uGlobal);
       }`
   });
   const dust = new THREE.Points(dustGeo, dustMat);
   scene.add(dust);
 
-  // ---------------------------------------------------------------- lights
-  const key = new THREE.SpotLight(0xfff2dc, 0, 40, 0.62, 0.55, 1.2);
-  key.position.set(-6, 7, 5);
-  key.target = root;
+  // ------------------------------------------------------------- lights
+  const key = new THREE.SpotLight(0xffe2bd, 0, 60, 0.5, 0.6, 1.4);
+  key.position.set(-5.5, 8.5, 6);
+  key.target.position.set(0, 0.6, 0);
+  scene.add(key.target);
+  if (renderer.shadowMap.enabled) {
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.bias = -0.0004;
+  }
   scene.add(key);
-  const fill = new THREE.HemisphereLight(0x2a3242, 0x05050a, 0.32);
+  const key2 = new THREE.SpotLight(0xffdcae, 0, 60, 0.55, 0.65, 1.4);
+  key2.position.set(11.5, 7.5, 3.5);
+  key2.target.position.set(7.4, 0.5, -1.6);
+  scene.add(key2.target);
+  scene.add(key2);
+  const fill = new THREE.HemisphereLight(0x30394a, 0x0a0806, 0.5);
   scene.add(fill);
-  const torch = new THREE.PointLight(0xcdaa6d, 0, 9, 1.6);
+  const torch = new THREE.PointLight(0xffc98a, 0, 10, 1.7);
   scene.add(torch);
-  const crackLight = new THREE.PointLight(0xf0d9a6, 0, 12, 1.4);
-  crackLight.position.set(-0.4, 0.4, 1.4);
-  root.add(crackLight);
-  const labRed = new THREE.PointLight(VERMILION, 0, 14, 1.6);
-  labRed.position.set(-3.4, 0.6, 2.6);
-  scene.add(labRed);
-  const labBlue = new THREE.PointLight(COBALT, 0, 14, 1.6);
-  labBlue.position.set(3.4, -0.2, 2.6);
-  scene.add(labBlue);
 
-  // Lab axis: a hairline gold plane between the halves.
-  const axis = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.01, 4.6),
-    new THREE.MeshBasicMaterial({ color: BLOOM_GOLD, toneMapped: false, transparent: true, opacity: 0 })
-  );
-  scene.add(axis);
-
-  // ---------------------------------------------------------------- composer
-  const size = new THREE.Vector2();
-  renderer.getSize(size);
+  // ------------------------------------------------------------- composer
   const useBloom = quality.tier !== "low";
   let composer: EffectComposer | null = null;
   let bloomPass: UnrealBloomPass | null = null;
   if (useBloom) {
     composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.55, 0.5, 0.78);
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.3, 0.4, 0.86);
     composer.addPass(bloomPass);
   }
 
-  // ---------------------------------------------------------------- chapters
-  // Camera keyframes per chapter: hero, works, lab, prompts, footer.
+  // ------------------------------------------------------------- chapters
   const camPos = [
-    new THREE.Vector3(-1.55, 0.3, 6.4),
-    new THREE.Vector3(2.7, -0.25, 7.6),
-    new THREE.Vector3(0, 0.15, 8.1),
-    new THREE.Vector3(0.5, 2.7, 7.2),
-    new THREE.Vector3(-0.15, 0.2, 3.0)
+    new THREE.Vector3(-2.7, 1.35, 5.0),
+    new THREE.Vector3(2.9, 0.85, 7.6),
+    new THREE.Vector3(4.4, 1.2, 1.0),
+    new THREE.Vector3(-0.5, 3.4, 6.6),
+    new THREE.Vector3(0.7, 0.9, 2.9)
   ];
   const camLook = [
-    new THREE.Vector3(-1.4, 0.05, 0),
-    new THREE.Vector3(3.7, 0.1, 0),
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0.1, 0.7, 0),
-    new THREE.Vector3(-0.3, 0.25, 0)
+    new THREE.Vector3(-1.0, 1.0, 0),
+    new THREE.Vector3(3.8, 0.7, 0),
+    new THREE.Vector3(7.5, 0.75, -1.7),
+    new THREE.Vector3(0.2, 0.85, 0),
+    new THREE.Vector3(-0.4, 0.85, 0.2)
   ];
-  const keyIntensity = [26, 13, 18, 10, 6];
-  const dustFactor = [1, 0.75, 0.35, 0.9, 0.2];
+  const keyI = [210, 90, 45, 110, 60];
+  const key2I = [0, 10, 190, 12, 8];
+  const dustFactor = [1, 0.7, 0.55, 0.85, 0.3];
 
   let chapterTops: number[] = [0, 1000, 2000, 3000, 4000];
   const resolveChapters = (): void => {
@@ -334,7 +348,7 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
     return 4;
   };
 
-  // ---------------------------------------------------------------- state
+  // ------------------------------------------------------------- state
   let disposed = false;
   let rafId = 0;
   let running = false;
@@ -342,15 +356,17 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
   let progress = 0;
   let forcedProgress: number | null = null;
   let ignition = quality.motionScale === 0 ? 1 : 0;
-  let hoverSeam = -1;
+  let hoverDrive = 0;
+  let hoverActive = false;
   let goldMode = false;
   let fpsAcc = 0;
   let fpsN = 0;
   let bloomDropped = false;
-  const pointer = new THREE.Vector2(0.3, 0.2);
-  const pointerTarget = new THREE.Vector2(0.3, 0.2);
+  const pointer = new THREE.Vector2(0.25, 0.15);
+  const pointerTarget = new THREE.Vector2(0.25, 0.15);
   const tmpLook = new THREE.Vector3();
   const curLook = camLook[0].clone();
+  let firstFrame = true;
 
   const resize = (): void => {
     if (disposed) return;
@@ -374,11 +390,11 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
 
   const onWorkHover = (e: Event): void => {
     const idx = (e as CustomEvent<{ index: number | null }>).detail?.index;
-    hoverSeam = typeof idx === "number" ? idx % seams.length : -1;
+    hoverActive = typeof idx === "number";
   };
   window.addEventListener("alice:work-hover", onWorkHover);
 
-  // ---------------------------------------------------------------- frame
+  // ------------------------------------------------------------- frame
   const renderFrame = (timestamp: number, dt: number): void => {
     const time = timestamp * 0.001 * quality.motionScale;
     const damp = 1 - Math.exp(-dt * 4.2);
@@ -387,89 +403,69 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
     const ci = Math.min(3, Math.floor(progress));
     const ct = smooth(clamp01(progress - ci));
 
-    if (ignition < 1) ignition = Math.min(1, ignition + dt / 1.25);
+    if (ignition < 1) ignition = Math.min(1, ignition + dt / 1.1);
     const ign = smooth(ignition);
+    const flick = ign < 1 ? (vnoise(timestamp * 0.05, 1) > 0.35 ? 1 : 0.2) : 1;
 
-    // seams draw in + pulse
-    for (let i = 0; i < seams.length; i += 1) {
-      const s = seams[i];
-      const local = clamp01(ign * 1.6 - i * 0.12);
-      s.mesh.geometry.setDrawRange(0, Math.floor(s.total * local));
-      const target = hoverSeam === i ? 1 : 0;
-      s.pulse += (target - s.pulse) * damp;
-      const breathe = 3 <= progress && progress < 4 ? 0.25 + 0.25 * Math.sin(time * 1.6 + i) : 0;
-      const footerBoost = Math.max(0, progress - 3) * 1.4;
-      (s.mesh.material as THREE.MeshBasicMaterial).color
-        .setHex(BLOOM_GOLD)
-        .multiplyScalar(1.35 + s.pulse * 1.2 + breathe + footerBoost);
-    }
-
-    // ignition light flicker
-    const flick = ign < 1 ? (vnoise(timestamp * 0.05, 1, 1) > 0.4 ? 1 : 0.25) : 1;
-    const keyTarget = THREE.MathUtils.lerp(keyIntensity[ci], keyIntensity[Math.min(4, ci + 1)], ct);
-    key.intensity += (keyTarget * ign * flick - key.intensity) * damp;
-
-    // camera spine
+    // camera spine + parallax
     camera.position.lerpVectors(camPos[ci], camPos[Math.min(4, ci + 1)], ct);
     tmpLook.lerpVectors(camLook[ci], camLook[Math.min(4, ci + 1)], ct);
-    // pointer parallax (fades toward footer)
     pointer.lerp(pointerTarget, 1 - Math.exp(-dt * 4));
-    const par = (1 - Math.max(0, progress - 3)) * 0.32;
+    const par = (1 - Math.max(0, progress - 3)) * 0.3;
     camera.position.x += pointer.x * par;
-    camera.position.y += -pointer.y * par * 0.6;
+    camera.position.y += -pointer.y * par * 0.5;
+    if (firstFrame) {
+      // Mid-page reload / anchor restore: snap the look with the position so
+      // the first frames don't swing across the room.
+      curLook.copy(tmpLook);
+      firstFrame = false;
+    }
     curLook.lerp(tmpLook, damp);
     camera.lookAt(curLook);
 
-    // ambient drift
-    root.rotation.y = Math.sin(time * 0.11) * 0.05 + time * 0.014;
-    root.rotation.z = Math.sin(time * 0.07) * 0.02;
-
-    // lab bisection
-    const split = smooth(clamp01((progress - 1.55) / 0.9)) * (1 - smooth(clamp01((progress - 2.7) / 0.6)));
-    halfL.position.x = -1.15 * split;
-    halfR.position.x = 1.15 * split;
-    labRed.intensity += (split * 70 - labRed.intensity) * damp;
-    labBlue.intensity += (split * 70 - labBlue.intensity) * damp;
-    (axis.material as THREE.MeshBasicMaterial).opacity += (split * 0.85 - (axis.material as THREE.MeshBasicMaterial).opacity) * damp;
-
-    // works crack light + torch
-    const worksT = ci === 0 ? ct : ci >= 1 && progress < 2 ? 1 - clamp01(progress - 1.7) : 0;
-    crackLight.intensity += ((worksT + (hoverSeam >= 0 ? 1.4 : 0)) * 16 * ign - crackLight.intensity) * damp;
+    // lights per chapter
+    key.intensity += (THREE.MathUtils.lerp(keyI[ci], keyI[Math.min(4, ci + 1)], ct) * ign * flick - key.intensity) * damp;
+    key2.intensity += (THREE.MathUtils.lerp(key2I[ci], key2I[Math.min(4, ci + 1)], ct) * ign - key2.intensity) * damp;
     if (quality.parallax) {
-      torch.position.set(pointer.x * 4.2, -pointer.y * 3.2, 3.4);
-      torch.intensity += (11 * ign - torch.intensity) * damp;
+      torch.position.set(pointer.x * 4.5 + 1.5, 2.2 - pointer.y * 2.2, 4.0);
+      torch.intensity += (8 * ign - torch.intensity) * damp;
     }
 
-    // footer swallow
-    const swallow = smooth(clamp01((progress - 3.2) / 0.8));
-    (core.material as THREE.MeshBasicMaterial).opacity += (swallow * 0.9 - (core.material as THREE.MeshBasicMaterial).opacity) * damp;
-    fill.intensity = 0.55 + swallow * 0.8;
+    // machine drives: ornithopter flaps gently always, harder on hover/works;
+    // ballista spans with lab-chapter progress.
+    hoverDrive += ((hoverActive ? 1 : 0) - hoverDrive) * damp;
+    const worksT = progress > 0.4 && progress < 2 ? 1 - Math.abs(progress - 1.2) / 0.8 : 0;
+    const orniDrive = clamp01(0.22 + hoverDrive * 0.6 + clamp01(worksT) * 0.35);
+    orni.update(time, orniDrive);
+    const labT = smooth(clamp01((progress - 1.75) / 0.85)) * (1 - smooth(clamp01((progress - 3.1) / 0.5)));
+    bal.update(time, labT);
+
+    // footer: closing warmth + DOM gold inversion
+    const swallow = smooth(clamp01((progress - 3.25) / 0.75));
+    fill.intensity = 0.5 + swallow * 0.5;
     const wantGold = swallow > 0.55;
     if (wantGold !== goldMode) {
       goldMode = wantGold;
       document.documentElement.classList.toggle("gold-mode", goldMode);
     }
 
-    // dust
     (dustMat.uniforms.uTime as { value: number }).value = time;
-    const dustT = THREE.MathUtils.lerp(dustFactor[ci], dustFactor[Math.min(4, ci + 1)], ct);
-    dust.visible = dustT > 0.05;
-    (dustMat.uniforms.uGlobal as { value: number }).value = dustT;
+    (dustMat.uniforms.uGlobal as { value: number }).value = THREE.MathUtils.lerp(
+      dustFactor[ci],
+      dustFactor[Math.min(4, ci + 1)],
+      ct
+    );
 
     if (composer && !bloomDropped) composer.render();
     else renderer.render(scene, camera);
 
-    // FPS ladder: sustained low frame rate drops bloom permanently. Accumulate
-    // frame TIME (not 1/dt — the harmonic-mean bias hides bimodal jank), and
-    // keep the floor below the frame cap so a healthy 30fps-capped session
-    // (reduced motion) never trips it.
     if (dt > 0 && dt < 0.5) {
       fpsAcc += dt;
       fpsN += 1;
       if (fpsN >= 90) {
         const fps = fpsN / fpsAcc;
-        const floor = quality.maxFps === 30 ? 18 : 30;
-        if (fps < floor && !bloomDropped) {
+        const floor2 = quality.maxFps === 30 ? 18 : 30;
+        if (fps < floor2 && !bloomDropped) {
           bloomDropped = true;
           bloomPass?.dispose();
           composer?.dispose();
@@ -540,9 +536,11 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
       });
       geos.forEach((g) => g.dispose());
       mats.forEach((m) => m.dispose());
+      loadedTextures.forEach((t) => t.dispose());
+      shadowTex.dispose();
+      envRT?.dispose();
       bloomPass?.dispose();
       composer?.dispose();
-      environment.dispose();
       renderer.dispose();
       scene.clear();
     }

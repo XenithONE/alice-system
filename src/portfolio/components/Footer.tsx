@@ -6,7 +6,7 @@ export function Footer() {
       <section className="closing-cta">
         <p className="section-index">04 / 落款 — NEXT EXPERIMENT</p>
         <h2 id="closing-title">次の実験へ。</h2>
-        <p className="closing-copy">壊しては、金で継ぐ。AIと人のあいだの遊びは、まだ終わらない。</p>
+        <p className="closing-copy">描いては、組み上げる。AIと人のあいだの遊びは、まだ終わらない。</p>
 
         <div className="seal-wrap" data-reveal aria-hidden="true">
           <span className="seal">完</span>
