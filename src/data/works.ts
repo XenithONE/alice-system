@@ -1,9 +1,21 @@
-// Portfolio works catalog. All href/cover paths are BASE-relative — render them as
-// `import.meta.env.BASE_URL + work.href` (never hardcode /alice-system/).
+// Portfolio / studio catalog. All href/cover/trailer/screenshot paths are
+// BASE-relative — render them as `import.meta.env.BASE_URL + path` (never
+// hardcode /alice-system/).
 //
-// ⚠ Never import VALUES from src/lib/horrorEngine.ts (or anything that reaches it)
-//   into portfolio code — that would pull the 5MB spark chunk into the portfolio
-//   entry. If a game type is ever needed here, use `import type` only.
+// ⚠ Never import VALUES from src/lib/horrorEngine.ts (or anything that reaches
+//   it) into portfolio code — that would pull the 5MB spark chunk into the
+//   portfolio entry. If a game type is ever needed here, use `import type` only.
+//
+// ── HOW TO ADD A NEW GAME (content-injection contract) ────────────────────────
+// The whole studio front-end is driven by this one array. To announce a new
+// Unity (or any) title, append ONE object — no component changes needed:
+//   1. Drop a cover into public/assets/ (a placeholder is fine to start).
+//   2. Add a Work with status:"in-dev" (or "coming-soon") + engine + platform.
+//   3. Later, fill `trailer`, `screenshots`, and `storeLinks` and flip `status`
+//      to "coming-soon" (wishlist live) or "released" (shipped). The card, its
+//      badges, CTAs, and the detail dialog all update from data alone.
+// `status` drives the badge + the primary CTA; `platform` + `storeLinks` drive
+// where the CTA points. Green (--live) is reserved for browser "play now" only.
 
 export type AiTool =
   | "Claude"
@@ -16,47 +28,120 @@ export type AiTool =
 
 export const AI_TOOLS: AiTool[] = ["Claude", "ChatGPT", "Gemini", "Grok", "Higgsfield", "Runway", "Genspark"];
 
+/** Where a title runs / can be acquired. */
+export type Platform = "web" | "steam" | "itch" | "windows" | "mac" | "download";
+
+/** Availability — drives the status badge and the primary CTA verb/color. */
+export type WorkStatus = "playable" | "released" | "coming-soon" | "in-dev";
+
+/** Build tech — shown as a small engine chip. */
+export type Engine = "Three.js" | "Unity" | "Canvas 2D" | "Web Audio" | "WebGL";
+
+export interface StoreLinks {
+  steam?: string;
+  itch?: string;
+  download?: string;
+}
+
 export interface Work {
   id: string;
   title: string; // EN display title
   titleJa: string; // ja subtitle
   description: string; // ja, 1-2 sentences
-  href: string; // BASE-relative
+  href: string; // BASE-relative (internal page) — play-now / experiment targets
   cover: string; // BASE-relative
-  poster?: string; // optional portrait artwork for the 3D works deck
+  poster?: string; // optional portrait/key artwork for the hero
   year: string;
   kind: "game" | "synth" | "experience";
+  engine: Engine;
+  platform: Platform[];
+  status: WorkStatus;
   tags: string[];
   aiTools: AiTool[];
-  featured?: boolean;
+  storeLinks?: StoreLinks; // external store / download targets (Unity titles)
+  trailer?: string; // BASE-relative muted-loop video (optional)
+  screenshots?: string[]; // BASE-relative gallery images (optional)
+  releaseWindow?: string; // e.g. "2026" — shown on coming/in-dev cards
+  progress?: number; // 0..1 dev progress meter for in-dev titles
+  featured?: boolean; // eligible for the hero spotlight / switcher
 }
 
 export const WORKS: Work[] = [
+  // ── COMING FROM THE STUDIO — Unity titles (store / download) ────────────────
   {
-    id: "signal-siege",
-    title: "SIGNAL SIEGE",
-    titleJa: "対戦タワーディフェンス",
-    description: "ルームコードで友達とP2P対戦するタワーディフェンス。タワーで守り、クリープを送って攻める。ソロ(vs AI)対応。",
-    href: "tower-defense.html",
-    cover: "assets/tower-defense-cover.jpg",
-    poster: "assets/signal-siege-poster.webp",
+    id: "huntcontract",
+    title: "HuntContract",
+    titleJa: "協力型 討伐ホラーFPS",
+    description:
+      "Unity製の非対称・協力ホラーFPS。契約を受けたハンター達が、二層思考で襲ってくる殺人鬼から標的を狩り、生きて帰る。",
+    href: "#huntcontract",
+    cover: "assets/huntcontract-cover.jpg",
     year: "2026",
     kind: "game",
-    tags: ["Canvas 2D", "Versus TD", "P2P", "PeerJS"],
-    aiTools: ["Claude"]
+    engine: "Unity",
+    platform: ["steam", "windows"],
+    status: "in-dev",
+    tags: ["Co-op FPS", "Horror", "Asymmetric"],
+    aiTools: ["Claude"],
+    releaseWindow: "2026",
+    progress: 0.45,
+    featured: true
   },
+  {
+    id: "demiurge",
+    title: "Demiurge",
+    titleJa: "広大平面のゴッドシム",
+    description:
+      "Unity製の広大な平面世界を見下ろすサンドボックス・ゴッドシム。人と魔物と獣が暮らす大地に、太陽と季節と気候をもたらす。",
+    href: "#demiurge",
+    cover: "assets/demiurge-cover.jpg",
+    year: "2027",
+    kind: "game",
+    engine: "Unity",
+    platform: ["steam", "windows"],
+    status: "in-dev",
+    tags: ["God-Sim", "Sandbox", "Simulation"],
+    aiTools: ["Claude"],
+    releaseWindow: "2027",
+    progress: 0.3
+  },
+
+  // ── NOW PLAYING — browser titles (play now) ─────────────────────────────────
   {
     id: "hollow-ward",
     title: "THE HOLLOW WARD",
     titleJa: "廃病棟協力型3Dホラー",
-    description: "ルームコードで1〜3人が協力。CASE FILEを共有し、見られている間だけ動けない怪物ワードンから廃病棟を脱出する3Dホラー。ソロプレイ対応。",
+    description:
+      "ルームコードで1〜3人が協力。CASE FILEを共有し、見られている間だけ動けない怪物ワードンから廃病棟を脱出する3Dホラー。ソロプレイ対応。",
     href: "hollow-ward.html",
     cover: "assets/og.jpg",
     poster: "assets/hollow-ward-poster.webp",
     year: "2026",
     kind: "game",
-    tags: ["Three.js", "Spark 2.1", "1–3P Co-op", "Room Code", "PeerJS"],
-    aiTools: ["Claude"]
+    engine: "Three.js",
+    platform: ["web"],
+    status: "playable",
+    tags: ["1–3P Co-op", "Horror", "Room Code"],
+    aiTools: ["Claude"],
+    featured: true
+  },
+  {
+    id: "signal-siege",
+    title: "SIGNAL SIEGE",
+    titleJa: "対戦タワーディフェンス",
+    description:
+      "ルームコードで友達とP2P対戦するタワーディフェンス。タワーで守り、クリープを送って攻める。ソロ(vs AI)対応。",
+    href: "tower-defense.html",
+    cover: "assets/tower-defense-cover.jpg",
+    poster: "assets/signal-siege-poster.webp",
+    year: "2026",
+    kind: "game",
+    engine: "Canvas 2D",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Versus TD", "P2P", "PeerJS"],
+    aiTools: ["Claude"],
+    featured: true
   },
   {
     id: "the-eidolon",
@@ -68,7 +153,10 @@ export const WORKS: Work[] = [
     poster: "assets/the-eidolon-poster.webp",
     year: "2026",
     kind: "game",
-    tags: ["Three.js", "Horror", "PointerLock"],
+    engine: "Three.js",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Horror", "PointerLock", "First-Person"],
     aiTools: ["Claude", "ChatGPT"]
   },
   {
@@ -80,7 +168,10 @@ export const WORKS: Work[] = [
     cover: "assets/rift-courier-cover.jpg",
     year: "2026",
     kind: "game",
-    tags: ["Three.js", "Arcade", "3D Flight"],
+    engine: "Three.js",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Arcade", "3D Flight"],
     aiTools: ["Claude", "ChatGPT"]
   },
   {
@@ -92,7 +183,10 @@ export const WORKS: Work[] = [
     cover: "assets/iwbtg-cover.png",
     year: "2026",
     kind: "game",
-    tags: ["Canvas 2D", "Platformer", "Kaizo"],
+    engine: "Canvas 2D",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Platformer", "Kaizo"],
     aiTools: ["Claude", "ChatGPT"]
   },
   {
@@ -104,7 +198,10 @@ export const WORKS: Work[] = [
     cover: "assets/locker-hunt-cover.jpg",
     year: "2026",
     kind: "game",
-    tags: ["Canvas 2D", "Horror", "Search"],
+    engine: "Canvas 2D",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Horror", "Search"],
     aiTools: ["Claude", "ChatGPT"]
   },
   {
@@ -116,7 +213,10 @@ export const WORKS: Work[] = [
     cover: "assets/signal-runner-cover.jpg",
     year: "2026",
     kind: "game",
-    tags: ["Canvas 2D", "Arcade", "Dodge"],
+    engine: "Canvas 2D",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Arcade", "Dodge"],
     aiTools: ["Claude", "ChatGPT"]
   },
   {
@@ -128,7 +228,10 @@ export const WORKS: Work[] = [
     cover: "assets/constellation-cover.jpg",
     year: "2026",
     kind: "game",
-    tags: ["Canvas 2D", "Puzzle", "Memory"],
+    engine: "Canvas 2D",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Puzzle", "Memory"],
     aiTools: ["Claude", "ChatGPT"]
   },
   {
@@ -140,8 +243,29 @@ export const WORKS: Work[] = [
     cover: "assets/dragons-keep-cover.jpg",
     year: "2026",
     kind: "game",
-    tags: ["Canvas 2D", "Pinball", "Physics"],
+    engine: "Canvas 2D",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Pinball", "Physics"],
     aiTools: ["Claude", "ChatGPT"]
+  },
+
+  // ── EXPERIMENTS — playable web toys ─────────────────────────────────────────
+  {
+    id: "atelier-adrift",
+    title: "ATELIER ADRIFT",
+    titleJa: "ローポリの海の実験室",
+    description:
+      "自作の海シェーダ(dFdx面取り法線＋合成正弦波)で描く、明るいファンタジー・ローポリの群島。ダ・ヴィンチの機械を積んだ帆船が波に乗る、遊べるThree.js実験作。",
+    href: "atelier.html",
+    cover: "assets/atelier-adrift-cover.jpg",
+    year: "2026",
+    kind: "experience",
+    engine: "Three.js",
+    platform: ["web"],
+    status: "playable",
+    tags: ["WebGL", "Shader", "Low-Poly"],
+    aiTools: ["Claude", "Grok"]
   },
   {
     id: "rlyeh-engine",
@@ -152,7 +276,16 @@ export const WORKS: Work[] = [
     cover: "assets/entity.jpg",
     year: "2026",
     kind: "synth",
-    tags: ["Web Audio", "Synth", "App"],
+    engine: "Web Audio",
+    platform: ["web"],
+    status: "playable",
+    tags: ["Synth", "App", "Audio"],
     aiTools: ["Claude", "ChatGPT", "Grok"]
   }
 ];
+
+/** Live status tallies for the nav ticker ("● N LIVE · N IN DEV"). */
+export const STUDIO_TALLY = {
+  live: WORKS.filter((w) => w.status === "playable").length,
+  inDev: WORKS.filter((w) => w.status === "in-dev" || w.status === "coming-soon").length
+};

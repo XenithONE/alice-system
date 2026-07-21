@@ -2,32 +2,43 @@ const GITHUB_REPOSITORY = "https://github.com/XenithONE/alice-system";
 
 export function Footer() {
   return (
-    <footer id="closing" className="site-footer" data-chapter data-creation-close aria-labelledby="closing-title">
+    <footer id="closing" className="site-footer" aria-labelledby="closing-title">
       <section className="closing-cta">
-        <p className="section-index">04 / 落款 — NEXT EXPERIMENT</p>
-        <h2 id="closing-title">次の実験へ。</h2>
-        <p className="closing-copy">描いては、組み上げる。AIと人のあいだの遊びは、まだ終わらない。</p>
+        <p className="section-index">05 / NEXT TITLE</p>
+        <h2 id="closing-title">
+          次のタイトルを、
+          <br />
+          一緒に待ってほしい。
+        </h2>
+        <p className="closing-copy">
+          遊べる作品はいますぐ。制作中のタイトルは、公開したらここに並びます。AIと組んで、作り続ける。
+        </p>
 
-        <div className="seal-wrap" data-reveal aria-hidden="true">
-          <span className="seal">完</span>
-          <span className="seal-caption">ALICE SYSTEM — SEALED 2026</span>
+        <div className="footer-actions">
+          <a className="cta lg wishlist is-static" aria-hidden="true">
+            <span aria-hidden="true">◆</span> WISHLIST — COMING SOON
+          </a>
+          <a className="cta lg ghost" href={GITHUB_REPOSITORY} target="_blank" rel="noreferrer" data-magnetic>
+            GitHubで制作を見る ↗
+          </a>
         </div>
 
-        <a className="closing-cta-link" href={GITHUB_REPOSITORY} target="_blank" rel="noreferrer" data-magnetic>
-          GitHubで制作を見る
-        </a>
+        <div className="reel-end" data-reveal aria-hidden="true">
+          <span className="reel-end-mark">END OF REEL</span>
+          <span className="reel-end-caption">AlicE sYsTeM — BUILT WITH AI · 2026</span>
+        </div>
       </section>
 
       <div className="footer-shell">
         <nav className="footer-nav" aria-label="フッターナビゲーション">
-          <a href="#works">WORKS</a>
+          <a href="#games">GAMES</a>
           <a href="#ai-lab">LAB</a>
           <a href="#prompts">PROMPTS</a>
           <a href={GITHUB_REPOSITORY} target="_blank" rel="noreferrer">
             GITHUB
           </a>
         </nav>
-        <p className="footer-meta">© 2026 AI CREATIVE WORKS / v{__APP_VERSION__}</p>
+        <p className="footer-meta">© 2026 AlicE sYsTeM — AI GAME STUDIO / v{__APP_VERSION__}</p>
       </div>
 
       <p className="footer-wordmark" aria-hidden="true">

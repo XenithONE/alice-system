@@ -16,7 +16,8 @@ export default defineConfig({
       input: {
         portfolio: fileURLToPath(new URL("./index.html", import.meta.url)),
         "hollow-ward": fileURLToPath(new URL("./hollow-ward.html", import.meta.url)),
-        "tower-defense": fileURLToPath(new URL("./tower-defense.html", import.meta.url))
+        "tower-defense": fileURLToPath(new URL("./tower-defense.html", import.meta.url)),
+        atelier: fileURLToPath(new URL("./atelier.html", import.meta.url))
       },
       // NOTE: no manualChunks here on purpose. rolldown-vite's manualChunks compat
       // folded three's core into the spark group even when the function returned

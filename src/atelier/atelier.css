@@ -1,0 +1,64 @@
+/* ATELIER ADRIFT — standalone full-page WebGL experiment.
+   The low-poly ocean scene (src/portfolio/gl/*) rendered full-bleed, with a
+   poster fallback and minimal chrome. three.js lives only in this entry's
+   chunk, keeping the studio landing spark-free and three-free. */
+
+:root {
+  --sky: #bfe6f2;
+  --ink: #08131b;
+  --bone: #f3f8fb;
+  --display: "Oswald", "Arial Narrow", sans-serif;
+  --sans: "Space Grotesk", "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
+  --mono: "Space Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--sky); }
+body { font-family: var(--sans); color: var(--bone); }
+a { color: inherit; text-decoration: none; }
+
+.atelier { position: fixed; inset: 0; }
+.atelier-poster {
+  position: fixed; inset: 0; background-size: cover; background-position: center;
+  filter: saturate(1.04);
+}
+.gl-canvas {
+  position: fixed; inset: 0; width: 100%; height: 100%; display: block;
+  opacity: 0; transition: opacity 0.9s ease;
+}
+.gl-canvas.is-live { opacity: 1; }
+
+.atelier-chrome {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 20px; padding: clamp(18px, 3vw, 36px); pointer-events: none;
+}
+.atelier-back {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink); background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(8, 19, 27, 0.18); border-radius: 999px;
+  padding: 9px 16px; backdrop-filter: blur(6px); transition: background 0.2s ease;
+}
+.atelier-back:hover { background: rgba(255, 255, 255, 0.92); }
+.atelier-tag { text-align: right; text-shadow: 0 2px 18px rgba(6, 20, 30, 0.35); }
+.atelier-eyebrow { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.24em; color: rgba(243, 248, 251, 0.9); text-transform: uppercase; }
+.atelier-title { font-family: var(--display); font-weight: 700; text-transform: uppercase; font-size: clamp(1.8rem, 5vw, 3.4rem); line-height: 0.95; letter-spacing: 0.01em; margin: 6px 0; }
+.atelier-sub { font-size: clamp(0.78rem, 1.6vw, 0.98rem); color: rgba(243, 248, 251, 0.92); max-width: 42ch; margin-left: auto; }
+
+.atelier-hint {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 10;
+  font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.12em;
+  color: rgba(243, 248, 251, 0.85); text-shadow: 0 1px 8px rgba(6, 20, 30, 0.4);
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .atelier-chrome { flex-direction: column; }
+  .atelier-tag { text-align: left; }
+  .atelier-sub { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gl-canvas { transition: none; }
+}
