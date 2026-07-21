@@ -8,7 +8,7 @@ import type { HeroScene } from "./gl/brick/heroScene";
 // motion still shows the frozen brick composition; without WebGL the poster and
 // the DOM lockup stand alone. three.js is dynamically imported so it stays out of
 // the initial entry payload.
-export function HeroRoot() {
+export function HeroRoot({ poster }: { poster?: string }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [live, setLive] = useState(false);
 
@@ -98,5 +98,12 @@ export function HeroRoot() {
     };
   }, []);
 
-  return <canvas ref={canvasRef} className={`brick-hero-canvas ${live ? "is-live" : ""}`} aria-hidden="true" />;
+  return (
+    <>
+      {poster && !live && (
+        <div className="bh-poster" style={{ backgroundImage: `url("${poster}")` }} aria-hidden="true" />
+      )}
+      <canvas ref={canvasRef} className={`brick-hero-canvas ${live ? "is-live" : ""}`} aria-hidden="true" />
+    </>
+  );
 }

@@ -1,6 +1,8 @@
 import { HeroRoot } from "../HeroRoot";
 import { STUDIO_TALLY } from "../../data/works";
 
+const BASE = import.meta.env.BASE_URL;
+
 // The site's marquee: a toy-brick "AlicE sYsTeM" monument (three.js) beside the
 // studio lockup. Decorative — the catalog below is the site. Without WebGL /
 // reduced motion the DOM lockup still leads and the frozen brick pose shows.
@@ -8,7 +10,7 @@ export function BrickHero() {
   return (
     <section id="top" className="brick-hero" aria-labelledby="hero-title">
       <div className="bh-stage">
-        <HeroRoot />
+        <HeroRoot poster={`${BASE}assets/brick-hero-poster.webp`} />
       </div>
 
       <div className="bh-lockup">
