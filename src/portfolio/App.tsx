@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { SiteNav } from "./components/SiteNav";
-import { FeaturedHero } from "./components/FeaturedHero";
+import { BrickHero } from "./components/BrickHero";
 import { GamesSection } from "./components/GamesSection";
 import { GameDetail } from "./components/GameDetail";
 import { AiLab } from "./components/AiLab";
@@ -71,7 +71,7 @@ export default function PortfolioApp() {
       <SiteNav />
 
       <main id="main-content">
-        <FeaturedHero onOpenDetail={setDetail} />
+        <BrickHero />
         <GamesSection onOpenDetail={setDetail} />
         <AiLab />
         <Prompts />
