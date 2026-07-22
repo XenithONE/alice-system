@@ -18,7 +18,7 @@
 <style>
   :root{
     --bg:#03060b;--ink:#e7f5f3;--muted:#8090a5;--line:rgba(172,218,226,.18);
-    --cyan:#33e7c8;--gold:#ffd166;--rose:#ff4f87;--blue:#7fb3ff;--violet:#9b7cff;
+    --cyan:#9fe83a;--gold:#ffd166;--rose:#ff4f87;--blue:#7fb3ff;--violet:#9b7cff;
     --ui:"Space Grotesk",system-ui,sans-serif;--mono:ui-monospace,"Cascadia Code",Consolas,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -35,22 +35,29 @@
   .top a,.top button{pointer-events:auto;color:var(--muted);background:rgba(3,6,11,.52);border:1px solid var(--line);border-radius:7px;padding:8px 12px;text-decoration:none;font-family:var(--mono);font-size:12px;letter-spacing:.12em;cursor:pointer;transition:.2s}
   .top a:hover,.top button:hover{color:var(--cyan);border-color:var(--cyan)}
   .top .title{color:rgba(231,245,243,.86)}
-  .objective{position:fixed;left:18px;top:72px;z-index:5;max-width:min(360px,calc(100vw - 36px));font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:var(--cyan);pointer-events:none;text-shadow:0 0 14px rgba(51,231,200,.35)}
+  .objective{position:fixed;left:18px;top:72px;z-index:5;max-width:min(360px,calc(100vw - 36px));font-family:var(--mono);font-size:12px;letter-spacing:.12em;color:var(--cyan);pointer-events:none;text-shadow:0 0 14px rgba(159,232,58,.35)}
   .objective .sub{margin-top:5px;color:var(--muted);font-size:11px;letter-spacing:.08em}
   .hud{position:fixed;z-index:5;inset:auto 0 0 0;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:14px;padding:20px 22px 22px;font-family:var(--mono);pointer-events:none}
   .panel{border:1px solid var(--line);background:rgba(4,8,15,.58);backdrop-filter:blur(12px);border-radius:8px;padding:11px 13px;box-shadow:0 18px 40px rgba(0,0,0,.28)}
   .readout{display:flex;gap:13px;flex-wrap:wrap;font-size:12px;color:var(--muted);letter-spacing:.1em}.readout b{color:var(--ink);font-weight:700}
   .center{text-align:center;min-width:min(440px,94vw)}
-  .msg{color:var(--cyan);font-size:13px;letter-spacing:.15em;text-shadow:0 0 18px rgba(51,231,200,.45)}
+  .msg{color:var(--cyan);font-size:13px;letter-spacing:.15em;text-shadow:0 0 18px rgba(159,232,58,.45)}
   .subline{margin-top:7px;color:var(--muted);font-size:11px;letter-spacing:.08em}
   .keys{justify-self:end;color:var(--muted);font-size:11px;letter-spacing:.1em;text-align:right}
-  .meter{height:6px;min-width:140px;border:1px solid rgba(255,255,255,.13);border-radius:999px;overflow:hidden;background:rgba(255,255,255,.04);display:inline-block;vertical-align:middle;margin-left:7px}
-  .meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--cyan),var(--violet) 60%,var(--rose));box-shadow:0 0 10px rgba(155,124,255,.6);transition:width .12s linear}
-  .overlay{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;padding:22px;background:radial-gradient(circle at 50% 40%,rgba(51,231,200,.10),rgba(3,6,11,.82) 43%,rgba(3,6,11,.99));transition:opacity .3s}
+  /* v2 BRICK UPDATE: FEAR meter reads as a row of toy-brick studs filling up */
+  .meter{height:10px;min-width:140px;border:1px solid rgba(255,255,255,.13);border-radius:999px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:7px;
+    background-color:rgba(255,255,255,.04);
+    background-image:radial-gradient(circle at 5px 50%,rgba(244,244,244,.13) 2.5px,transparent 3.2px);
+    background-size:10px 100%;background-repeat:repeat-x}
+  .meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#9fe83a,#f2cd37 55%,#ff4f87);transition:width .12s linear;
+    -webkit-mask-image:radial-gradient(circle at 5px 50%,#000 2.5px,transparent 3.2px);-webkit-mask-size:10px 100%;-webkit-mask-repeat:repeat-x;
+    mask-image:radial-gradient(circle at 5px 50%,#000 2.5px,transparent 3.2px);mask-size:10px 100%;mask-repeat:repeat-x}
+  .overlay{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;padding:22px;background:radial-gradient(circle at 50% 40%,rgba(159,232,58,.10),rgba(3,6,11,.82) 43%,rgba(3,6,11,.99));transition:opacity .3s}
   .overlay.hidden{opacity:0;pointer-events:none}
   .card{width:min(660px,100%);text-align:center}
-  h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:clamp(48px,9vw,98px);line-height:.92;background:linear-gradient(105deg,#fff,var(--cyan),var(--violet),var(--rose));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 54px rgba(51,231,200,.32)}
+  h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:clamp(48px,9vw,98px);line-height:.92;background:linear-gradient(105deg,#fff,var(--cyan),var(--violet),var(--rose));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 54px rgba(159,232,58,.32)}
   .tagline{margin-top:9px;font-family:var(--mono);font-size:12px;letter-spacing:.42em;color:var(--gold)}
+  .vertag{display:inline-block;margin-top:10px;padding:3px 10px;border:1px solid rgba(159,232,58,.35);border-radius:6px;font-family:var(--mono);font-size:10px;letter-spacing:.28em;color:var(--cyan);opacity:.85}
   .card p{margin:18px auto 0;max-width:560px;color:#a7b8c7;font-size:14px;line-height:1.85;letter-spacing:.04em}
   .actions{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:24px}
   button.btn,a.link{pointer-events:auto;border:1px solid var(--line);border-radius:8px;background:rgba(8,13,23,.72);color:var(--ink);font-family:var(--mono);font-size:12px;letter-spacing:.12em;padding:13px 20px;cursor:pointer;text-decoration:none;transition:.2s}
@@ -58,8 +65,8 @@
   button.btn:hover,a.link:hover{border-color:var(--cyan);color:var(--cyan)}
   button.btn.primary:hover{color:#03110f;filter:brightness(1.08)}
   /* touch sticks */
-  .stick{position:fixed;z-index:7;width:120px;height:120px;border-radius:50%;border:1px solid var(--line);background:rgba(51,231,200,.05);display:none;pointer-events:none;transform:translate(-50%,-50%)}
-  .stick .knob{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(51,231,200,.18);border:1px solid rgba(51,231,200,.45);transform:translate(-50%,-50%)}
+  .stick{position:fixed;z-index:7;width:120px;height:120px;border-radius:50%;border:1px solid var(--line);background:rgba(159,232,58,.05);display:none;pointer-events:none;transform:translate(-50%,-50%)}
+  .stick .knob{position:absolute;left:50%;top:50%;width:48px;height:48px;border-radius:50%;background:rgba(159,232,58,.18);border:1px solid rgba(159,232,58,.45);transform:translate(-50%,-50%)}
   body.touch .stick.live{display:block}
   #loadError{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;padding:24px;background:#03060b;color:var(--ink);font-family:var(--mono);text-align:center;line-height:1.8}
   #loadError.show{display:flex}
@@ -87,8 +94,8 @@
   body.compass-on #compass{display:block}
   #compass .ring{position:absolute;inset:0;border:1px solid var(--line);border-radius:50%;background:rgba(4,8,15,.34)}
   #compass .needle{position:absolute;left:50%;top:50%;width:3px;height:19px;margin:-19px 0 0 -1.5px;border-radius:2px;
-    transform-origin:50% 100%;background:linear-gradient(180deg,var(--cyan),rgba(51,231,200,0));
-    box-shadow:0 0 8px rgba(51,231,200,.6);transition:transform .08s linear}
+    transform-origin:50% 100%;background:linear-gradient(180deg,var(--cyan),rgba(159,232,58,0));
+    box-shadow:0 0 8px rgba(159,232,58,.6);transition:transform .08s linear}
   @media(prefers-reduced-motion:reduce){#compass,#compass .needle{transition:none}}
   @media(max-width:760px){#compass{top:60px}}
   @media(max-width:760px){
@@ -132,6 +139,7 @@
   <div class="card">
     <h1>The Eidolon</h1>
     <div class="tagline">EYE IN THE DARK</div>
+    <div class="vertag">v2 — BRICK UPDATE</div>
     <p>闇の虚空で 信号の断片を 5 個集めろ。光を抱き、ゲートを抜けて還れ。<br>EIDOLON に光を当てるな——見つめ返してくる。</p>
     <div class="actions">
       <button class="btn primary" id="startBtn" type="button">ENTER THE DARK</button>
@@ -235,8 +243,8 @@ if(firstRun && ui.primer) ui.primer.classList.remove('hide');
 /* ---------------------------------------------------------- RENDER */
 const scene=new THREE.Scene();
 const FOG=LOW?0.135:0.115;
-scene.background=new THREE.Color(0x05060d);
-scene.fog=new THREE.FogExp2(0x05060d, FOG);
+scene.background=new THREE.Color(0x040709);
+scene.fog=new THREE.FogExp2(0x040709, FOG);
 
 const camera=new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 60);
 camera.rotation.order='YXZ';
@@ -293,7 +301,7 @@ composer.addPass(fearPass);
 let useBloom = prefs.bloom;   // master switch for the whole composer chain
 
 scene.add(new THREE.AmbientLight(0x0c1626, 0.8));
-const hemi=new THREE.HemisphereLight(0x2a2050, 0x03040c, 0.7);
+const hemi=new THREE.HemisphereLight(0x223347, 0x03040c, 0.7);
 scene.add(hemi);
 
 // flashlight: the only meaningful light, attached to the camera, casts shadows.
@@ -311,19 +319,24 @@ flash.target.position.set(0,-0.42,-1);
 camera.add(flash);
 camera.add(flash.target);
 // a faint held-lantern glow so the immediate area isn't a hard cone edge
-const handGlow=new THREE.PointLight(0x9fe9dd, 2.4, 5.5, 1.5);
+const handGlow=new THREE.PointLight(0xcfe8c4, 2.4, 5.5, 1.5);
 handGlow.position.set(0,-0.1,0.2);
 camera.add(handGlow);
 
 /* ---------------------------------------------------------- MATERIALS */
+/* v2 BRICK UPDATE — dark toy-plastic look matching the cover:
+   charcoal/navy bricks with low-key specular, neon-green emissives.
+   pillar/stud use a white base color because every instance gets its
+   shade via InstancedMesh.setColorAt (established per-instance pattern). */
 const M={
-  floor:new THREE.MeshStandardMaterial({color:0x07080e, roughness:1, metalness:0}),
-  pillar:new THREE.MeshStandardMaterial({color:0x0f1320, roughness:.95, metalness:.02}),
-  shard:new THREE.MeshStandardMaterial({color:0x0c4f46, emissive:0x33e7c8, emissiveIntensity:1.25, roughness:.4, metalness:.1}),
+  floor:new THREE.MeshStandardMaterial({color:0x07090c, roughness:.85, metalness:0}),
+  pillar:new THREE.MeshStandardMaterial({color:0xffffff, roughness:.52, metalness:.05}),
+  stud:new THREE.MeshStandardMaterial({color:0xffffff, roughness:.5, metalness:.04}),
+  shard:new THREE.MeshStandardMaterial({color:0x1a3c08, emissive:0x8dff2e, emissiveIntensity:1.25, roughness:.25, metalness:.05, transparent:true, opacity:.88}),
   gate:new THREE.MeshStandardMaterial({color:0x223044, emissive:0x101a2a, emissiveIntensity:.4, roughness:.4, metalness:.3}),
-  gateInner:new THREE.MeshBasicMaterial({color:0x9b7cff, transparent:true, opacity:.0}),
+  gateInner:new THREE.MeshBasicMaterial({color:0x9b7cff, transparent:true, opacity:.0, side:THREE.DoubleSide}),
   body:new THREE.MeshStandardMaterial({color:0x07060d, roughness:1, metalness:0, emissive:0x05040a, emissiveIntensity:.3}),
-  eye:new THREE.MeshStandardMaterial({color:0x021410, emissive:0x33e7c8, emissiveIntensity:1.2, roughness:.3}),
+  eye:new THREE.MeshStandardMaterial({color:0x0a1a04, emissive:0x8dff2e, emissiveIntensity:1.2, roughness:.3}),
   pupil:new THREE.MeshBasicMaterial({color:0x040308}),
   tent:new THREE.MeshStandardMaterial({color:0x09070f, roughness:1, metalness:0}),
 };
@@ -333,9 +346,34 @@ const floor=new THREE.Mesh(new THREE.PlaneGeometry(FIELD*2, FIELD*2), M.floor);
 floor.rotation.x=-Math.PI/2;
 floor.receiveShadow=true;
 scene.add(floor);
-const grid=new THREE.GridHelper(FIELD*2, FIELD, 0x2a7d70, 0x163f48);
-grid.material.transparent=true; grid.material.opacity=.45; grid.position.y=0.01;
+const grid=new THREE.GridHelper(FIELD*2, FIELD, 0x2c6a2c, 0x11301c);
+grid.material.transparent=true; grid.material.opacity=.35; grid.position.y=0.01;
 scene.add(grid);
+
+/* v2 BRICK UPDATE — stud baseplate: the floor becomes one giant dark plastic
+   baseplate. One InstancedMesh of low-poly cylinder studs, matrices + shade
+   jitter written ONCE at boot (StaticDrawUsage) => a single extra draw call. */
+(function buildBaseplate(){
+  const SP = LOW?2:1;                              // stud spacing (LOW: sparser)
+  const N = Math.floor((FIELD*2)/SP);
+  const geo=new THREE.CylinderGeometry(0.30,0.30,0.10,10);
+  const inst=new THREE.InstancedMesh(geo, M.stud, N*N);
+  inst.receiveShadow=true;                          // flashlight pools across studs
+  const dummy=new THREE.Object3D(); const col=new THREE.Color();
+  let i=0;
+  for(let gx=0;gx<N;gx++)for(let gz=0;gz<N;gz++){
+    dummy.position.set(-FIELD+SP/2+gx*SP, 0.05, -FIELD+SP/2+gz*SP);
+    dummy.updateMatrix();
+    inst.setMatrixAt(i,dummy.matrix);
+    col.setHex(0x0a0e15).offsetHSL(0,0,rnd(-0.004,0.010));
+    inst.setColorAt(i,col);
+    i++;
+  }
+  inst.instanceMatrix.needsUpdate=true;
+  if(inst.instanceColor) inst.instanceColor.needsUpdate=true;
+  inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  scene.add(inst);
+})();
 
 /* ---------------------------------------------------------- AMBIENT VOID MOTES
    Cheap additive THREE.Points drifting upward — fills the empty void with depth.
@@ -352,7 +390,7 @@ if(MOTES_N>0){
   motesGeo=new THREE.BufferGeometry();
   motesGeo.setAttribute('position', new THREE.BufferAttribute(mp,3));
   motes=new THREE.Points(motesGeo, new THREE.PointsMaterial({
-    color:0x33e7c8, size:LOW?0.04:0.06, transparent:true, opacity:0.30,
+    color:0x9fe83a, size:LOW?0.04:0.06, transparent:true, opacity:0.30,
     blending:THREE.AdditiveBlending, depthWrite:false
   }));
   scene.add(motes);
@@ -374,12 +412,14 @@ const PILLARS=[];                 // {minX,maxX,minZ,maxZ}
 const PILLAR_N = LOW?20:28;
 const SPAWN={x:-FIELD+4, z:-FIELD+4};
 (function buildPillars(){
+  /* v2 BRICK UPDATE — each monolith is now a stack of oversized dark plastic
+     bricks (alternating inset courses) capped with 2x2 studs. Placement math
+     and the PILLARS collision AABBs are EXACTLY as before; visuals only.
+     Two InstancedMeshes total (courses + stud caps), built once at boot. */
   const boxGeo=new THREE.BoxGeometry(1,1,1);
-  const inst=new THREE.InstancedMesh(boxGeo, M.pillar, PILLAR_N);
-  inst.castShadow=true; inst.receiveShadow=true;
-  const dummy=new THREE.Object3D();
-  let placed=0, tries=0;
-  while(placed<PILLAR_N && tries<2000){
+  const placements=[];
+  let tries=0;
+  while(placements.length<PILLAR_N && tries<2000){
     tries++;
     const x=rnd(-FIELD+3, FIELD-3), z=rnd(-FIELD+3, FIELD-3);
     // keep clear of spawn so the player isn't boxed in
@@ -392,18 +432,52 @@ const SPAWN={x:-FIELD+4, z:-FIELD+4};
       if(Math.hypot(x-px, z-pz) < half){ ok=false; break; }
     }
     if(!ok) continue;
-    dummy.position.set(x, h/2, z);
-    dummy.scale.set(w, h, d);
-    dummy.rotation.set(0,0,0);
-    dummy.updateMatrix();
-    inst.setMatrixAt(placed, dummy.matrix);
     PILLARS.push({minX:x-w/2, maxX:x+w/2, minZ:z-d/2, maxZ:z+d/2});
-    placed++;
+    placements.push({x,z,w,d,h});
   }
-  inst.count=placed;
+  const LAYER_H=0.62;
+  let totalLayers=0;
+  for(const pl of placements){ pl.layers=Math.max(3, Math.round(pl.h/LAYER_H)); totalLayers+=pl.layers; }
+  const inst=new THREE.InstancedMesh(boxGeo, M.pillar, totalLayers);
+  inst.castShadow=true; inst.receiveShadow=true;
+  const capGeo=new THREE.CylinderGeometry(1,1,1,10);
+  const caps=new THREE.InstancedMesh(capGeo, M.pillar, placements.length*4);
+  caps.receiveShadow=true;
+  const dummy=new THREE.Object3D(); const col=new THREE.Color();
+  let li=0, si=0;
+  for(const pl of placements){
+    const lh=pl.h/pl.layers;
+    for(let k=0;k<pl.layers;k++){
+      const inset=(k%2)?0.94:1.0;                 // alternating courses => stacked-brick silhouette (always inside the AABB)
+      dummy.position.set(pl.x, lh*(k+0.5), pl.z);
+      dummy.scale.set(pl.w*inset, lh, pl.d*inset);
+      dummy.rotation.set(0,0,0);
+      dummy.updateMatrix();
+      inst.setMatrixAt(li, dummy.matrix);
+      col.setHex((k%2)?0x0a0e18:0x0e1522).offsetHSL(0,0,rnd(-0.005,0.010));   // charcoal / dark navy shades
+      inst.setColorAt(li, col);
+      li++;
+    }
+    const sr=Math.min(pl.w,pl.d)*0.17, sh=0.11;   // 2x2 stud cap
+    for(const o of [[-1,-1],[1,-1],[-1,1],[1,1]]){
+      dummy.position.set(pl.x+o[0]*pl.w*0.22, pl.h+sh/2, pl.z+o[1]*pl.d*0.22);
+      dummy.scale.set(sr, sh, sr);
+      dummy.rotation.set(0,0,0);
+      dummy.updateMatrix();
+      caps.setMatrixAt(si, dummy.matrix);
+      col.setHex(0x101726);
+      caps.setColorAt(si, col);
+      si++;
+    }
+  }
+  inst.count=li; caps.count=si;
   inst.instanceMatrix.needsUpdate=true;
+  if(inst.instanceColor) inst.instanceColor.needsUpdate=true;
+  caps.instanceMatrix.needsUpdate=true;
+  if(caps.instanceColor) caps.instanceColor.needsUpdate=true;
   inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-  scene.add(inst);
+  caps.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  scene.add(inst, caps);
 })();
 
 // circle (cx,cz,r) vs all pillar AABBs -> resolved [x,z], axis-split for sliding
@@ -444,7 +518,9 @@ function los(ax,az,bx,bz){
 }
 
 /* ---------------------------------------------------------- SHARDS */
-const shardGeo=new THREE.OctahedronGeometry(0.3,0);
+/* v2 BRICK UPDATE — shards are glowing translucent green toy bricks (2 studs) */
+const shardGeo=new THREE.BoxGeometry(0.5,0.3,0.34);
+const shardStudGeo=new THREE.CylinderGeometry(0.10,0.10,0.09,10);
 const shards=[]; // {mesh,light,x,z,got,phase}
 (function placeShards(){
   let n=0, tries=0;
@@ -461,9 +537,15 @@ const shards=[]; // {mesh,light,x,z,got,phase}
     if(inside) continue;
     const mesh=new THREE.Mesh(shardGeo, M.shard.clone());
     mesh.position.set(x, 1.15, z);
+    // stud caps share the cloned material => same glow, removed with the parent
+    for(const ox of [-0.125,0.125]){
+      const st=new THREE.Mesh(shardStudGeo, mesh.material);
+      st.position.set(ox,0.195,0);
+      mesh.add(st);
+    }
     scene.add(mesh);
     let light=null;
-    if(!LOW){ light=new THREE.PointLight(0x33e7c8, 2.2, 5, 1.6); light.position.set(x,1.2,z); scene.add(light); }
+    if(!LOW){ light=new THREE.PointLight(0x86e63a, 2.2, 5, 1.6); light.position.set(x,1.2,z); scene.add(light); }
     shards.push({mesh,light,x,z,got:false,phase:rnd(0,6.28)});
     n++;
   }
@@ -483,9 +565,33 @@ let gateX=0, gateZ=0;
     const d=Math.hypot(x-SPAWN.x,z-SPAWN.z);
     if(d>best){ best=d; gateX=x; gateZ=z; }
   }
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(1.5,0.16,16,64), M.gate);
-  const inner=new THREE.Mesh(new THREE.TorusGeometry(1.18,0.04,8,64), M.gateInner);
-  gate.add(ring, inner);
+  /* v2 BRICK UPDATE — the gate is an arch/ring of glowing toy bricks with stud
+     caps (alternating front/back) around a translucent portal disc. Same
+     radius, same materials => the existing activation glow animates it all. */
+  const brickGeo=new THREE.BoxGeometry(0.46,0.24,0.18);
+  const RING_N=14;
+  const ringBricks=new THREE.InstancedMesh(brickGeo, M.gate, RING_N);
+  const ringStuds=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.07,0.07,0.07,10), M.gate, RING_N);
+  {
+    const d2=new THREE.Object3D();
+    for(let i=0;i<RING_N;i++){
+      const a=i/RING_N*Math.PI*2;
+      d2.position.set(Math.cos(a)*1.5, Math.sin(a)*1.5, 0);
+      d2.rotation.set(0,0,a+Math.PI/2);
+      d2.updateMatrix();
+      ringBricks.setMatrixAt(i,d2.matrix);
+      d2.position.set(Math.cos(a)*1.5, Math.sin(a)*1.5, (i%2? .12 : -.12));
+      d2.rotation.set(Math.PI/2,0,0);
+      d2.updateMatrix();
+      ringStuds.setMatrixAt(i,d2.matrix);
+    }
+    ringBricks.instanceMatrix.needsUpdate=true;
+    ringStuds.instanceMatrix.needsUpdate=true;
+    ringBricks.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    ringStuds.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  }
+  const inner=new THREE.Mesh(new THREE.CircleGeometry(1.16,40), M.gateInner);
+  gate.add(ringBricks, ringStuds, inner);
   // beacon shaft: thin vertical emissive cylinder marking the active exit.
   // Inert (no collider; collision only tests PILLARS) and hidden until the gate is online.
   try{
@@ -516,6 +622,24 @@ eid.add(eyeWhite);
 const pupil=new THREE.Mesh(new THREE.SphereGeometry(0.14,16,12), M.pupil);
 pupil.position.set(0,0.1,0.9);
 eid.add(pupil);
+/* v2 BRICK UPDATE — brick-built iris: a ring of small emissive studs around
+   the pupil. Shares M.eye, so every emissiveIntensity pulse (wander/hunt/seen)
+   drives the stud ring too. One InstancedMesh, matrices set once. */
+{
+  const IRIS_N=10;
+  const iris=new THREE.InstancedMesh(new THREE.CylinderGeometry(0.045,0.045,0.05,8), M.eye, IRIS_N);
+  const d3=new THREE.Object3D();
+  for(let i=0;i<IRIS_N;i++){
+    const a=i/IRIS_N*Math.PI*2;
+    d3.position.set(Math.cos(a)*0.24, 0.1+Math.sin(a)*0.24, 0.84);
+    d3.rotation.set(Math.PI/2,0,0);
+    d3.updateMatrix();
+    iris.setMatrixAt(i,d3.matrix);
+  }
+  iris.instanceMatrix.needsUpdate=true;
+  iris.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  eid.add(iris);
+}
 const tents=[];
 for(let i=0;i<6;i++){
   const t=new THREE.Mesh(new THREE.ConeGeometry(0.12,1.5,6), M.tent);
@@ -807,7 +931,7 @@ function updateShards(dt,t){
     if(d<1.6){
       s.got=true; state.shards++;
       scene.remove(s.mesh); if(s.light) scene.remove(s.light);
-      burst(s.x,1.2,s.z,0x33e7c8);
+      burst(s.x,1.2,s.z,0x9fe83a);
       pulse(540+state.shards*40,.09,'triangle',.045);
       // combo-scaled score (purely additive; shard count unchanged)
       const gain=500+Math.floor(250*state.combo);
@@ -1066,7 +1190,7 @@ window.__eidolon={state,E,shards,camera,look,frame,startGame,endGame,
   gateActive:()=>gate.userData.active, gatePos:()=>[gateX,gateZ], detect:()=>detect(Math.hypot(eid.position.x-camera.position.x,eid.position.z-camera.position.z)),
   setEid:(x,z)=>{E.x=x;E.z=z;eid.position.set(x,1.35,z);}, eidPos:()=>[eid.position.x,eid.position.z]}; // for deterministic tests
 requestAnimationFrame(frame);
-console.log('%cTHE EIDOLON','color:#33e7c8;font-size:20px;font-weight:bold');
+console.log('%cTHE EIDOLON — v2 BRICK UPDATE','color:#9fe83a;font-size:20px;font-weight:bold');
 console.log('%cFirst-person signal. Don\'t shine your light on the eye.','color:#9b7cff;font-family:monospace');
 </script>
 <script nomodule>

@@ -7,6 +7,11 @@
   --sky: #bfe6f2;
   --ink: #08131b;
   --bone: #f3f8fb;
+  /* v2 BRICK UPDATE — toy plastic palette (matches the brick cover art) */
+  --brick-red: #c91a09;
+  --brick-azure: #3399ff;
+  --brick-yellow: #f2cd37;
+  --brick-white: #f4f4f4;
   --display: "Oswald", "Arial Narrow", sans-serif;
   --sans: "Space Grotesk", "Noto Sans JP", "Hiragino Kaku Gothic ProN", sans-serif;
   --mono: "Space Mono", ui-monospace, monospace;
@@ -34,24 +39,65 @@ a { color: inherit; text-decoration: none; }
   display: flex; justify-content: space-between; align-items: flex-start;
   gap: 20px; padding: clamp(18px, 3vw, 36px); pointer-events: none;
 }
+/* v2 BRICK UPDATE — UI chips restyled as glossy toy bricks: rounded plastic
+   body, molded stud row on the top edge, highlight line + soft bottom shade. */
 .atelier-back {
-  pointer-events: auto; display: inline-flex; align-items: center; gap: 8px;
+  pointer-events: auto; position: relative; display: inline-flex; align-items: center; gap: 8px;
   font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.14em;
-  text-transform: uppercase; color: var(--ink); background: rgba(255, 255, 255, 0.7);
-  border: 1px solid rgba(8, 19, 27, 0.18); border-radius: 999px;
-  padding: 9px 16px; backdrop-filter: blur(6px); transition: background 0.2s ease;
+  text-transform: uppercase; color: var(--ink); background: var(--brick-white);
+  border: 1px solid rgba(8, 19, 27, 0.2); border-radius: 8px;
+  padding: 9px 16px; transition: filter 0.2s ease;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -3px 0 rgba(8, 19, 27, 0.16),
+    0 3px 10px rgba(6, 20, 30, 0.28);
 }
-.atelier-back:hover { background: rgba(255, 255, 255, 0.92); }
+.atelier-back::before {
+  content: ""; position: absolute; top: -5px; left: 14px;
+  width: 9px; height: 5px; border-radius: 3px 3px 0 0;
+  background: var(--brick-azure);
+  box-shadow: 14px 0 0 var(--brick-azure), 28px 0 0 var(--brick-azure);
+}
+.atelier-back:hover { filter: brightness(1.05); }
 .atelier-tag { text-align: right; text-shadow: 0 2px 18px rgba(6, 20, 30, 0.35); }
 .atelier-eyebrow { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.24em; color: rgba(243, 248, 251, 0.9); text-transform: uppercase; }
 .atelier-title { font-family: var(--display); font-weight: 700; text-transform: uppercase; font-size: clamp(1.8rem, 5vw, 3.4rem); line-height: 0.95; letter-spacing: 0.01em; margin: 6px 0; }
 .atelier-sub { font-size: clamp(0.78rem, 1.6vw, 0.98rem); color: rgba(243, 248, 251, 0.92); max-width: 42ch; margin-left: auto; }
 
+/* v2 tag — small red toy-brick chip under the title. */
+.atelier-version {
+  position: relative; display: inline-flex; margin-top: 12px;
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--brick-white); text-shadow: none;
+  background: var(--brick-red); border-radius: 6px; padding: 5px 10px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(8, 19, 27, 0.3),
+    0 2px 8px rgba(6, 20, 30, 0.3);
+}
+.atelier-version::before {
+  content: ""; position: absolute; top: -4px; left: 10px;
+  width: 7px; height: 4px; border-radius: 2px 2px 0 0;
+  background: var(--brick-yellow);
+  box-shadow: 11px 0 0 var(--brick-yellow), 22px 0 0 var(--brick-yellow);
+}
+
 .atelier-hint {
   position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 10;
   font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.12em;
-  color: rgba(243, 248, 251, 0.85); text-shadow: 0 1px 8px rgba(6, 20, 30, 0.4);
-  text-align: center;
+  color: var(--ink); text-align: center;
+  background: var(--brick-white); border: 1px solid rgba(8, 19, 27, 0.2);
+  border-radius: 8px; padding: 8px 14px;
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -3px 0 rgba(8, 19, 27, 0.16),
+    0 3px 10px rgba(6, 20, 30, 0.28);
+}
+.atelier-hint::before {
+  content: ""; position: absolute; top: -5px; left: 14px;
+  width: 9px; height: 5px; border-radius: 3px 3px 0 0;
+  background: var(--brick-red);
+  box-shadow: 14px 0 0 var(--brick-yellow), 28px 0 0 var(--brick-azure);
 }
 
 @media (max-width: 640px) {

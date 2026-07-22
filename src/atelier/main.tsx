@@ -26,6 +26,7 @@ function AtelierApp() {
           <p className="atelier-sub">
             ローポリの海の実験室 — dFdx 面取り海シェーダ ＋ 合成正弦波 ＋ 木造帆船
           </p>
+          <p className="atelier-version">v2 — BRICK UPDATE</p>
         </div>
       </header>
 

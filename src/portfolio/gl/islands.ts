@@ -38,7 +38,10 @@ export function buildIslands(m: MachineMaterials, rand: () => number, count = 6)
   const grassLowMat = new THREE.MeshStandardMaterial({ color: GRASS_LOW, flatShading: true, roughness: 1, metalness: 0 });
   const sandMat = new THREE.MeshStandardMaterial({ color: SAND, flatShading: true, roughness: 1, metalness: 0 });
   const rockMat = new THREE.MeshStandardMaterial({ color: ROCK, flatShading: true, roughness: 1, metalness: 0 });
-  disposables.push(grassMat, grassLowMat, sandMat, rockMat);
+  // v2 BRICK UPDATE — glossy toy-plastic accents for the cover-art lighthouse.
+  const toyWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, flatShading: true, roughness: 0.35, metalness: 0 });
+  const toyRedMat = new THREE.MeshStandardMaterial({ color: 0xc91a09, flatShading: true, roughness: 0.35, metalness: 0 });
+  disposables.push(grassMat, grassLowMat, sandMat, rockMat, toyWhiteMat, toyRedMat);
 
   for (let i = 0; i < count; i += 1) {
     const ang = (i / count) * Math.PI * 2 + (rand() - 0.5) * 0.8;
@@ -89,7 +92,7 @@ export function buildIslands(m: MachineMaterials, rand: () => number, count = 6)
 
     // Hero island (first, largest-ish) gets a lighthouse landmark.
     if (i === 0) {
-      island.add(buildLighthouse(m, scale * 0.5));
+      island.add(buildLighthouse(m, scale * 0.5, toyWhiteMat, toyRedMat));
     }
 
     group.add(island);
@@ -121,25 +124,40 @@ function jitter(geo: THREE.IcosahedronGeometry, rand: () => number, amount: numb
   geo.computeVertexNormals();
 }
 
-/** A tiny striped low-poly lighthouse on the hero island. */
-function buildLighthouse(m: MachineMaterials, h: number): THREE.Group {
+/** A tiny striped low-poly lighthouse on the hero island.
+ *  v2 BRICK UPDATE — restyled to the toy-brick cover art: white plastic tower
+ *  with red stripe bands, dark gallery ring, red cone roof and a stud on top. */
+function buildLighthouse(
+  m: MachineMaterials,
+  h: number,
+  toyWhite: THREE.MeshStandardMaterial,
+  toyRed: THREE.MeshStandardMaterial
+): THREE.Group {
   const g = new THREE.Group();
-  const tower = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.16, h * 0.24, h * 1.4, 9), m.canvas);
+  const tower = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.16, h * 0.24, h * 1.4, 9), toyWhite);
   tower.position.y = h * 0.7;
   tower.castShadow = true;
   g.add(tower);
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.185, h * 0.205, h * 0.32, 9), m.brass);
-  band.position.y = h * 0.62;
-  g.add(band);
-  const gallery = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.24, h * 0.24, h * 0.14, 9), m.woodDark);
+  // Two red stripe bands like the cover (lower band wider, upper band narrower).
+  const bandLow = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.198, h * 0.218, h * 0.3, 9), toyRed);
+  bandLow.position.y = h * 0.52;
+  g.add(bandLow);
+  const bandHigh = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.172, h * 0.186, h * 0.24, 9), toyRed);
+  bandHigh.position.y = h * 1.1;
+  g.add(bandHigh);
+  const gallery = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.24, h * 0.24, h * 0.14, 9), m.iron);
   gallery.position.y = h * 1.42;
   g.add(gallery);
-  const lamp = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.15, h * 0.15, h * 0.24, 8), m.brass);
+  const lamp = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.15, h * 0.15, h * 0.24, 8), toyWhite);
   lamp.position.y = h * 1.56;
   g.add(lamp);
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(h * 0.22, h * 0.3, 9), m.iron);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(h * 0.22, h * 0.3, 9), toyRed);
   roof.position.y = h * 1.78;
   roof.castShadow = true;
   g.add(roof);
+  // Toy stud on the very tip.
+  const tipStud = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.055, h * 0.055, h * 0.06, 8), toyRed);
+  tipStud.position.y = h * 1.96;
+  g.add(tipStud);
   return g;
 }

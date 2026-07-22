@@ -520,6 +520,7 @@ export default function App() {
       {phase === "menu" && (
         <div className="td-menu">
           <h1>SIGNAL SIEGE</h1>
+          <div className="td-vtag">v2 — BRICK UPDATE</div>
           <p className="td-tag">送るか、死ぬか。 — 対戦タワーディフェンス</p>
           {netError && <div className="td-error">{netError}</div>}
           <label className="td-field">

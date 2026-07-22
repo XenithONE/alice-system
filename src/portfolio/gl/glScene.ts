@@ -7,6 +7,7 @@ import { buildSky } from "./sky";
 import { buildIslands } from "./islands";
 import { buildShip } from "./props/ship";
 import { buildFlora } from "./props/flora";
+import { buildBrickCrates } from "./props/brickCrates";
 import type { MachineMaterials } from "./machines/types";
 import { mulberry32, hashStr } from "../../lib/seed";
 import type { HeroQuality } from "../quality";
@@ -116,6 +117,9 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
   ship.group.position.set(0, 0.4, 0);
   ship.group.rotation.y = -0.35;
   scene.add(ship.group);
+  // v2 BRICK UPDATE — studded toy-brick cargo crates ride on the deck.
+  const brickCrates = buildBrickCrates();
+  ship.group.add(brickCrates.group);
   // per-work cargo lift: the machines are the ship's cargo
   const cargo = ship.machines.map((mch) => mch.group);
   const cargoBaseY = cargo.map((g) => g.position.y);
@@ -457,6 +461,7 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
       sky.dispose();
       islands.dispose();
       flora.dispose();
+      brickCrates.dispose();
       whale.dispose();
       const geos = new Set<THREE.BufferGeometry>();
       const mats = new Set<THREE.Material>();

@@ -24,8 +24,9 @@
   .overlay{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;padding:22px;background:radial-gradient(circle at 50% 38%,rgba(255,122,60,.10),rgba(6,5,11,.82) 44%,rgba(6,5,11,.97));transition:opacity .3s}
   .overlay.hidden{opacity:0;pointer-events:none}
   .card{width:min(660px,100%);text-align:center}
-  h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:clamp(46px,9vw,96px);line-height:.92;background:linear-gradient(105deg,#fff,var(--gold),var(--ember),var(--violet));-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 60px rgba(255,150,60,.3)}
-  .card .tag{font-family:var(--mono);letter-spacing:.5em;color:var(--teal);font-size:13px;margin-top:8px;text-shadow:0 0 16px rgba(51,231,200,.5)}
+  h1{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:clamp(46px,9vw,96px);line-height:.92;background:linear-gradient(105deg,#fff,#f2cd37,#c91a09,#f2cd37);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 60px rgba(255,150,60,.3)}
+  .card .tag{font-family:var(--mono);letter-spacing:.5em;color:#f2cd37;font-size:13px;margin-top:8px;text-shadow:0 0 16px rgba(242,205,55,.5)}
+  .card .ver{display:inline-block;margin-top:10px;font-family:var(--mono);font-size:10px;letter-spacing:.3em;color:#f2cd37;border:1px solid rgba(242,205,55,.45);border-radius:999px;padding:4px 12px;background:rgba(90,12,4,.4)}
   .card p{margin:16px auto 0;max-width:540px;color:#b3aec2;font-size:13.5px;line-height:1.9;letter-spacing:.04em}
   .ctrl{margin:18px auto 0;display:inline-grid;grid-template-columns:auto auto;gap:6px 16px;font-family:var(--mono);font-size:11.5px;color:var(--muted);text-align:left;letter-spacing:.06em}
   .ctrl b{color:var(--gold);font-weight:600}
@@ -59,6 +60,7 @@
   <div class="card">
     <h1>DRAGON'S KEEP</h1>
     <div class="tag">PINBALL</div>
+    <div class="ver">v2 — BRICK UPDATE</div>
     <p>竜の根城に挑むファンタジー・ピンボール。城門を撃ち抜きボールをロックせよ。<br>
     ワームホール、魔の渦、ルーンの円環、4つのミッション——その先に竜の試練が待つ。</p>
     <div class="ctrl">
@@ -708,7 +710,7 @@ function stepBall(b,h){
         b.vx+=nx*420;b.vy+=ny*420;
         addScore(10000,(f[0]+f[2])/2,(f[1]+f[3])/2-10);
         sfx.sling();shake(1.2,.1);
-        emit((f[0]+f[2])/2,(f[1]+f[3])/2,6,{c:'#ff4f87',sp1:160,t1:.35});
+        emit((f[0]+f[2])/2,(f[1]+f[3])/2,6,{c:'#ffc34d',sp1:160,t1:.35});
       }
     }
     // alchemy standups
@@ -927,6 +929,38 @@ const bgImg=new Image(); let bgOk=false;
 bgImg.onload=()=>{bgOk=true;buildStatic();};
 bgImg.src='../assets/dragons-keep-bg.jpg';
 var staticCv=null;
+/* ---------- BRICK UPDATE: pre-rendered stud sprites (built once, cached) ---------- */
+const STUDS={};
+const STUD_COLS={
+  gold:['#ffe9a8','#f2cd37','#8a6a1f'],
+  red:['#ff8a7a','#c91a09','#5f0c04'],
+  grey:['#d8d8d8','#8a8a8a','#454545'],
+};
+function studSprite(kind){
+  let s=STUDS[kind];
+  if(s)return s;
+  const [hiC,midC,loC]=STUD_COLS[kind]||STUD_COLS.gold;
+  s=document.createElement('canvas');s.width=s.height=32;
+  const c=s.getContext('2d');
+  const g=c.createRadialGradient(12,10,2,16,16,16);
+  g.addColorStop(0,hiC);g.addColorStop(.55,midC);g.addColorStop(1,loC);
+  c.fillStyle=g;c.beginPath();c.arc(16,16,15,0,TAU);c.fill();
+  c.strokeStyle='rgba(0,0,0,.35)';c.lineWidth=2;
+  c.beginPath();c.arc(16,16,14,0,TAU);c.stroke();
+  c.fillStyle=midC;c.beginPath();c.arc(16,15,9,0,TAU);c.fill();
+  c.strokeStyle='rgba(255,255,255,.5)';c.lineWidth=2;
+  c.beginPath();c.arc(16,15,8,-2.4,-.6);c.stroke();
+  STUDS[kind]=s;return s;
+}
+function drawStud(c,x,y,r,kind='gold'){c.drawImage(studSprite(kind),x-r,y-r,r*2,r*2);}
+function studLine(c,x1,y1,x2,y2,gapPx=34,r=4.5,kind='gold'){
+  const dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy),n=Math.max(1,Math.floor(L/gapPx));
+  for(let i=1;i<n;i++){const t=i/n;drawStud(c,x1+dx*t,y1+dy*t,r,kind);}
+}
+function studArc(c,cxx,cyy,rad,a0,a1,gapPx=40,r=4.5,kind='gold'){
+  const n=Math.max(1,Math.floor(Math.abs(a1-a0)*rad/gapPx));
+  for(let i=1;i<n;i++){const a=a0+(a1-a0)*i/n;drawStud(c,cxx+rad*Math.cos(a),cyy+rad*Math.sin(a),r,kind);}
+}
 function tablePath(c){
   c.beginPath();
   c.moveTo(12,948);c.lineTo(12,330);
@@ -956,13 +990,17 @@ function buildStatic(){
   vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.55)');
   c.fillStyle=vg;c.fillRect(0,0,TW,TH);
   c.restore();
-  // outer wall
+  // outer wall — gold brick rampart
   c.save();
-  c.shadowColor='rgba(51,231,200,.6)';c.shadowBlur=14;
-  c.strokeStyle='#3b4661';c.lineWidth=7;c.lineJoin='round';
+  c.shadowColor='rgba(255,195,77,.55)';c.shadowBlur=14;
+  c.strokeStyle='#7a4d17';c.lineWidth=7;c.lineJoin='round';
   tablePath(c);c.stroke();
-  c.shadowBlur=0;c.strokeStyle='rgba(120,225,205,.55)';c.lineWidth=2;tablePath(c);c.stroke();
+  c.shadowBlur=0;c.strokeStyle='rgba(255,224,130,.6)';c.lineWidth=2;tablePath(c);c.stroke();
   c.restore();
+  // studs along the outer shell
+  studLine(c,12,930,12,340,44);
+  studArc(c,270,330,258,Math.PI,TAU,46);
+  studLine(c,528,340,528,930,44);
   // helper for neon rails
   const rail=(fn,col,glow)=>{
     c.save();c.shadowColor=glow;c.shadowBlur=10;
@@ -971,35 +1009,48 @@ function buildStatic(){
     c.shadowBlur=0;c.strokeStyle='rgba(255,255,255,.35)';c.lineWidth=1.4;
     c.beginPath();fn();c.stroke();c.restore();
   };
-  // launch rail (orbit)
-  rail(()=>{c.arc(270,330,222,200*RAD,355*RAD);},'#4a5374','rgba(157,123,255,.45)');
+  // launch rail (orbit) — gold brick
+  rail(()=>{c.arc(270,330,222,200*RAD,355*RAD);},'#8a5f22','rgba(255,195,77,.45)');
   // launch lane inner wall
-  rail(()=>{c.moveTo(492,360);c.lineTo(492,772);},'#4a5374','rgba(157,123,255,.35)');
+  rail(()=>{c.moveTo(492,360);c.lineTo(492,772);},'#8a5f22','rgba(255,195,77,.35)');
   // in/out rails
-  rail(()=>{c.moveTo(58,664);c.lineTo(58,800);},'#46557a','rgba(51,231,200,.4)');
-  rail(()=>{c.moveTo(104,658);c.lineTo(104,796);},'#46557a','rgba(51,231,200,.4)');
-  rail(()=>{c.moveTo(446,664);c.lineTo(446,800);},'#46557a','rgba(51,231,200,.4)');
-  rail(()=>{c.moveTo(400,658);c.lineTo(400,796);},'#46557a','rgba(51,231,200,.4)');
+  rail(()=>{c.moveTo(58,664);c.lineTo(58,800);},'#8a5f22','rgba(255,195,77,.4)');
+  rail(()=>{c.moveTo(104,658);c.lineTo(104,796);},'#8a5f22','rgba(255,195,77,.4)');
+  rail(()=>{c.moveTo(446,664);c.lineTo(446,800);},'#8a5f22','rgba(255,195,77,.4)');
+  rail(()=>{c.moveTo(400,658);c.lineTo(400,796);},'#8a5f22','rgba(255,195,77,.4)');
   // bottom diagonals
-  rail(()=>{c.moveTo(12,772);c.lineTo(186,872);},'#3b4661','rgba(51,231,200,.3)');
-  rail(()=>{c.moveTo(492,772);c.lineTo(354,872);},'#3b4661','rgba(51,231,200,.3)');
+  rail(()=>{c.moveTo(12,772);c.lineTo(186,872);},'#7a4d17','rgba(255,195,77,.3)');
+  rail(()=>{c.moveTo(492,772);c.lineTo(354,872);},'#7a4d17','rgba(255,195,77,.3)');
   // funnels
-  rail(()=>{c.moveTo(218,238);c.lineTo(192,272);},'#5a4a2c','rgba(255,195,77,.5)');
-  rail(()=>{c.moveTo(322,238);c.lineTo(348,272);},'#5a4a2c','rgba(255,195,77,.5)');
-  // posts
+  rail(()=>{c.moveTo(218,238);c.lineTo(192,272);},'#8a5f22','rgba(255,195,77,.5)');
+  rail(()=>{c.moveTo(322,238);c.lineTo(348,272);},'#8a5f22','rgba(255,195,77,.5)');
+  // studs riding the rails
+  studArc(c,270,330,222,205*RAD,350*RAD,50,4);
+  studLine(c,58,672,58,792,34,4);studLine(c,104,666,104,788,34,4);
+  studLine(c,446,672,446,792,34,4);studLine(c,400,666,400,788,34,4);
+  studLine(c,12,772,186,872,42,4);studLine(c,492,772,354,872,42,4);
+  // posts — round 1x1 gold bricks
   for(const p of POSTS){
     c.save();c.shadowColor='rgba(255,195,77,.5)';c.shadowBlur=8;
-    const g=c.createRadialGradient(p.x-1,p.y-2,1,p.x,p.y,p.r);
-    g.addColorStop(0,'#ffe9b0');g.addColorStop(1,'#8a6a2f');
-    c.fillStyle=g;c.beginPath();c.arc(p.x,p.y,p.r,0,TAU);c.fill();c.restore();
+    c.fillStyle='#8a6a1f';c.beginPath();c.arc(p.x,p.y,p.r,0,TAU);c.fill();c.restore();
+    drawStud(c,p.x,p.y,p.r,'gold');
   }
-  // sling bodies
+  // sling bodies — red brick wedges with gold trim
   for(const sl of SLINGS){
-    c.save();c.shadowColor='rgba(255,79,135,.4)';c.shadowBlur=10;
-    c.fillStyle='#241626';c.strokeStyle='#ff4f87';c.lineWidth=2.5;
+    c.save();c.shadowColor='rgba(255,195,77,.35)';c.shadowBlur=10;
+    c.fillStyle='#a11207';c.strokeStyle='#f2cd37';c.lineWidth=2.5;
     c.beginPath();c.moveTo(sl.pts[0][0],sl.pts[0][1]);
     c.lineTo(sl.pts[1][0],sl.pts[1][1]);c.lineTo(sl.pts[2][0],sl.pts[2][1]);
-    c.closePath();c.fill();c.stroke();c.restore();
+    c.closePath();c.fill();c.stroke();
+    c.shadowBlur=0;
+    c.strokeStyle='rgba(90,8,2,.6)';c.lineWidth=1.5;
+    c.beginPath();
+    c.moveTo((sl.pts[0][0]+sl.pts[2][0])/2,(sl.pts[0][1]+sl.pts[2][1])/2);
+    c.lineTo((sl.pts[1][0]+sl.pts[2][0])/2,(sl.pts[1][1]+sl.pts[2][1])/2);
+    c.stroke();c.restore();
+    const mx=(sl.pts[0][0]+sl.pts[1][0]+sl.pts[2][0])/3,
+          my=(sl.pts[0][1]+sl.pts[1][1]+sl.pts[2][1])/3;
+    drawStud(c,mx,my,5,'red');
   }
   // apron text
   c.save();
@@ -1016,10 +1067,10 @@ function buildStatic(){
   c.save();c.shadowColor='rgba(51,231,200,.7)';c.shadowBlur=12;
   c.strokeStyle='#33e7c8';c.lineWidth=3;
   c.beginPath();c.arc(WARP.x,WARP.y,WARP.r+3,0,TAU);c.stroke();c.restore();
-  // bumper bases
+  // bumper bases — gold rings
   for(const b of BUMPERS){
-    c.save();c.shadowColor='rgba(51,231,200,.4)';c.shadowBlur=10;
-    c.strokeStyle='#2a6b62';c.lineWidth=4;
+    c.save();c.shadowColor='rgba(255,195,77,.45)';c.shadowBlur=10;
+    c.strokeStyle='#8a6a1f';c.lineWidth=4;
     c.beginPath();c.arc(b.x,b.y,b.r+4,0,TAU);c.stroke();c.restore();
   }
   // lane letters base circles
@@ -1028,20 +1079,27 @@ function buildStatic(){
     c.beginPath();c.arc(L.x,L.y,11,0,TAU);c.stroke();
   }
   // castle towers + crenellations + gate arch (fully static — portcullis/targets stay dynamic)
-  const stone=(x,y,w,h)=>{
+  const stone=(x,y,w,h)=>{ // toy red brick masonry
     const g=c.createLinearGradient(x,y,x+w,y);
-    g.addColorStop(0,'#3a3a4e');g.addColorStop(.5,'#55556e');g.addColorStop(1,'#2e2e40');
+    g.addColorStop(0,'#7a0f06');g.addColorStop(.5,'#c91a09');g.addColorStop(1,'#6b0d05');
     c.fillStyle=g;c.fillRect(x,y,w,h);
-    c.strokeStyle='rgba(0,0,0,.4)';c.lineWidth=1;
-    for(let yy=y+8;yy<y+h;yy+=10){c.beginPath();c.moveTo(x,yy);c.lineTo(x+w,yy);c.stroke();}
+    c.strokeStyle='rgba(40,4,2,.55)';c.lineWidth=1;
+    let row=0;
+    for(let yy=y+8;yy<y+h;yy+=10){
+      c.beginPath();c.moveTo(x,yy);c.lineTo(x+w,yy);c.stroke();
+      const jx=x+(row%2?w*.33:w*.66);
+      c.beginPath();c.moveTo(jx,Math.max(y,yy-10));c.lineTo(jx,yy);c.stroke();
+      row++;
+    }
+    c.fillStyle='rgba(255,255,255,.14)';c.fillRect(x,y,w,2);
   };
   stone(204,176,18,66); stone(318,176,18,66);
-  c.fillStyle='#55556e';
+  c.fillStyle='#f2cd37';
   for(let i=0;i<3;i++){c.fillRect(204+i*7,170,5,7);c.fillRect(318+i*7,170,5,7);}
-  c.fillStyle='#26263a';
+  c.fillStyle='#2a0a06';
   c.beginPath();c.moveTo(222,242);c.lineTo(222,206);
   c.quadraticCurveTo(270,178,318,206);c.lineTo(318,242);c.closePath();c.fill();
-  c.strokeStyle='#6b6b8a';c.lineWidth=2;c.stroke();
+  c.strokeStyle='#c9a53f';c.lineWidth=2;c.stroke();
 }
 
 /* ============================================================
@@ -1069,13 +1127,13 @@ function initGrads(){
   BALL_G=cx.createRadialGradient(-3,-4,1,0,0,10);
   BALL_G.addColorStop(0,'#ffffff');BALL_G.addColorStop(.45,'#cdd9ea');BALL_G.addColorStop(1,'#5a6a85');
   BUMP_G=cx.createRadialGradient(-6,-8,3,0,0,27);
-  BUMP_G.addColorStop(0,'#7af0dd');BUMP_G.addColorStop(.6,'#1d8b7a');BUMP_G.addColorStop(1,'#0b3d36');
+  BUMP_G.addColorStop(0,'#fff3c4');BUMP_G.addColorStop(.6,'#e2b62d');BUMP_G.addColorStop(1,'#6b4f10');
   BUMP_GF=cx.createRadialGradient(-6,-8,3,0,0,27);
-  BUMP_GF.addColorStop(0,'#ffffff');BUMP_GF.addColorStop(.6,'#9ef0ff');BUMP_GF.addColorStop(1,'#0b3d36');
+  BUMP_GF.addColorStop(0,'#ffffff');BUMP_GF.addColorStop(.6,'#ffe9a8');BUMP_GF.addColorStop(1,'#8a6a1f');
   WING_G=cx.createLinearGradient(0,-30,60,0);
-  WING_G.addColorStop(0,'#7a1f1f');WING_G.addColorStop(1,'#3d0f14');
+  WING_G.addColorStop(0,'#c91a09');WING_G.addColorStop(1,'#6b0d05');
   BODY_G=cx.createRadialGradient(-4,-4,2,0,0,16);
-  BODY_G.addColorStop(0,'#a83232');BODY_G.addColorStop(1,'#4a1218');
+  BODY_G.addColorStop(0,'#e8503a');BODY_G.addColorStop(1,'#7a0f06');
 }
 let lightShowT=0, runeRot=0, attractT=0;
 /* render-only HUD trackers (never read by the sim). saveMax remembers the
@@ -1160,10 +1218,17 @@ function drawTable(t,dt){
     b.cool=Math.max(0,b.cool-dt);b.flash=Math.max(0,b.flash-dt*4);
     const f=b.flash;
     cx.save();cx.translate(b.x,b.y);
-    glow(0,0,b.r+14,f>0?'rgba(255,255,255,.8)':'rgba(51,231,200,.55)',f>0?1:.85);
+    glow(0,0,b.r+14,f>0?'rgba(255,255,255,.8)':'rgba(255,205,80,.6)',f>0?1:.85);
     cx.fillStyle=f>0?BUMP_GF:BUMP_G;
     cx.beginPath();cx.arc(0,0,b.r*(1+f*.12),0,TAU);cx.fill();
-    cx.fillStyle='rgba(255,255,255,.85)';
+    // toy-brick finish: dark rim, glossy crescent, 4 studs
+    cx.strokeStyle='rgba(70,50,8,.6)';cx.lineWidth=2;
+    cx.beginPath();cx.arc(0,0,b.r-1,0,TAU);cx.stroke();
+    cx.strokeStyle='rgba(255,255,255,.55)';cx.lineWidth=2.5;
+    cx.beginPath();cx.arc(0,0,b.r-5,-2.4,-1);cx.stroke();
+    drawStud(cx,-9,-9,4,'gold');drawStud(cx,9,-9,4,'gold');
+    drawStud(cx,-9,9,4,'gold');drawStud(cx,9,9,4,'gold');
+    cx.fillStyle='#3a2505';
     cx.font='700 11px "Space Grotesk"';cx.textAlign='center';cx.textBaseline='middle';
     cx.fillText('25K',0,0);
     cx.restore();
@@ -1173,9 +1238,9 @@ function drawTable(t,dt){
     sl.cool=Math.max(0,sl.cool-dt);sl.flash=Math.max(0,sl.flash-dt*5);
     if(sl.flash>0){
       cx.save();cx.globalCompositeOperation='lighter';cx.lineCap='round';
-      cx.strokeStyle=`rgba(255,79,135,${sl.flash*.35})`;cx.lineWidth=14;
+      cx.strokeStyle=`rgba(255,170,60,${sl.flash*.35})`;cx.lineWidth=14;
       cx.beginPath();cx.moveTo(sl.face[0],sl.face[1]);cx.lineTo(sl.face[2],sl.face[3]);cx.stroke();
-      cx.strokeStyle=`rgba(255,170,200,${sl.flash})`;cx.lineWidth=5;
+      cx.strokeStyle=`rgba(255,230,160,${sl.flash})`;cx.lineWidth=5;
       cx.beginPath();cx.moveTo(sl.face[0],sl.face[1]);cx.lineTo(sl.face[2],sl.face[3]);cx.stroke();
       cx.restore();
     }
@@ -1242,7 +1307,7 @@ function drawGate(t,dt){
   const ga=game._gateAnim;
   cx.save();
   cx.beginPath();cx.rect(224,184,92,56);cx.clip();
-  cx.strokeStyle='#8a7a4a';cx.lineWidth=2.5;
+  cx.strokeStyle='#c9a53f';cx.lineWidth=2.5;
   const rise=ga*52;
   for(let i=0;i<6;i++){
     cx.beginPath();cx.moveTo(230+i*16,190-rise);cx.lineTo(230+i*16,242-rise);cx.stroke();
@@ -1269,9 +1334,10 @@ function drawGate(t,dt){
     if(tg.anim>0)tg.anim=Math.max(0,tg.anim-dt*4);
     if(tg.anim<0)tg.anim=Math.min(0,tg.anim+dt*4);
     const dy=(tg.up?(tg.anim<0?-tg.anim*6:0):6);
-    if(tg.up)glow((tg.x1+tg.x2)/2,tg.y-1+dy,16,'rgba(255,79,135,.5)');
-    cx.fillStyle=tg.up?'#ff4f87':'rgba(120,60,80,.4)';
+    if(tg.up)glow((tg.x1+tg.x2)/2,tg.y-1+dy,16,'rgba(255,205,80,.55)');
+    cx.fillStyle=tg.up?'#f2cd37':'rgba(140,100,30,.35)';
     cx.fillRect(tg.x1,tg.y-4+dy,tg.x2-tg.x1,6);
+    if(tg.up){cx.fillStyle='rgba(255,255,255,.55)';cx.fillRect(tg.x1+1,tg.y-3+dy,tg.x2-tg.x1-2,1.5);}
   }
   cx.restore();
   // DRAGON
@@ -1291,31 +1357,34 @@ function drawDragon(t,dt){
     cx.quadraticCurveTo(34,-8,26,2);
     cx.closePath();
     cx.fillStyle=WING_G;cx.fill();
-    cx.strokeStyle='rgba(255,120,80,.35)';cx.lineWidth=1.2;cx.stroke();
+    cx.strokeStyle='rgba(255,200,90,.4)';cx.lineWidth=1.2;cx.stroke();
     cx.restore();
   };
   wingP(1);wingP(-1);
-  // body
+  // body — glossy brick-red torso with a stud
   cx.beginPath();cx.ellipse(0,0,16,11,0,0,TAU);
   cx.fillStyle=BODY_G;cx.fill();
+  cx.strokeStyle='rgba(255,255,255,.4)';cx.lineWidth=1.5;
+  cx.beginPath();cx.ellipse(0,-3,11,6,0,-2.6,-.6);cx.stroke();
+  drawStud(cx,3,-5,3,'red');
   // tail
   cx.beginPath();cx.moveTo(10,4);
   cx.quadraticCurveTo(30,14,44,6);cx.quadraticCurveTo(31,18,12,10);cx.closePath();
-  cx.fillStyle='#5d1a1f';cx.fill();
+  cx.fillStyle='#a11207';cx.fill();
   // neck + head
   const headDip=breathing?6:0;
   cx.beginPath();cx.moveTo(-8,-4);
   cx.quadraticCurveTo(-18,-16,-22,-22+headDip*.4);
-  cx.lineTo(-14,-18);cx.closePath();cx.fillStyle='#7a2424';cx.fill();
+  cx.lineTo(-14,-18);cx.closePath();cx.fillStyle='#b81a0a';cx.fill();
   cx.save();cx.translate(-24,-24+headDip);
-  cx.beginPath();cx.ellipse(0,0,9,6,-.3,0,TAU);cx.fillStyle='#8c2a2a';cx.fill();
-  cx.beginPath();cx.moveTo(-6,1);cx.lineTo(-14,4+headDip*.3);cx.lineTo(-5,4);cx.closePath();cx.fillStyle='#702020';cx.fill(); // jaw
+  cx.beginPath();cx.ellipse(0,0,9,6,-.3,0,TAU);cx.fillStyle='#c91a09';cx.fill();
+  cx.beginPath();cx.moveTo(-6,1);cx.lineTo(-14,4+headDip*.3);cx.lineTo(-5,4);cx.closePath();cx.fillStyle='#8a1108';cx.fill(); // jaw
   // eye
   glow(-1,-2,6,breathing?'rgba(255,233,176,.9)':'rgba(51,231,200,.9)');
   cx.fillStyle=breathing?'#ffe9b0':'#33e7c8';
   cx.beginPath();cx.arc(-1,-2,1.8,0,TAU);cx.fill();
-  // horns
-  cx.strokeStyle='#d8c9a0';cx.lineWidth=2;cx.lineCap='round';
+  // horns — gold
+  cx.strokeStyle='#f2cd37';cx.lineWidth=2;cx.lineCap='round';
   cx.beginPath();cx.moveTo(4,-4);cx.lineTo(10,-9);cx.stroke();
   cx.beginPath();cx.moveTo(6,-1);cx.lineTo(13,-4);cx.stroke();
   cx.restore();
@@ -1354,8 +1423,9 @@ function drawPlunger(){
   const b=game.balls.find(b=>b.inLane);
   const py=930+(game.plunger*16);
   cx.save();
-  cx.fillStyle='#5a4a2c';cx.fillRect(504,py,12,950-py+16);
-  cx.fillStyle='#ffc34d';cx.fillRect(502,py-4,16,5);
+  cx.fillStyle='#8a5f22';cx.fillRect(504,py,12,950-py+16);
+  cx.fillStyle='#c91a09';cx.fillRect(500,py-6,20,7);
+  drawStud(cx,510,py-2.5,3.2,'gold');
   if(b&&!b.auto){
     cx.font='9px "Space Grotesk"';cx.fillStyle='rgba(255,195,77,.8)';cx.textAlign='center';
     cx.fillText(game.charging?'RELEASE!':(isTouch?'HOLD LAUNCH':'HOLD SPACE'),510,860);
@@ -1389,19 +1459,32 @@ function drawBalls(){
 function drawFlippers(){
   for(const f of [flipL,flipR]){
     const [tx,ty]=f.tip();
+    // unit direction + screen-"up" perpendicular for gloss/shade offsets
+    const dxu=tx-f.px, dyu=ty-f.py, Lu=Math.hypot(dxu,dyu)||1, ux=dxu/Lu, uy=dyu/Lu;
+    let pxn=-uy, pyn=ux; if(pyn<0){pxn=-pxn;pyn=-pyn;} // (pxn,pyn) points screen-down
     cx.save();
     cx.lineCap='round';
     cx.globalCompositeOperation='lighter';
-    cx.strokeStyle=game.tilted?'rgba(120,120,120,.18)':'rgba(255,79,135,.3)';
+    cx.strokeStyle=game.tilted?'rgba(120,120,120,.18)':'rgba(255,90,50,.28)';
     cx.lineWidth=f.r*2+12;
     cx.beginPath();cx.moveTo(f.px,f.py);cx.lineTo(tx,ty);cx.stroke();
     cx.globalCompositeOperation='source-over';
-    cx.strokeStyle=game.tilted?'#555':'#c23a3a';cx.lineWidth=f.r*2;
+    // toy-red brick bar
+    cx.strokeStyle=game.tilted?'#555':'#c91a09';cx.lineWidth=f.r*2;
     cx.beginPath();cx.moveTo(f.px,f.py);cx.lineTo(tx,ty);cx.stroke();
-    cx.strokeStyle='rgba(255,210,160,.8)';cx.lineWidth=4;
-    cx.beginPath();cx.moveTo(f.px,f.py);cx.lineTo(tx,ty);cx.stroke();
+    // soft bottom shade
+    cx.strokeStyle=game.tilted?'rgba(0,0,0,.25)':'rgba(90,8,2,.55)';cx.lineWidth=5;
+    cx.beginPath();cx.moveTo(f.px+pxn*5,f.py+pyn*5);cx.lineTo(tx+pxn*5,ty+pyn*5);cx.stroke();
+    // glossy highlight line
+    cx.strokeStyle='rgba(255,255,255,.5)';cx.lineWidth=3;
+    cx.beginPath();cx.moveTo(f.px-pxn*4,f.py-pyn*4);cx.lineTo(tx-pxn*4,ty-pyn*4);cx.stroke();
     cx.restore();
-    cx.fillStyle='#2e2e40';cx.beginPath();cx.arc(f.px,f.py,7,0,TAU);cx.fill();
+    // studs along the bar + gold round pivot brick
+    const kind=game.tilted?'grey':'red';
+    drawStud(cx,f.px+ux*Lu*.28,f.py+uy*Lu*.28,4.6,kind);
+    drawStud(cx,f.px+ux*Lu*.55,f.py+uy*Lu*.55,4.6,kind);
+    drawStud(cx,f.px+ux*Lu*.82,f.py+uy*Lu*.82,4.6,kind);
+    drawStud(cx,f.px,f.py,7,game.tilted?'grey':'gold');
   }
 }
 function drawParticles(dt){
@@ -1419,6 +1502,8 @@ function drawParticles(dt){
     if(x.t>1.1){TEXTS.splice(i,1);continue;}
     cx.save();cx.globalAlpha=1-x.t/1.1;
     cx.font=`700 ${x.size}px "Space Grotesk"`;cx.textAlign='center';
+    cx.lineWidth=3;cx.lineJoin='round';cx.strokeStyle='rgba(40,8,2,.8)';
+    cx.strokeText(x.txt,x.x,x.y-x.t*36);
     cx.fillStyle=x.c;cx.fillText(x.txt,x.x,x.y-x.t*36);
     cx.restore();
   }
@@ -1434,6 +1519,26 @@ function makeDmdPattern(){
   return cx.createPattern(t,'repeat');
 }
 const dmdCv=document.createElement('canvas');dmdCv.width=540;dmdCv.height=66;
+/* red-brick DMD frame — pre-rendered once at 2x, drawn per frame as one image */
+let dmdFrameCv=null;
+function buildDmdFrame(){
+  dmdFrameCv=document.createElement('canvas');
+  dmdFrameCv.width=1080;dmdFrameCv.height=DMD_H*2;
+  const c=dmdFrameCv.getContext('2d');c.scale(2,2);
+  const brick=(x,y,w,h)=>{
+    c.fillStyle='#a11207';c.fillRect(x,y,w,h);
+    c.fillStyle='rgba(255,255,255,.18)';c.fillRect(x,y,w,1.5);
+    c.fillStyle='rgba(40,4,2,.5)';c.fillRect(x,y+h-1.5,w,1.5);
+  };
+  for(let x=0;x<540;x+=22)brick(x+1,0,20,6);          // top row
+  brick(0,DMD_H-4,10,4);                               // bottom row (thin, offset bond —
+  for(let x=11;x<540;x+=22)brick(x+1,DMD_H-4,20,4);    //  keeps mission pips at y56-62 clear)
+  for(let y=6;y<DMD_H-16;y+=14){brick(0,y+1,8,12);brick(532,y+1,8,12);} // sides
+  c.strokeStyle='rgba(242,205,55,.5)';c.lineWidth=1.5;
+  c.strokeRect(8,6,524,DMD_H-10);                      // thin gold inner frame
+  drawStud(c,8,8,4,'gold');drawStud(c,532,8,4,'gold'); // corner studs
+  drawStud(c,8,DMD_H-6,4,'gold');drawStud(c,532,DMD_H-6,4,'gold');
+}
 function drawDMD(t){
   const c=dmdCv.getContext('2d');
   c.clearRect(0,0,540,66);
@@ -1479,8 +1584,8 @@ function drawDMD(t){
   cx.drawImage(dmdCv,dx,dy,540,DMD_H);
   if(!dmdPat)dmdPat=makeDmdPattern();
   cx.fillStyle=dmdPat;cx.fillRect(dx,dy,540,DMD_H);
-  cx.strokeStyle='rgba(255,154,60,.3)';cx.lineWidth=2;
-  cx.strokeRect(dx+1,dy+1,538,DMD_H-2);
+  if(!dmdFrameCv)buildDmdFrame();
+  cx.drawImage(dmdFrameCv,dx,dy,540,DMD_H);
   cx.restore();
 }
 /* ---------- side panel (desktop) ---------- */
@@ -1616,9 +1721,9 @@ function drawGrade(t){
   // vignette
   cx.fillStyle=crtGrad;
   cx.fillRect(0,0,w,h);
-  // faint cosmic edge tint (teal top, violet bottom) for table identity
-  cx.fillStyle='rgba(51,231,200,.05)';cx.fillRect(0,0,w,Math.max(3,h*0.012));
-  cx.fillStyle='rgba(157,123,255,.05)';cx.fillRect(0,h-Math.max(3,h*0.012),w,Math.max(3,h*0.012));
+  // faint toy-brick edge tint (gold top, red bottom) for table identity
+  cx.fillStyle='rgba(242,205,55,.05)';cx.fillRect(0,0,w,Math.max(3,h*0.012));
+  cx.fillStyle='rgba(201,26,9,.06)';cx.fillRect(0,h-Math.max(3,h*0.012),w,Math.max(3,h*0.012));
   cx.restore();
 }
 
@@ -1729,7 +1834,7 @@ requestAnimationFrame(frame);
    deterministically (the live preview suppresses rAF). Reads/forwards
    existing state only; touches no sim. */
 window.__dk={game,state:()=>state,frame,startGame,serveBall,setState:s=>state=s};
-console.log('%cDRAGON\'S KEEP','color:#ffc34d;font-size:20px;font-weight:bold');
+console.log('%cDRAGON\'S KEEP v2 — BRICK UPDATE','color:#ffc34d;font-size:20px;font-weight:bold');
 console.log('%c竜は眠らない。門は二度開く。','color:#9d7bff');
 </script>
 </body>

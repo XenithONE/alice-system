@@ -289,6 +289,7 @@ export function Hud({
                 <div className="eyebrow"><i aria-hidden="true" /> CO-OP HORROR · 1—3 WITNESSES</div>
                 <h1>The Hollow Ward</h1>
                 <div className="tagline">DON&apos;T LOOK AWAY</div>
+                <div className="build-tag" aria-label="version 2, brick update">v2 — BRICK UPDATE</div>
                 <p>
                   6つのCASE FILEを回収して廃病棟から脱出せよ。<br className="desktop-break" />
                   ワードンは、誰かに見られている間だけ動けない。

@@ -1,12 +1,18 @@
 :root {
-  --bg: #030408;
-  --ink: #e7f0ee;
-  --muted: #8090a0;
-  --line: rgba(172, 200, 210, 0.16);
-  --line-strong: rgba(255, 209, 102, 0.34);
-  --gold: #ffd166;
-  --rose: #ff4f5f;
-  --blue: #7fa8ff;
+  /* v2 — BRICK UPDATE: cold desaturated toy-plastic key after the brick cover.
+     Variable names are kept (--gold is now "bone plastic", --rose is the one
+     red lamp) so every existing rule keeps resolving. */
+  --bg: #04070c;
+  --ink: #dfe7ee;
+  --muted: #7f8fa1;
+  --line: rgba(158, 178, 198, 0.16);
+  --line-strong: rgba(197, 210, 224, 0.36);
+  --gold: #c4ceda;
+  --rose: #e64534;
+  --blue: #4d7fae;
+  --brick: #9aa7b2;
+  --lamp-deep: #6f0d03;
+  --lamp-glow: rgba(226, 56, 42, 0.5);
   --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
   --ui: "Space Grotesk", system-ui, sans-serif;
 }
@@ -191,7 +197,7 @@ canvas:focus-visible {
   letter-spacing: 0.1em;
   color: var(--gold);
   pointer-events: none;
-  text-shadow: 0 0 14px rgba(255, 209, 102, 0.3);
+  text-shadow: 0 0 14px rgba(196, 206, 218, 0.28);
 }
 .objective .sub {
   margin-top: 6px;
@@ -247,7 +253,7 @@ canvas:focus-visible {
   display: block;
   height: 100%;
   background: linear-gradient(90deg, var(--gold), var(--rose));
-  box-shadow: 0 0 10px rgba(255, 79, 95, 0.5);
+  box-shadow: 0 0 10px var(--lamp-glow);
   transition: width 0.12s linear;
 }
 .keys {
@@ -293,7 +299,7 @@ canvas:focus-visible {
   min-height: 52px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
-  background: rgba(20, 12, 12, 0.5);
+  background: rgba(9, 14, 20, 0.58);
   color: var(--gold);
   font-family: var(--mono);
   font-size: 11px;
@@ -359,7 +365,7 @@ canvas:focus-visible {
   align-items: center;
   justify-content: center;
   padding: 22px;
-  background: radial-gradient(circle at 50% 40%, rgba(255, 209, 102, 0.08), rgba(3, 4, 8, 0.85) 45%, rgba(3, 4, 8, 0.99));
+  background: radial-gradient(circle at 50% 40%, rgba(77, 127, 174, 0.09), rgba(3, 5, 9, 0.85) 45%, rgba(3, 5, 9, 0.99));
 }
 .card {
   width: min(640px, 100%);
@@ -374,7 +380,7 @@ canvas:focus-visible {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  text-shadow: 0 0 54px rgba(255, 209, 102, 0.28);
+  text-shadow: 0 0 54px rgba(196, 206, 218, 0.22);
 }
 .tagline {
   margin-top: 9px;
@@ -412,18 +418,19 @@ canvas:focus-visible {
   transition: 0.2s;
 }
 .btn.primary {
-  color: #1a0e02;
-  background: linear-gradient(110deg, var(--gold), var(--rose));
-  border-color: transparent;
+  color: #fff;
+  background: linear-gradient(180deg, #d5321f, #a11305);
+  border-color: rgba(0, 0, 0, 0.35);
   font-weight: 800;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 .btn:hover {
   border-color: var(--gold);
   color: var(--gold);
 }
 .btn.primary:hover {
-  color: #1a0e02;
-  filter: brightness(1.08);
+  color: #fff;
+  filter: brightness(1.1);
 }
 
 #primer {
@@ -529,15 +536,15 @@ canvas:focus-visible {
 /* Multiplayer signal language ------------------------------------------------ */
 
 :root {
-  --signal: #72e1d1;
-  --slot-1: #ffd166;
-  --slot-2: #72e1d1;
-  --slot-3: #b597ff;
+  --signal: #6fb9e2;
+  --slot-1: #d9c46a;
+  --slot-2: #6fb9e2;
+  --slot-3: #a58fe0;
 }
 
 .link-chip {
-  border-color: rgba(114, 225, 209, 0.25) !important;
-  color: rgba(215, 255, 247, 0.88);
+  border-color: rgba(111, 185, 226, 0.28) !important;
+  color: rgba(214, 236, 250, 0.88);
 }
 
 .link-chip i,
@@ -550,18 +557,18 @@ canvas:focus-visible {
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--signal);
-  box-shadow: 0 0 12px rgba(114, 225, 209, 0.9);
+  box-shadow: 0 0 12px rgba(111, 185, 226, 0.9);
   animation: signal-pulse 2.4s ease-in-out infinite;
 }
 
 .link-chip[data-quality="poor"] {
-  color: #ff9b9b;
-  border-color: rgba(255, 79, 95, 0.4) !important;
+  color: #ff9c8f;
+  border-color: rgba(226, 56, 42, 0.45) !important;
 }
 
 .link-chip[data-quality="poor"] i {
   background: var(--rose);
-  box-shadow: 0 0 12px rgba(255, 79, 95, 0.9);
+  box-shadow: 0 0 12px rgba(226, 56, 42, 0.9);
 }
 
 .live-session-note {
@@ -570,10 +577,10 @@ canvas:focus-visible {
   gap: 8px;
   margin: -2px 0 1px;
   padding: 8px 9px;
-  border: 1px solid rgba(114, 225, 209, 0.16);
+  border: 1px solid rgba(111, 185, 226, 0.18);
   border-radius: 6px;
   color: var(--signal);
-  background: rgba(114, 225, 209, 0.045);
+  background: rgba(111, 185, 226, 0.05);
   font-size: 9px;
   letter-spacing: 0.12em;
 }
@@ -666,7 +673,7 @@ canvas:focus-visible {
   touch-action: pan-y;
   background:
     linear-gradient(90deg, rgba(2, 4, 8, 0.98) 0%, rgba(2, 4, 8, 0.57) 34%, rgba(2, 4, 8, 0.57) 66%, rgba(2, 4, 8, 0.98) 100%),
-    radial-gradient(circle at 50% 32%, rgba(255, 209, 102, 0.11), rgba(3, 4, 8, 0.89) 48%, #030408 100%);
+    radial-gradient(circle at 50% 32%, rgba(77, 127, 174, 0.13), rgba(3, 5, 9, 0.89) 48%, #04070c 100%);
 }
 
 .menu-card {
@@ -773,8 +780,8 @@ canvas:focus-visible {
 }
 
 .identity-field:focus-within {
-  border-color: rgba(255, 209, 102, 0.38);
-  box-shadow: 0 0 0 3px rgba(255, 209, 102, 0.04);
+  border-color: rgba(196, 206, 218, 0.38);
+  box-shadow: 0 0 0 3px rgba(196, 206, 218, 0.05);
 }
 
 .session-picker {
@@ -816,15 +823,15 @@ canvas:focus-visible {
 .session-choice:hover,
 .session-choice:focus-visible {
   transform: translateX(3px);
-  border-color: rgba(255, 209, 102, 0.36);
+  border-color: rgba(196, 206, 218, 0.38);
   outline: 0;
-  background: linear-gradient(90deg, rgba(255, 209, 102, 0.07), rgba(255, 255, 255, 0.012));
+  background: linear-gradient(90deg, rgba(196, 206, 218, 0.07), rgba(255, 255, 255, 0.012));
 }
 
 .session-choice:hover::before,
 .session-choice:focus-visible::before {
   opacity: 1;
-  box-shadow: 0 0 18px rgba(255, 209, 102, 0.75);
+  box-shadow: 0 0 18px rgba(196, 206, 218, 0.55);
 }
 
 .session-choice > span:nth-child(2) {
@@ -850,7 +857,7 @@ canvas:focus-visible {
 }
 
 .choice-index {
-  color: rgba(255, 209, 102, 0.52);
+  color: rgba(196, 206, 218, 0.5);
   font: 9px/1 var(--mono);
   letter-spacing: 0.12em;
 }
@@ -894,7 +901,7 @@ canvas:focus-visible {
 .room-code-field input {
   width: min(390px, 100%);
   border: 0;
-  border-bottom: 1px solid rgba(255, 209, 102, 0.34);
+  border-bottom: 1px solid rgba(196, 206, 218, 0.34);
   outline: 0;
   background: rgba(1, 3, 7, 0.42);
   border-radius: 8px 8px 0 0;
@@ -911,7 +918,7 @@ canvas:focus-visible {
 
 .room-code-field input:focus {
   border-color: var(--gold);
-  box-shadow: 0 12px 28px -20px rgba(255, 209, 102, 0.85);
+  box-shadow: 0 12px 28px -20px rgba(196, 206, 218, 0.85);
 }
 
 .room-code-field input::placeholder {
@@ -935,7 +942,7 @@ canvas:focus-visible {
 .btn.danger:hover,
 .btn.danger:focus-visible {
   border-color: var(--rose);
-  color: #ff9aa4;
+  color: #ff9c8f;
 }
 
 .btn:disabled {
@@ -946,7 +953,7 @@ canvas:focus-visible {
 
 .btn:disabled:hover {
   border-color: transparent;
-  color: #1a0e02;
+  color: #fff;
   filter: grayscale(0.7);
 }
 
@@ -968,7 +975,7 @@ canvas:focus-visible {
   width: 3px;
   height: 15px;
   background: var(--signal);
-  box-shadow: 0 0 13px rgba(114, 225, 209, 0.75);
+  box-shadow: 0 0 13px rgba(111, 185, 226, 0.75);
   animation: signal-scan 1.05s ease-in-out infinite;
 }
 
@@ -986,7 +993,7 @@ canvas:focus-visible {
   align-items: center;
   width: min(470px, 100%);
   margin: 20px auto 17px;
-  border: 1px solid rgba(114, 225, 209, 0.2);
+  border: 1px solid rgba(111, 185, 226, 0.22);
   border-radius: 10px;
   background: rgba(1, 5, 8, 0.56);
   padding: 11px 16px 12px;
@@ -998,9 +1005,9 @@ canvas:focus-visible {
 
 .room-code-display:hover,
 .room-code-display:focus-visible {
-  border-color: rgba(114, 225, 209, 0.58);
+  border-color: rgba(111, 185, 226, 0.58);
   outline: 0;
-  background: rgba(114, 225, 209, 0.055);
+  background: rgba(111, 185, 226, 0.06);
 }
 
 .room-code-display small {
@@ -1014,7 +1021,7 @@ canvas:focus-visible {
   margin-top: 8px;
   font: 700 38px/1 var(--mono);
   letter-spacing: 0.22em;
-  text-shadow: 0 0 24px rgba(114, 225, 209, 0.22);
+  text-shadow: 0 0 24px rgba(111, 185, 226, 0.22);
 }
 
 .room-code-display span {
@@ -1114,12 +1121,12 @@ canvas:focus-visible {
   gap: 12px;
   width: min(520px, 100%);
   margin: 16px auto 0;
-  border: 1px solid rgba(255, 79, 95, 0.27);
+  border: 1px solid rgba(226, 56, 42, 0.3);
   border-left: 2px solid var(--rose);
   border-radius: 6px;
-  background: rgba(255, 79, 95, 0.055);
+  background: rgba(226, 56, 42, 0.06);
   padding: 10px 12px;
-  color: #d4b1b7;
+  color: #d6b3ad;
   font: 10px/1.45 var(--mono);
   letter-spacing: 0.04em;
   text-align: left;
@@ -1127,7 +1134,7 @@ canvas:focus-visible {
 
 .network-error b {
   flex: 0 0 auto;
-  color: #ff8793;
+  color: #ff8a7c;
   font-size: 8px;
   letter-spacing: 0.15em;
 }
@@ -1142,13 +1149,13 @@ canvas:focus-visible {
 
 .end-card .end-note {
   margin-top: 8px;
-  color: rgba(114, 225, 209, 0.7);
+  color: rgba(111, 185, 226, 0.72);
   font: 9px/1.5 var(--mono);
   letter-spacing: 0.08em;
 }
 
 .loss-overlay {
-  background: radial-gradient(circle at 50% 40%, rgba(255, 79, 95, 0.1), rgba(3, 4, 8, 0.9) 45%, #030408);
+  background: radial-gradient(circle at 50% 40%, rgba(226, 56, 42, 0.11), rgba(3, 5, 9, 0.9) 45%, #04070c);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1296,4 +1303,321 @@ canvas:focus-visible {
     padding-top: 10px;
     padding-bottom: 10px;
   }
+}
+
+/* ============================================================================
+   v2 — BRICK UPDATE (visual layer only)
+   Toy-brick language in a horror key, after the brick-hospital cover:
+   dark desaturated molded-plastic panels with subtle stud rows, brick-chip
+   buttons with a physical press shadow, worn plaques, and one red lamp.
+   Pure CSS — gradients render once; no per-frame work is added.
+   ========================================================================= */
+
+@keyframes lamp-breathe {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
+/* --- HUD panels as worn brick plaques ------------------------------------ */
+
+.panel {
+  border-color: rgba(158, 178, 198, 0.19);
+  border-radius: 10px;
+  padding: 17px 13px 11px;
+  background-color: rgba(6, 9, 15, 0.6);
+  background-image:
+    radial-gradient(circle at 50% 45%, rgba(223, 231, 238, 0.11) 0 2px, rgba(223, 231, 238, 0.035) 2.7px, rgba(8, 13, 20, 0.2) 3.4px, transparent 4.1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 30%);
+  background-size: 19px 10px, 100% 100%;
+  background-position: 6px 3px, 0 0;
+  background-repeat: repeat-x, no-repeat;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.4), 0 18px 38px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+#settingsPanel {
+  border-radius: 12px;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.45), 0 18px 48px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.alice-line {
+  border-radius: 10px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5), 0 16px 46px rgba(0, 0, 0, 0.42);
+}
+
+/* --- Brick-chip buttons (3D press shadow + glossy top line) --------------- */
+
+.btn {
+  border-radius: 10px;
+  background: linear-gradient(180deg, #17212d, #0b131c);
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.btn.primary {
+  box-shadow: 0 3px 0 var(--lamp-deep), inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 0 22px rgba(226, 56, 42, 0.18);
+}
+.btn.primary:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--lamp-deep), inset 0 1px 0 rgba(255, 255, 255, 0.26), 0 0 22px rgba(226, 56, 42, 0.18);
+}
+.btn.quiet {
+  box-shadow: none;
+}
+
+.icon-button,
+.gfx-chip,
+.pause-btn {
+  border-radius: 8px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.icon-button:active,
+.gfx-chip:active,
+.pause-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.touch-btn {
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.touch-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.room-code-display {
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.room-code-display:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* --- Menu card: molded plaque, stud row, and the one red lamp ------------- */
+
+.menu-card {
+  border-radius: 14px 22px 14px 22px;
+  background-color: rgba(5, 9, 15, 0.78);
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.03), transparent 38%),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 34px);
+  box-shadow:
+    0 7px 0 rgba(0, 0, 0, 0.5),
+    0 44px 120px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -12px 22px -14px rgba(0, 0, 0, 0.75);
+}
+
+.menu-card::before {
+  top: 8px;
+  left: 20px;
+  right: 20px;
+  width: auto;
+  height: 15px;
+  background-image: radial-gradient(circle at 50% 46%, rgba(223, 231, 238, 0.14) 0 3px, rgba(223, 231, 238, 0.045) 4px, rgba(8, 13, 20, 0.22) 5px, transparent 6px);
+  background-size: 27px 15px;
+  background-repeat: repeat-x;
+  background-position: 0 0;
+  box-shadow: none;
+}
+
+.menu-card::after {
+  top: 15px;
+  right: 17px;
+  bottom: auto;
+  left: auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ff9384, #e2382a 55%, #7c0f03);
+  box-shadow: 0 0 14px var(--lamp-glow), 0 0 36px rgba(226, 56, 42, 0.22), inset 0 -1px 2px rgba(0, 0, 0, 0.4);
+  animation: lamp-breathe 3.8s ease-in-out infinite;
+}
+
+/* --- Session choices: colored 2-stud strip instead of the thin bar -------- */
+
+.session-choice {
+  --choice-c: var(--gold);
+  border-radius: 10px;
+  padding: 10px 14px 10px 26px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.session-choice:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.host-choice { --choice-c: var(--signal); }
+.join-choice { --choice-c: var(--slot-3); }
+
+.session-choice::before {
+  inset: 9px auto 9px 8px;
+  width: 10px;
+  border-radius: 4px;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255, 255, 255, 0.35) 0 1.1px, transparent 1.8px),
+    radial-gradient(circle at 50% 74%, rgba(255, 255, 255, 0.35) 0 1.1px, transparent 1.8px),
+    color-mix(in srgb, var(--choice-c) 34%, #0a1119);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  opacity: 0.85;
+}
+
+.session-choice:hover::before,
+.session-choice:focus-visible::before {
+  opacity: 1;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255, 255, 255, 0.55) 0 1.2px, transparent 1.9px),
+    radial-gradient(circle at 50% 74%, rgba(255, 255, 255, 0.55) 0 1.2px, transparent 1.9px),
+    color-mix(in srgb, var(--choice-c) 62%, #0a1119);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), 0 0 14px color-mix(in srgb, var(--choice-c) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* --- Lobby roster + teammate chips: mini 2-stud bricks --------------------- */
+
+.lobby-slot {
+  grid-template-columns: 18px 26px 1fr auto;
+  border-radius: 8px;
+}
+
+.slot-signal {
+  width: 18px;
+  height: 11px;
+  border-radius: 3px;
+  background: rgba(160, 176, 182, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(160, 176, 182, 0.14);
+}
+
+.occupied .slot-signal {
+  background-color: var(--slot-color);
+  background-image:
+    radial-gradient(circle at 30% 40%, rgba(255, 255, 255, 0.5) 0 1.4px, rgba(0, 0, 0, 0.25) 2px, transparent 2.7px),
+    radial-gradient(circle at 70% 40%, rgba(255, 255, 255, 0.5) 0 1.4px, rgba(0, 0, 0, 0.25) 2px, transparent 2.7px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 45%, rgba(0, 0, 0, 0.28));
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--slot-color) 35%, #000), 0 0 12px color-mix(in srgb, var(--slot-color) 55%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.teammate-chip > i {
+  width: 8px;
+  height: 19px;
+  border-radius: 3px;
+  background-color: var(--slot-color);
+  background-image:
+    radial-gradient(circle at 50% 22%, rgba(255, 255, 255, 0.45) 0 1.3px, rgba(0, 0, 0, 0.22) 1.9px, transparent 2.6px),
+    radial-gradient(circle at 50% 72%, rgba(255, 255, 255, 0.45) 0 1.3px, rgba(0, 0, 0, 0.22) 1.9px, transparent 2.6px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 40%, rgba(0, 0, 0, 0.26));
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--slot-color) 30%, #000), 0 0 10px color-mix(in srgb, var(--slot-color) 55%, transparent);
+}
+
+/* --- Pause / end cards as worn brick plaques ------------------------------- */
+
+.compact-card,
+.end-card {
+  position: relative;
+  padding: 34px 26px 28px;
+  border: 1px solid rgba(158, 178, 198, 0.15);
+  border-radius: 14px;
+  background-color: rgba(5, 9, 15, 0.82);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 32%);
+  box-shadow:
+    0 7px 0 rgba(0, 0, 0, 0.5),
+    0 40px 100px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -12px 22px -14px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(14px);
+}
+
+.compact-card::before,
+.end-card::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 18px;
+  right: 18px;
+  height: 13px;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 50% 46%, rgba(223, 231, 238, 0.12) 0 2.6px, rgba(223, 231, 238, 0.04) 3.5px, rgba(8, 13, 20, 0.2) 4.4px, transparent 5.2px);
+  background-size: 24px 13px;
+  background-repeat: repeat-x;
+}
+
+.lost-card::after {
+  content: "";
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at 35% 30%, #ff9384, #e2382a 55%, #7c0f03);
+  box-shadow: 0 0 14px var(--lamp-glow), 0 0 36px rgba(226, 56, 42, 0.22);
+  animation: lamp-breathe 3.8s ease-in-out infinite;
+}
+
+/* --- Primer plaque ---------------------------------------------------------- */
+
+#primer {
+  border-radius: 10px;
+  padding: 19px 18px 14px;
+  background-color: rgba(7, 11, 17, 0.55);
+  background-image: radial-gradient(circle at 50% 45%, rgba(223, 231, 238, 0.1) 0 2px, rgba(223, 231, 238, 0.03) 2.7px, rgba(8, 13, 20, 0.18) 3.4px, transparent 4.1px);
+  background-size: 20px 10px;
+  background-position: 8px 4px;
+  background-repeat: repeat-x;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* --- v2 build tag: tiny red 2-stud brick + label ---------------------------- */
+
+.build-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 13px auto 0;
+  padding: 6px 11px 6px 9px;
+  border: 1px solid rgba(158, 178, 198, 0.22);
+  border-radius: 7px;
+  background: linear-gradient(180deg, #141d28, #0b121b);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.22em;
+}
+
+.build-tag::before {
+  content: "";
+  width: 15px;
+  height: 9px;
+  border-radius: 2px;
+  background:
+    radial-gradient(circle at 30% 38%, rgba(255, 255, 255, 0.55) 0 1.2px, transparent 1.8px),
+    radial-gradient(circle at 70% 38%, rgba(255, 255, 255, 0.55) 0 1.2px, transparent 1.8px),
+    linear-gradient(180deg, #e2382a, #9c1206);
+  box-shadow: 0 2px 0 var(--lamp-deep), 0 0 10px rgba(226, 56, 42, 0.35);
+}
+
+/* --- Brick update: motion + small screens ----------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-card::after,
+  .lost-card::after {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .panel { padding: 14px 11px 9px; }
+  .session-choice { padding: 8px 11px 8px 24px; }
+  .session-choice::before { inset: 8px auto 8px 7px; width: 9px; }
+  .lobby-slot { grid-template-columns: 16px 21px minmax(0, 1fr) auto; }
+  .slot-signal { width: 16px; height: 10px; }
+  .teammate-chip > i { width: 7px; height: 16px; }
+  .compact-card, .end-card { padding: 30px 18px 24px; }
+  .build-tag { margin-top: 10px; }
+}
+
+@media (max-height: 720px) and (min-width: 761px) {
+  #primer { padding-top: 14px; padding-bottom: 10px; }
 }

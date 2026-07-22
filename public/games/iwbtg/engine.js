@@ -1,5 +1,7 @@
 /* ============================================================
-   I WANNA BE THE SIGNAL — engine.js v2（高難度・複数ステージ版）
+   I WANNA BE THE SIGNAL — engine.js v2.1 BRICK UPDATE（高難度・複数ステージ版）
+   見た目のみトイブリック調に刷新（カバーアート iwbtg-brick.webp 準拠）。
+   物理・当たり判定・難易度・セーブキーは v2 と完全に同一。
    担当: エンジン班（XenithONE + Claude）
 
    ・levels/levelN.js を順番に読み込み、ステージ進行する
@@ -55,6 +57,181 @@ function spr(name, frame, dx, dy, dw, dh, flip) {
   else ctx.drawImage(s.img, f * s.fw, 0, s.fw, s.fh, dx, dy, dw, dh);
   ctx.restore();
   return true;
+}
+
+/* ---------- v2.1 BRICK UPDATE: 起動時に一度だけ焼くトイブリック用オフスクリーンスプライト ----------
+   ・全て手続き描画（外部画像なし）。毎フレーム再生成しない・shadowBlur不使用
+   ・当たり判定・物理・難易度には一切影響しない（描画専用） */
+function mkCv(w, h, fn) { const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d')); return c; }
+function rr(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function stud(g, cx, cy, r, fill, rim) {
+  g.fillStyle = rim; g.beginPath(); g.arc(cx, cy + 1, r, 0, 7); g.fill();
+  g.fillStyle = fill; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.45)'; g.beginPath(); g.arc(cx - r * .3, cy - r * .35, r * .35, 0, 7); g.fill();
+}
+const BT = { red:'#c91a09', redDark:'#8f1206', blue:'#0055bf', blueDark:'#003d8f', azure:'#3399ff',
+  yellow:'#f2cd37', yellowDark:'#b8941f', green:'#4b9f4a', greenLight:'#66c05f', greenDark:'#37753a',
+  white:'#f4f4f4', gray:'#6d6e6c', grayLight:'#7f807e', grayDark:'#4b4d4b', ink:'#12314f' };
+const BR = {};
+{
+  // 上面が露出した地形ブロック（緑キャップ＋スタッド、下は灰ブリック）
+  BR.top = mkCv(32, 32, g => {
+    g.fillStyle = BT.gray; rr(g, 1, 12, 30, 19, 3); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.15)'; g.fillRect(3, 13, 26, 2);
+    g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(3, 28, 26, 3);
+    g.fillStyle = BT.greenDark; rr(g, 0, 2, 32, 13, 3); g.fill();
+    g.fillStyle = BT.green; rr(g, 0, 0, 32, 13, 3); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(2, 1.5, 28, 2);
+    stud(g, 10, 7, 4, BT.greenLight, BT.greenDark);
+    stud(g, 22, 7, 4, BT.greenLight, BT.greenDark);
+  });
+  // 埋まっている地形ブロック（灰ブリック）
+  BR.mid = mkCv(32, 32, g => {
+    g.fillStyle = BT.grayDark; rr(g, 1, 2, 30, 30, 3); g.fill();
+    g.fillStyle = BT.gray; rr(g, 1, 1, 30, 29, 3); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(3, 2.5, 26, 2);
+    g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(3, 27, 26, 2);
+    stud(g, 10, 9, 4, BT.grayLight, BT.grayDark);
+    stud(g, 22, 9, 4, BT.grayLight, BT.grayDark);
+  });
+  // 島の底に巻く黄黒ハザードテープ（カバーの縞バンド）
+  BR.strip = mkCv(32, 7, g => {
+    g.fillStyle = BT.yellow; g.fillRect(0, 0, 32, 7);
+    g.fillStyle = '#20242b';
+    for (let x = -10; x < 40; x += 16) {
+      g.beginPath(); g.moveTo(x, 7); g.lineTo(x + 7, 0); g.lineTo(x + 15, 0); g.lineTo(x + 8, 7);
+      g.closePath(); g.fill();
+    }
+    g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(0, 0, 32, 1.5);
+  });
+  // タレット用の黄黒ハザードブリック
+  BR.hazard = mkCv(32, 32, g => {
+    g.fillStyle = BT.yellowDark; rr(g, 1, 2, 30, 30, 3); g.fill();
+    g.fillStyle = BT.yellow; rr(g, 1, 1, 30, 29, 3); g.fill();
+    g.save(); rr(g, 1, 1, 30, 29, 3); g.clip();
+    g.fillStyle = '#20242b';
+    for (let x = -24; x < 48; x += 16) {
+      g.beginPath(); g.moveTo(x, 32); g.lineTo(x + 16, 0); g.lineTo(x + 24, 0); g.lineTo(x + 8, 32);
+      g.closePath(); g.fill();
+    }
+    g.restore();
+    g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(3, 2, 26, 2);
+    g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(3, 27, 26, 2);
+  });
+  // トゲ（赤／白帯コーン・シルエットは従来の三角形と同一）
+  const spikeCv = (col, dark) => mkCv(32, 32, g => {
+    for (let i = 0; i < 2; i++) {
+      const bx = 2 + i * 16;
+      g.beginPath(); g.moveTo(bx, 32); g.lineTo(bx + 6, 8); g.lineTo(bx + 12, 32); g.closePath();
+      g.fillStyle = col; g.fill();
+      g.save(); g.clip();
+      g.fillStyle = 'rgba(244,244,244,.9)'; g.fillRect(bx, 17, 14, 5);
+      g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(bx + 4, 8, 2, 24);
+      g.restore();
+      g.strokeStyle = dark; g.lineWidth = 1.5; g.stroke();
+    }
+  });
+  BR.spike = spikeCv(BT.red, BT.redDark);
+  BR.spikeHot = spikeCv('#ff5a3c', '#a8300f');
+  // 黄色いブリックくん（カバーの主人公。1スタッド頭＋困り顔）
+  const playerCv = (body, dark, feet) => mkCv(32, 32, g => {
+    g.fillStyle = dark; rr(g, 12, 0, 8, 4, 1.5); g.fill();
+    g.fillStyle = body; rr(g, 12, 0, 8, 3, 1.5); g.fill();
+    g.fillStyle = dark; rr(g, 1, 12, 5, 9, 2); g.fill(); rr(g, 26, 12, 5, 9, 2); g.fill();
+    g.fillStyle = dark; rr(g, 4, 4, 24, 24, 4); g.fill();
+    g.fillStyle = body; rr(g, 4, 3, 24, 24, 4); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.38)'; g.fillRect(7, 5, 18, 2);
+    g.fillStyle = BT.white;
+    g.beginPath(); g.arc(14.5, 12, 3, 0, 7); g.fill();
+    g.beginPath(); g.arc(22.5, 12, 3, 0, 7); g.fill();
+    g.fillStyle = BT.ink;
+    g.beginPath(); g.arc(15.5, 12.3, 1.5, 0, 7); g.fill();
+    g.beginPath(); g.arc(23.5, 12.3, 1.5, 0, 7); g.fill();
+    g.strokeStyle = BT.ink; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(11.5, 7.5); g.lineTo(16.5, 9); g.moveTo(25.5, 7.5); g.lineTo(20.5, 9); g.stroke();
+    g.fillStyle = BT.ink; rr(g, 16.5, 17.5, 6, 4.5, 2); g.fill();
+    g.fillStyle = feet; rr(g, 6.5, 27, 8, 5, 2); g.fill(); rr(g, 17.5, 27, 8, 5, 2); g.fill();
+  });
+  BR.player = playerCv(BT.yellow, BT.yellowDark, '#8a6f14');
+  BR.playerGod = playerCv('#8e63ff', '#5b34c9', '#41249c');
+  // ノコギリ（赤いプラ歯車＋白スタッド軸）
+  BR.saw = mkCv(40, 40, g => {
+    g.translate(20, 20);
+    g.fillStyle = BT.redDark;
+    for (let i = 0; i < 8; i++) {
+      g.rotate(Math.PI / 4);
+      g.beginPath(); g.moveTo(8, -4.5); g.lineTo(17, 0); g.lineTo(8, 4.5); g.closePath(); g.fill();
+    }
+    g.beginPath(); g.arc(0, 0, 13, 0, 7); g.fill();
+    g.fillStyle = BT.red; g.beginPath(); g.arc(0, 0, 11.5, 0, 7); g.fill();
+    for (let i = 0; i < 8; i++) {
+      g.rotate(Math.PI / 4);
+      g.beginPath(); g.moveTo(9, -2.5); g.lineTo(15, 0); g.lineTo(9, 2.5); g.closePath(); g.fill();
+    }
+    g.fillStyle = 'rgba(255,255,255,.22)'; g.beginPath(); g.arc(-3.5, -4.5, 5.5, 0, 7); g.fill();
+    stud(g, 0, 0, 4.5, BT.white, '#b9bcbf');
+  });
+  // 弾（赤い丸ポッチ）
+  BR.bullet = mkCv(16, 16, g => {
+    g.fillStyle = 'rgba(201,26,9,.3)'; g.beginPath(); g.arc(8, 8, 7.5, 0, 7); g.fill();
+    g.fillStyle = BT.redDark; g.beginPath(); g.arc(8, 8.8, 5.2, 0, 7); g.fill();
+    g.fillStyle = BT.red; g.beginPath(); g.arc(8, 7.8, 5, 0, 7); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.5)'; g.beginPath(); g.arc(6.3, 6, 1.8, 0, 7); g.fill();
+  });
+  // 移動足場（濃青プレート＋アズールスタッド。空色と混ざらない配色）
+  BR.plat = mkCv(32, 12, g => {
+    g.fillStyle = BT.blueDark; rr(g, 0, 2, 32, 10, 3); g.fill();
+    g.fillStyle = BT.blue; rr(g, 0, 0, 32, 10, 3); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(2, 1, 28, 2);
+    stud(g, 10, 5, 3, BT.azure, BT.blueDark);
+    stud(g, 22, 5, 3, BT.azure, BT.blueDark);
+  });
+  // ゴール扉（紫ブリック積み。偽ゴールも同一見た目＝罠仕様は不変）
+  BR.door = mkCv(32, 48, g => {
+    g.fillStyle = '#48279e'; rr(g, 2, 1, 28, 47, 4); g.fill();
+    g.fillStyle = '#7b4dff'; rr(g, 2, 0, 28, 46, 4); g.fill();
+    g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(4, 15, 24, 2); g.fillRect(4, 31, 24, 2);
+    g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(4, 1.5, 24, 2);
+    stud(g, 11, 8, 3.5, '#9a73ff', '#48279e');
+    stud(g, 21, 8, 3.5, '#9a73ff', '#48279e');
+    g.fillStyle = '#33e7c8'; g.fillRect(21, 21, 4, 7);
+  });
+  // 背景3層（空グラデ／ブリック雲／遠景の浮島）— 起動時に1回だけ描く
+  BR.sky = mkCv(VIEW_W, VIEW_H, g => {
+    const gr = g.createLinearGradient(0, 0, 0, VIEW_H);
+    gr.addColorStop(0, '#7cc4f8'); gr.addColorStop(.55, '#48a5f0'); gr.addColorStop(1, '#2f8fe0');
+    g.fillStyle = gr; g.fillRect(0, 0, VIEW_W, VIEW_H);
+  });
+  BR.clouds = mkCv(VIEW_W, VIEW_H, g => {
+    const puffs = [[70, 64, 4], [300, 132, 3], [520, 52, 5], [705, 168, 3], [858, 96, 4], [180, 226, 3]];
+    for (const [bx, by, n] of puffs) {
+      const cw = 24, ch = 15;
+      g.fillStyle = 'rgba(210,229,243,.9)';
+      rr(g, bx, by + 4, n * cw - 2, ch, 4); g.fill();
+      g.fillStyle = 'rgba(248,251,253,.96)';
+      for (let i = 0; i < n; i++) { rr(g, bx + i * cw, by, cw - 2, ch, 4); g.fill(); }
+      for (let i = 0; i < n - 2; i++) { rr(g, bx + cw * .9 + i * cw, by - ch + 4, cw - 2, ch, 4); g.fill(); }
+    }
+  });
+  BR.isles = mkCv(VIEW_W, VIEW_H, g => {
+    const isl = [[120, 300, 3], [420, 236, 4], [700, 320, 3], [905, 212, 2]];
+    for (const [bx, by, n] of isl) {
+      const cw = 16;
+      g.fillStyle = '#8ea4b2'; rr(g, bx + 3, by + 9, n * cw - 6, 8, 2); g.fill();
+      g.fillStyle = '#7f95a4'; rr(g, bx + 7, by + 16, n * cw - 14, 7, 2); g.fill();
+      if (n > 2) { g.fillStyle = '#71879a'; rr(g, bx + 11, by + 22, n * cw - 22, 6, 2); g.fill(); }
+      g.fillStyle = '#79c178'; rr(g, bx, by, n * cw, 10, 3); g.fill();
+      g.fillStyle = 'rgba(255,255,255,.3)'; g.fillRect(bx + 2, by + 1, n * cw - 4, 1.5);
+      for (let i = 0; i < n; i++) stud(g, bx + 8 + i * cw, by + 5, 3, '#8fd18d', '#5c9e5f');
+    }
+    g.fillStyle = '#9c6b4a'; g.fillRect(478, 218, 3, 18);
+    g.fillStyle = '#e04a3a';
+    g.beginPath(); g.moveTo(481, 218); g.lineTo(495, 222.5); g.lineTo(481, 227); g.closePath(); g.fill();
+  });
 }
 
 /* ---------- サウンド ---------- */
@@ -560,27 +737,28 @@ function drawSpikeShape(x, y, dir, bright) {
     ctx.save(); ctx.translate(x + 16, y + 16); ctx.rotate(ang);
     spr('hazard_spike', 0, -16, -16, TILE, TILE); ctx.restore(); return;
   }
+  const img = bright ? BR.spikeHot : BR.spike;   // 事前レンダ済みブリックコーン（赤/白）
+  if (dir === 'up') { ctx.drawImage(img, x, y); return; }
   ctx.save(); ctx.translate(x + 16, y + 16);
   ctx.rotate({ up: 0, right: Math.PI / 2, down: Math.PI, left: -Math.PI / 2 }[dir]);
-  ctx.fillStyle = bright ? '#ff6b85' : C.red;
-  for (let i = 0; i < 2; i++) {
-    ctx.beginPath();
-    ctx.moveTo(-14 + i * 16, 16); ctx.lineTo(-8 + i * 16, -8); ctx.lineTo(-2 + i * 16, 16);
-    ctx.closePath(); ctx.fill();
-  }
+  ctx.drawImage(img, -16, -16);
   ctx.restore();
 }
 
-// CRTビネット + スキャンライン + 紫のエッジ着色（フレーム最終段の純描画オーバーレイ）
+// トイスタジオ調ソフトビネット + 微細スキャンライン（ビネットは初回のみ焼いてキャッシュ）
+let vignCv = null;
 function drawCRT() {
-  const g = ctx.createRadialGradient(VIEW_W / 2, VIEW_H * 0.46, VIEW_H * 0.35, VIEW_W / 2, VIEW_H / 2, VIEW_W * 0.62);
-  g.addColorStop(0, 'rgba(4,6,11,0)'); g.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-  ctx.globalAlpha = 0.06; ctx.fillStyle = C.teal;
+  if (!vignCv) vignCv = mkCv(VIEW_W, VIEW_H, g => {
+    const gr = g.createRadialGradient(VIEW_W / 2, VIEW_H * 0.46, VIEW_H * 0.35, VIEW_W / 2, VIEW_H / 2, VIEW_W * 0.62);
+    gr.addColorStop(0, 'rgba(9,26,48,0)'); gr.addColorStop(1, 'rgba(9,26,48,0.30)');
+    g.fillStyle = gr; g.fillRect(0, 0, VIEW_W, VIEW_H);
+  });
+  ctx.drawImage(vignCv, 0, 0);
+  ctx.globalAlpha = 0.045; ctx.fillStyle = '#0b2a4a';
   const off = REDUCE ? 0 : Math.floor(time * 30) % 4;   // reduced-motion ではスクロールを停止
   for (let y = off; y < VIEW_H; y += 4) ctx.fillRect(0, y, VIEW_W, 1);
   ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(123,77,255,0.05)';
+  ctx.fillStyle = 'rgba(244,244,244,0.07)';
   ctx.fillRect(0, 0, VIEW_W, 8); ctx.fillRect(0, VIEW_H - 8, VIEW_W, 8);
 }
 
@@ -596,22 +774,12 @@ function render() {
     ctx.drawImage(bg.img, 0, 0, bg.fw, bg.fh, -off, 0, VIEW_W, VIEW_H);
     ctx.drawImage(bg.img, 0, 0, bg.fw, bg.fh, VIEW_W - off, 0, VIEW_W, VIEW_H);
   } else {
-    // 2層パララックス星空 + ゆっくり漂う紫のモート（純描画・衝突に無関係）
-    for (let layer = 0; layer < 2; layer++) {
-      const par = layer ? 0.5 : 0.22, sz = layer ? 2 : 1;
-      ctx.fillStyle = layer ? 'rgba(51,231,200,.28)' : 'rgba(234,244,242,.18)';
-      for (let i = 0; i < 70; i++) {
-        const sx = (i * 97 + 13 + layer * 40) % (LV.w * TILE), sy = (i * 57 + 31 + layer * 90) % VIEW_H;
-        const x = ((sx - camX * par) % VIEW_W + VIEW_W) % VIEW_W;
-        ctx.fillRect(x, sy, sz, sz);
-      }
-    }
-    ctx.fillStyle = 'rgba(123,77,255,.18)';
-    for (let i = 0; i < 8; i++) {
-      const x = ((i * 131 - camX * 0.12 + time * 6) % VIEW_W + VIEW_W) % VIEW_W;
-      const y = ((i * 61 + Math.sin(time * 0.6 + i) * 14) % VIEW_H + VIEW_H) % VIEW_H;
-      ctx.fillRect(x, y, 3, 3);
-    }
+    // 明るい空色＋ブリック雲＋遠景の浮島（全て起動時に事前レンダ済み。パララックスで2枚wrap描画）
+    ctx.drawImage(BR.sky, 0, 0);
+    let boff = (camX * 0.16) % VIEW_W;
+    ctx.drawImage(BR.clouds, -boff, 0); ctx.drawImage(BR.clouds, VIEW_W - boff, 0);
+    boff = (camX * 0.34) % VIEW_W;
+    ctx.drawImage(BR.isles, -boff, 0); ctx.drawImage(BR.isles, VIEW_W - boff, 0);
   }
 
   // 画面シェイク: 描画カメラのオフセットのみ（P.x/P.y・衝突判定には一切影響しない）
@@ -620,31 +788,24 @@ function render() {
   ctx.save(); ctx.translate(-camX + sx, -camY + sy);
   const tx0 = Math.floor(camX / TILE) - 1, tx1 = Math.ceil((camX + VIEW_W) / TILE) + 1;
 
-  const drawBlock = (x, y) => {
+  // ブリックタイル: 上が空いていれば緑キャップ、下が空いていれば黄黒テープ（見た目のみ・判定不変）
+  const drawBlock = (x, y, cap, tape) => {
     if (spr('tile_ground', 0, x, y, TILE, TILE)) return;
-    ctx.fillStyle = C.block; ctx.fillRect(x, y, TILE, TILE);
-    ctx.strokeStyle = 'rgba(51,231,200,.10)'; ctx.strokeRect(x + .5, y + .5, TILE - 1, TILE - 1);
+    ctx.drawImage(cap ? BR.top : BR.mid, x, y);
+    if (tape) ctx.drawImage(BR.strip, x, y + TILE - 7);
   };
   // 通常地形
   LV.plain.forEach(k => {
     const [tx, ty] = k.split(',').map(Number);
     if (tx < tx0 || tx > tx1) return;
-    const x = tx * TILE, y = ty * TILE;
-    drawBlock(x, y);
-    if (!solid.has(keyOf(tx, ty - 1)) && !SPR.tile_ground) {
-      ctx.fillStyle = C.teal; ctx.globalAlpha = .75; ctx.fillRect(x, y, TILE, 3); ctx.globalAlpha = 1;
-    }
+    drawBlock(tx * TILE, ty * TILE, !solid.has(keyOf(tx, ty - 1)), !solid.has(keyOf(tx, ty + 1)));
   });
   // 偽ブロック（見た目は完全に同じ＝それが罠）
   fakeSt.forEach((f, k) => {
     if (f.st === 2) return;
     const [tx, ty] = k.split(',').map(Number);
     if (tx < tx0 || tx > tx1) return;
-    const x = tx * TILE, y = ty * TILE;
-    drawBlock(x, y);
-    if (!solid.has(keyOf(tx, ty - 1)) && !SPR.tile_ground) {
-      ctx.fillStyle = C.teal; ctx.globalAlpha = .75; ctx.fillRect(x, y, TILE, 3); ctx.globalAlpha = 1;
-    }
+    drawBlock(tx * TILE, ty * TILE, !solid.has(keyOf(tx, ty - 1)), !solid.has(keyOf(tx, ty + 1)));
   });
   // 透明ブロック（発見後のみ・紫の枠）
   LV.invis.forEach(k => {
@@ -652,8 +813,9 @@ function render() {
     const [tx, ty] = k.split(',').map(Number);
     if (tx < tx0 || tx > tx1) return;
     const x = tx * TILE, y = ty * TILE;
-    drawBlock(x, y);
-    ctx.strokeStyle = C.violet; ctx.globalAlpha = .8; ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3); ctx.globalAlpha = 1;
+    drawBlock(x, y, !solid.has(keyOf(tx, ty - 1)), !solid.has(keyOf(tx, ty + 1)));
+    ctx.strokeStyle = C.violet; ctx.globalAlpha = .8; ctx.lineWidth = 1.5;
+    ctx.strokeRect(x + 1.5, y + 1.5, TILE - 3, TILE - 3); ctx.globalAlpha = 1;
   });
   // 崩落ブロック（ヒビ入り）
   crumSt.forEach((c, k) => {
@@ -661,8 +823,8 @@ function render() {
     const [tx, ty] = k.split(',').map(Number);
     if (tx < tx0 || tx > tx1) return;
     const x = tx * TILE, y = ty * TILE;
-    drawBlock(x, y);
-    ctx.strokeStyle = 'rgba(234,244,242,.5)'; ctx.lineWidth = 1;
+    drawBlock(x, y, !solid.has(keyOf(tx, ty - 1)), !solid.has(keyOf(tx, ty + 1)));
+    ctx.strokeStyle = 'rgba(32,36,43,.55)'; ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x + 6, y + 4); ctx.lineTo(x + 14, y + 14); ctx.lineTo(x + 9, y + 26);
     ctx.moveTo(x + 22, y + 6); ctx.lineTo(x + 18, y + 16); ctx.lineTo(x + 26, y + 27);
@@ -674,59 +836,47 @@ function render() {
     if (s.tx < tx0 || s.tx > tx1) continue;
     drawSpikeShape(s.tx * TILE, s.ty * TILE, s.dir, false);
   }
-  // 落下ブロック
+  // 落下ブロック（待機中は周囲の通常ブリックと同一見た目＝罠仕様を維持）
   for (const f of fallblocks) {
     if (f.st === 2) continue;
     if (!spr('hazard_block_fall', 0, f.x, f.y, TILE, TILE)) {
-      drawBlock(f.x, f.y);
-      if (f.st === 1) { ctx.fillStyle = 'rgba(255,59,92,.3)'; ctx.fillRect(f.x, f.y, TILE, TILE); }
+      drawBlock(f.x, f.y, !isSolid(f.tx, f.ty - 1), !isSolid(f.tx, f.ty + 1));
+      if (f.st === 1) { ctx.fillStyle = 'rgba(201,26,9,.35)'; ctx.fillRect(f.x, f.y, TILE, TILE); }
     }
   }
-  // 移動足場
+  // 移動足場（濃青ブリックプレート・上面座標は従来と同一）
   for (const p of platforms) {
-    ctx.fillStyle = C.teal; ctx.globalAlpha = .9;
-    ctx.fillRect(p.x, p.y, p.w, 8);
-    ctx.globalAlpha = .25; ctx.fillRect(p.x, p.y + 8, p.w, 4); ctx.globalAlpha = 1;
+    for (let pdx = 0; pdx + TILE <= p.w; pdx += TILE) ctx.drawImage(BR.plat, p.x + pdx, p.y);
+    if (p.w % TILE) ctx.drawImage(BR.plat, p.x + p.w - TILE, p.y);
   }
-  // タレット
+  // タレット（黄黒ハザードブリック＋砲身）
   for (const sh of shooters) {
     const x = sh.tx * TILE, y = sh.ty * TILE;
-    drawBlock(x, y);
-    ctx.fillStyle = C.violet; ctx.fillRect(x + 8, y + 8, 16, 16);
+    if (!spr('tile_ground', 0, x, y, TILE, TILE)) ctx.drawImage(BR.hazard, x, y);
+    ctx.fillStyle = '#2a2d33'; ctx.fillRect(x + 8, y + 8, 16, 16);
     const v = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }[sh.dir];
-    ctx.fillStyle = C.red; ctx.fillRect(x + 14 + v[0] * 10, y + 14 + v[1] * 10, 6, 6);
+    ctx.fillStyle = BT.red; ctx.fillRect(x + 14 + v[0] * 10, y + 14 + v[1] * 10, 6, 6);
   }
-  // ノコギリ
+  // ノコギリ（事前レンダ済み赤歯車を回転描画）
   for (const s of saws) {
     if (!spr('hazard_saw', time * 10, s.x - 16, s.y - 16, TILE, TILE)) {
       ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(time * 7);
-      ctx.fillStyle = C.red;
-      ctx.beginPath(); ctx.arc(0, 0, 12, 0, 7); ctx.fill();
-      for (let i = 0; i < 8; i++) {
-        ctx.rotate(Math.PI / 4);
-        ctx.beginPath(); ctx.moveTo(10, -3); ctx.lineTo(16, 0); ctx.lineTo(10, 3); ctx.closePath(); ctx.fill();
-      }
-      ctx.fillStyle = C.bg; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill();
+      ctx.drawImage(BR.saw, -20, -20);
       ctx.restore();
     }
   }
   // トリガースパイク（飛行中のみ表示）
   for (const t of tspikes) if (t.st === 1) drawSpikeShape(t.x, t.y, t.dir, true);
-  // 弾
+  // 弾（赤い丸ポッチ）
   for (const b of bullets) {
-    if (!spr('hazard_bullet', 0, b.x - 8, b.y - 8, 16, 16)) {
-      ctx.fillStyle = C.red; ctx.beginPath(); ctx.arc(b.x, b.y, 5, 0, 7); ctx.fill();
-      ctx.fillStyle = 'rgba(255,59,92,.35)'; ctx.beginPath(); ctx.arc(b.x, b.y, 8, 0, 7); ctx.fill();
-    }
+    if (!spr('hazard_bullet', 0, b.x - 8, b.y - 8, 16, 16)) ctx.drawImage(BR.bullet, b.x - 8, b.y - 8);
   }
-  // ゴール扉（偽も同じ見た目）
+  // ゴール扉（偽も同じ見た目・紫ブリック扉）
   for (const g of LV.goals) {
     const x = g.tx * TILE, yB = (g.ty + 1) * TILE;
     if (spr('door_goal', 0, x, yB - 48, TILE, 48)) continue;
-    ctx.fillStyle = C.violet; ctx.globalAlpha = .25; ctx.fillRect(x - 6, yB - 54, TILE + 12, 54); ctx.globalAlpha = 1;
-    ctx.fillStyle = C.violet; ctx.fillRect(x + 2, yB - 48, TILE - 4, 48);
-    ctx.fillStyle = C.teal; ctx.fillRect(x + TILE - 11, yB - 27, 4, 7);
-    ctx.strokeStyle = 'rgba(234,244,242,.5)'; ctx.strokeRect(x + 2.5, yB - 47.5, TILE - 5, 47);
+    ctx.fillStyle = C.violet; ctx.globalAlpha = .22; ctx.fillRect(x - 6, yB - 54, TILE + 12, 54); ctx.globalAlpha = 1;
+    ctx.drawImage(BR.door, x, yB - 48);
   }
   // セーブ（偽も同じ見た目）
   LV.saves.forEach((s, i) => {
@@ -734,17 +884,23 @@ function render() {
     if (spr('savepoint', time * 6, x, y, TILE, TILE)) return;
     const cx = x + 16, cy = y + 16 + Math.sin(time * 3 + i) * 3;
     ctx.save(); ctx.translate(cx, cy); ctx.rotate(Math.PI / 4);
-    ctx.fillStyle = on ? C.teal : 'rgba(51,231,200,.45)';
-    ctx.fillRect(-7, -7, 14, 14); ctx.restore();
+    ctx.fillStyle = on ? C.teal : '#1fa38c';
+    ctx.fillRect(-7, -7, 14, 14);
+    ctx.fillStyle = 'rgba(255,255,255,.38)'; ctx.fillRect(-7, -7, 14, 4);     // プラ光沢
+    ctx.strokeStyle = 'rgba(9,38,66,.55)'; ctx.lineWidth = 1.5; ctx.strokeRect(-7, -7, 14, 14);
+    ctx.restore();
     if (on) { ctx.strokeStyle = C.teal; ctx.globalAlpha = .5;
       ctx.beginPath(); ctx.arc(cx, cy, 13 + Math.sin(time * 5) * 2, 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
   });
-  // メッセージ
+  // メッセージ（明るい空でも読めるよう白フチ＋濃紺インク）
   ctx.font = '700 12px "Courier New",monospace'; ctx.textAlign = 'left';
+  ctx.lineJoin = 'round';
   for (const m of msgs) {
     if (m.zone && !rectsHit(P.x - P.w / 2, P.y - P.h, P.x + P.w / 2, P.y,
         m.zone[0], m.zone[1], m.zone[0] + m.zone[2], m.zone[1] + m.zone[3])) continue;
-    ctx.fillStyle = 'rgba(123,77,255,.95)';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(244,244,244,.85)';
+    ctx.strokeText(m.text, m.x, m.y + 12);
+    ctx.fillStyle = 'rgba(26,49,90,.95)';
     ctx.fillText(m.text, m.x, m.y + 12);
   }
   // Death Echo: recent death positions remain as non-colliding visual memory.
@@ -769,11 +925,10 @@ function render() {
     if (!P.ground) { name = 'player_jump'; fr = P.vy < 0 ? 0 : 1; }
     else if (moving) { name = 'player_run'; fr = P.anim * 10; }
     if (!spr(name, fr, px, py, 32, 32, P.face < 0)) {
-      ctx.fillStyle = god ? C.violet : C.ink;
-      ctx.fillRect(P.x - P.w / 2, P.y - P.h, P.w, P.h);
-      ctx.fillStyle = C.teal;
-      const vx = P.face > 0 ? P.x + 1 : P.x - P.w / 2 + 2;
-      ctx.fillRect(vx, P.y - P.h + 6, P.w / 2 - 3, 4);
+      // 黄色いブリックくん（事前レンダ済み・スプライトと同じ32x32配置。当たり判定は従来通り20x28）
+      const img = god ? BR.playerGod : BR.player;
+      if (P.face < 0) { ctx.save(); ctx.translate(px + 32, py); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0); ctx.restore(); }
+      else ctx.drawImage(img, px, py);
     }
     if (P.grace > 0.2) { ctx.globalAlpha = .25; ctx.strokeStyle = C.teal;
       ctx.strokeRect(P.x - P.w / 2 - 3, P.y - P.h - 3, P.w + 6, P.h + 6); ctx.globalAlpha = 1; }
@@ -791,6 +946,9 @@ function render() {
   if (flash > 0) { ctx.fillStyle = 'rgba(255,59,92,' + (flash * 0.5).toFixed(3) + ')'; ctx.fillRect(0, 0, VIEW_W, VIEW_H); }
 
   /* ---- HUD ---- */
+  // 明るい空でもHUDが読めるよう上端に半透明の濃紺帯（表示専用）
+  ctx.fillStyle = 'rgba(10,32,60,.42)';
+  ctx.fillRect(0, 0, VIEW_W, combo > 1 ? 66 : 48);
   const mm = Math.floor(runT / 60), ss = (runT % 60).toFixed(1).padStart(4, '0');
   ctx.font = '700 13px "Courier New",monospace';
   ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(234,244,242,.85)';
@@ -806,8 +964,12 @@ function render() {
   ctx.fillText(SPR.player_run ? 'SPRITES: LIVE' : 'SPRITES: PLACEHOLDER', VIEW_W - 14, 22);
   if (DEBUG) { ctx.fillStyle = C.violet; ctx.fillText('DEBUG' + (god ? ' / GOD' : ''), VIEW_W - 14, 40); }
   if (toastT > 0) {
-    ctx.textAlign = 'center'; ctx.fillStyle = C.teal;
+    ctx.textAlign = 'center';
     ctx.font = '700 15px "Courier New",monospace';
+    const tw = ctx.measureText(toast).width;
+    ctx.fillStyle = 'rgba(10,32,60,.55)';
+    ctx.fillRect(VIEW_W / 2 - tw / 2 - 12, 76, tw + 24, 23);
+    ctx.fillStyle = C.teal;
     ctx.fillText(toast, VIEW_W / 2, 92);
   }
 
@@ -819,6 +981,8 @@ function render() {
     ctx.fillText('I WANNA BE THE SIGNAL', VIEW_W / 2, VIEW_H / 2 - 70);
     ctx.fillStyle = C.violet; ctx.font = '700 13px "Courier New",monospace';
     ctx.fillText('AlicE sYsTeM // game lab — ' + DEFS.length + ' STAGES OF PAIN', VIEW_W / 2, VIEW_H / 2 - 40);
+    ctx.fillStyle = '#f2cd37'; ctx.font = '700 12px "Courier New",monospace';
+    ctx.fillText('v2 — BRICK UPDATE', VIEW_W / 2, VIEW_H / 2 - 18);
     ctx.fillStyle = 'rgba(234,244,242,.75)'; ctx.font = '700 14px "Courier New",monospace';
     ctx.fillText('← → MOVE   Z / SPACE JUMP ×2   R RETRY   M MUTE   ESC PAUSE', VIEW_W / 2, VIEW_H / 2 + 14);
     ctx.fillStyle = C.teal; ctx.font = '700 12px "Courier New",monospace';
