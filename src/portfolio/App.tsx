@@ -71,7 +71,7 @@ export default function PortfolioApp() {
       <SiteNav />
 
       <main id="main-content">
-        <BrickHero />
+        <BrickHero onOpenDetail={setDetail} />
         <GamesSection onOpenDetail={setDetail} />
         <AiLab />
         <Prompts />

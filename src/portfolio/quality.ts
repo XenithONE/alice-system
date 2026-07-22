@@ -9,6 +9,7 @@ export interface HeroQuality {
   maxFps: 60 | 30;
   motionScale: 0 | 1;
   parallax: boolean;
+  coarse: boolean;
 }
 
 function build(tier: "high" | "balanced" | "low", reducedMotion: boolean, coarse: boolean): HeroQuality {
@@ -35,11 +36,16 @@ function build(tier: "high" | "balanced" | "low", reducedMotion: boolean, coarse
   return {
     tier,
     ...table,
+    // Phones ship 2–3x screens: the desktop dpr caps (1.25/1.5) render a
+    // visibly blurry hero there. Capable coarse devices get a higher cap;
+    // genuinely weak ones stay on the low tier's dpr 1.
+    dpr: coarse && tier !== "low" ? Math.min(1.75, window.devicePixelRatio || 1) : table.dpr,
     // Reduced motion keeps the real 3D composition visible by default, but
     // freezes ambient looping motion and uses the lower frame-rate budget.
     maxFps: reducedMotion ? 30 : table.maxFps,
     motionScale: reducedMotion ? 0 : 1,
-    parallax: !reducedMotion && !coarse
+    parallax: !reducedMotion && !coarse,
+    coarse
   };
 }
 
@@ -63,8 +69,9 @@ export function detectHeroQuality(): HeroQuality {
   const memory = typeof navigator !== "undefined" && "deviceMemory" in navigator
     ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 4)
     : 4;
-  const small = window.innerWidth < 780;
-  const low = memory < 3 || (coarse && small);
+  // "low" is for genuinely weak hardware only — a small touch screen alone is
+  // NOT low-end (blanket-classing phones as low made the hero blurry there).
+  const low = memory < 3;
   const high = !low && !coarse && memory >= 4;
   return build(high ? "high" : low ? "low" : "balanced", reducedMotion, coarse);
 }

@@ -58,7 +58,7 @@ export function makeBrickMaterials(): BrickMaterials {
   };
 }
 
-function buildBrickGeo(fx: number, fy: number, kind: BrickKind, studSeg: number): THREE.BufferGeometry {
+export function buildBrickGeo(fx: number, fy: number, kind: BrickKind, studSeg: number): THREE.BufferGeometry {
   const w = fx * U;
   const d = fy * U;
   const h = kind === "brick" ? BRICK_H : PLATE_H;
