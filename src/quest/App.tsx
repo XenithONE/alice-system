@@ -6,6 +6,7 @@ import { PeerJsWire } from "./net/peer";
 import { HostSession, GuestSession } from "./net/session";
 import { BroadcastChannelWire } from "./net/wire";
 import { drawBoard, hitTestNode, type BoardRenderOptions } from "./render/board";
+import { sfx } from "./sfx";
 import { ChoiceModal, useModalFocus } from "./ui/ChoiceModal";
 import { CombatPanel } from "./ui/CombatPanel";
 import { HandBar } from "./ui/HandBar";
@@ -54,17 +55,118 @@ function denialMessage(reason: string): string {
   return DENIALS[reason] ?? `操作できません（${reason}）`;
 }
 
+function MuteToggle() {
+  const [muted, setMuted] = useState(() => sfx.muted);
+  const [musicOn, setMusicOn] = useState(() => sfx.musicOn);
+  return (
+    <div className="rr-title-tools">
+      <button
+        type="button"
+        className="rr-button rr-mute-btn"
+        aria-label={musicOn ? "BGMをオフ" : "BGMをオン"}
+        aria-pressed={musicOn}
+        title={musicOn ? "BGM OFF" : "BGM ON"}
+        onClick={() => {
+          const next = !musicOn;
+          setMusicOn(next);
+          sfx.music(next);
+          if (!sfx.muted) sfx.play("ui-click");
+        }}
+      >{musicOn ? "♪" : "♩"}</button>
+      <button
+        type="button"
+        className="rr-button rr-mute-btn"
+        aria-label={muted ? "ミュート解除" : "ミュート"}
+        aria-pressed={muted}
+        onClick={() => {
+          const next = !muted;
+          sfx.setMuted(next);
+          setMuted(next);
+        }}
+      >{muted ? "🔇" : "🔊"}</button>
+    </div>
+  );
+}
+
+/** Diff previous StateView → play SFX. Engine untouched; App-only. */
+function useViewSfx(view: StateView | null, curseOpen: boolean) {
+  const prevView = useRef<StateView | null>(null);
+  const prevCurse = useRef(false);
+  const sawVictory = useRef(false);
+
+  useEffect(() => {
+    if (curseOpen && !prevCurse.current) sfx.play("modal-open");
+    prevCurse.current = curseOpen;
+  }, [curseOpen]);
+
+  useEffect(() => {
+    const prev = prevView.current;
+    prevView.current = view;
+    if (!view) return;
+
+    if (view.state.phase === "finished" && !sawVictory.current) {
+      sawVictory.current = true;
+      sfx.play("magic");
+    }
+    if (view.state.phase !== "finished") sawVictory.current = false;
+
+    if (!prev) return;
+
+    const me = view.state.players[view.you];
+    const prevMe = prev.state.players[prev.you];
+    if (!me || !prevMe) return;
+
+    const wasMyTurn = prev.state.phase === "playing" && prev.state.current === prev.you;
+    const isMyTurn = view.state.phase === "playing" && view.state.current === view.you;
+
+    // Personal: HP loss (any turn, including BOT dealing damage to you)
+    if (me.hp < prevMe.hp) sfx.play("hit-take");
+
+    // Personal: gold gain
+    if (me.gold > prevMe.gold) sfx.play("coin");
+
+    // Level-up / other modal choices
+    const choice = view.yours.pendingChoice;
+    const prevChoice = prev.yours.pendingChoice;
+    if (choice && !prevChoice) {
+      if (choice.t === "levelup") sfx.play("levelup");
+      else sfx.play("modal-open");
+    } else if (choice && prevChoice && choice.t === "levelup" && prevChoice.t !== "levelup") {
+      sfx.play("levelup");
+    }
+
+    // Monster HP drop from my attack (my combat turn)
+    const combat = view.state.combat;
+    const prevCombat = prev.state.combat;
+    if (combat && prevCombat && combat.monsterHp < prevCombat.monsterHp && wasMyTurn) {
+      sfx.play("hit-deal");
+    }
+
+    // Card play / buy success — only attribute during own turn
+    if (wasMyTurn || isMyTurn) {
+      if (view.yours.hand.length < prev.yours.hand.length) {
+        sfx.play("ui-confirm");
+      } else if (me.gold < prevMe.gold && !combat) {
+        sfx.play("ui-confirm");
+      }
+    }
+  }, [view]);
+}
+
 function BoardCanvas({ view, reachable, onMove }: {
   view: StateView; reachable: Set<number>; onMove(node: number): void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [kbFocus, setKbFocus] = useState<number | null>(null);
+  const [assetTick, setAssetTick] = useState(0);
   const reachableNodes = useMemo(() => [...reachable], [reachable]);
+  const onAssetReady = useCallback(() => setAssetTick(t => t + 1), []);
   const opts = useMemo<BoardRenderOptions>(() => ({
     board: view.state.board, players: view.state.players, you: view.you,
     current: view.state.current, reachable, traps: view.state.traps, size, kbFocus,
-  }), [view, reachable, size, kbFocus]);
+    onAssetReady,
+  }), [view, reachable, size, kbFocus, onAssetReady]);
 
   useEffect(() => {
     setKbFocus(current => current !== null && reachable.has(current) ? current : null);
@@ -93,7 +195,7 @@ function BoardCanvas({ view, reachable, onMove }: {
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawBoard(ctx, opts);
-  }, [opts, size]);
+  }, [opts, size, assetTick]);
 
   return <canvas ref={canvasRef} className="rr-board" tabIndex={0}
     aria-label="盤面。移動可能なとき、左右矢印キーで移動先を選び、Enterキーで移動します。クリックでも移動できます。"
@@ -114,7 +216,10 @@ function BoardCanvas({ view, reachable, onMove }: {
       if (!canvas) return;
       const box = canvas.getBoundingClientRect();
       const node = hitTestNode(opts, event.clientX - box.left, event.clientY - box.top);
-      if (node !== null && reachable.has(node)) onMove(node);
+      if (node !== null && reachable.has(node)) {
+        sfx.play("ui-click");
+        onMove(node);
+      }
     }} />;
 }
 
@@ -128,10 +233,12 @@ function TargetPicker({ players, you, classes, onPick, onCancel }: {
     className="rr-modal rr-target-picker rr-panel" role="dialog" aria-modal="true" aria-labelledby="rr-target-title">
     <span className="rr-kicker">呪いの標的</span><h2 id="rr-target-title">ライバルを選んでください</h2>
     <div className="rr-target-list">{rivals.map(player => <button type="button" className="rr-chip rr-target-chip"
-      style={{ borderColor: classes[player.cls].color }} key={player.seat} onClick={() => onPick(player.seat)}>
+      style={{ borderColor: classes[player.cls].color }} key={player.seat}
+      onClick={() => { sfx.play("ui-click"); onPick(player.seat); }}>
       <i style={{ background: classes[player.cls].color }} />{player.name}
     </button>)}</div>
-    <button type="button" className="rr-button rr-target-cancel" onClick={onCancel}>キャンセル</button>
+    <button type="button" className="rr-button rr-target-cancel"
+      onClick={() => { sfx.play("ui-click"); onCancel(); }}>キャンセル</button>
   </section></div>;
 }
 
@@ -139,10 +246,12 @@ function WinnerDialog({ name }: { name: string }) {
   const dialogRef = useModalFocus();
   return <div className="rr-modal-backdrop"><section ref={dialogRef} className="rr-winner rr-panel"
     role="dialog" aria-modal="true" aria-labelledby="rr-winner-title">
-    <span className="rr-crown">♛</span><span className="rr-kicker">王冠ブリック</span>
+    <span className="rr-winner-gem" role="img" aria-label="レリックジェム" />
+    <span className="rr-crown-brick" aria-hidden="true" />
+    <span className="rr-kicker">王冠ブリック</span>
     <h2 id="rr-winner-title">{name} の勝利！</h2>
     <p>もう一度遊ぶにはページを再読み込みしてください。</p>
-    <button className="rr-button rr-button--red" onClick={() => location.reload()}>REMATCH</button>
+    <button className="rr-button rr-button--red" onClick={() => { sfx.play("ui-click"); location.reload(); }}>REMATCH</button>
     <a className="rr-button" href="index.html#games">サイトへ戻る</a>
   </section></div>;
 }
@@ -175,6 +284,8 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  useViewSfx(view, curseHand !== null);
+
   const send = useCallback((intent: Intent) => sessionRef.current?.sendIntent(intent), []);
   useEffect(() => {
     window.__rr = { getView: () => latestView.current, send, screen: () => latestScreen.current };
@@ -186,7 +297,12 @@ export function App() {
     localStorage.setItem("rr_name", value);
   };
   const newWire = (): Wire => query.get("wire") === "bc" ? new BroadcastChannelWire() : new PeerJsWire();
+  const showDenied = (reason: string) => {
+    sfx.play("ui-error");
+    setToast(denialMessage(reason));
+  };
   const connectHost = async (solo: boolean) => {
+    sfx.play("ui-click");
     const code = makeRoomCode(Math.random);
     const wire: Wire = solo ? new BroadcastChannelWire() : newWire();
     const host = new HostSession(wire, content, {
@@ -195,7 +311,7 @@ export function App() {
     });
     host.onLobby(setLobby);
     host.onState(next => { setView(next); setScreen("game"); });
-    host.onDenied(msg => setToast(denialMessage(msg.reason)));
+    host.onDenied(msg => showDenied(msg.reason));
     try {
       await host.host(code);
       wireRef.current = wire; sessionRef.current = host;
@@ -203,12 +319,14 @@ export function App() {
       if (solo) host.startGame();
     } catch (error) {
       host.close();
+      sfx.play("ui-error");
       setToast(error instanceof Error ? error.message : "部屋を作成できませんでした");
     }
   };
   const connectGuest = async () => {
+    sfx.play("ui-click");
     const code = cleanRoom(roomInput);
-    if (code.length !== 5) { setToast("5文字のルームコードを入力してください"); return; }
+    if (code.length !== 5) { sfx.play("ui-error"); setToast("5文字のルームコードを入力してください"); return; }
     const wire = newWire();
     try {
       const conn = await wire.join(code);
@@ -216,7 +334,7 @@ export function App() {
       guest.onSeat(setYou);
       guest.onLobby(next => { setLobby(next); setScreen("lobby"); });
       guest.onState(next => { setView(next); setYou(next.you); setScreen("game"); });
-      guest.onDenied(msg => setToast(denialMessage(msg.reason)));
+      guest.onDenied(msg => showDenied(msg.reason));
       guest.onToast(setToast);
       guest.onBye(reason => {
         setToast(reason);
@@ -229,6 +347,7 @@ export function App() {
       setRoom(code); setIsHost(false);
     } catch (error) {
       wire.close();
+      sfx.play("ui-error");
       setToast(error instanceof Error ? error.message : "部屋に参加できませんでした");
     }
   };
@@ -265,6 +384,7 @@ export function App() {
   };
 
   if (screen === "title") return <main className="rr-title">
+    <MuteToggle />
     <section className="rr-hero">
       <span className="rr-version">v1.0 BRICK WORLD</span>
       <h1><span>RELIC</span><span>ROAD</span></h1>
@@ -274,7 +394,7 @@ export function App() {
         <button className="rr-button rr-button--red" type="button" onClick={() => void connectHost(true)}>SOLO</button>
         <button className="rr-button rr-button--blue" type="button" onClick={() => void connectHost(false)}>CREATE ROOM</button>
         <button className="rr-button" type="button" onClick={() => {
-          // never close via JOIN: open the form, or submit when a code is ready
+          sfx.play("ui-click");
           if (!joining) setJoining(true);
           else if (roomInput.length === 5) void connectGuest();
         }}>JOIN</button>
@@ -290,11 +410,14 @@ export function App() {
 
   if (screen === "lobby" && lobby) {
     const humanReady = lobby.seats.some(seat => seat.connected && !seat.bot && seat.ready);
-    return <main className="rr-shell"><Lobby lobby={lobby} you={you} isHost={isHost} room={room}
-      onCls={(cls: ClassId) => isHost ? (sessionRef.current as HostSession).cfg(cls) : (sessionRef.current as GuestSession).cfg(cls)}
-      onReady={ready => isHost ? undefined : (sessionRef.current as GuestSession).cfg(undefined, ready)}
-      onStart={() => (sessionRef.current as HostSession).startGame()} canStart={isHost && humanReady} />
-      {toast && <div className="rr-toast">{toast}</div>}</main>;
+    return <main className="rr-shell">
+      <div className="rr-game-header"><MuteToggle /></div>
+      <Lobby lobby={lobby} you={you} isHost={isHost} room={room}
+        onCls={(cls: ClassId) => isHost ? (sessionRef.current as HostSession).cfg(cls) : (sessionRef.current as GuestSession).cfg(cls)}
+        onReady={ready => isHost ? undefined : (sessionRef.current as GuestSession).cfg(undefined, ready)}
+        onStart={() => (sessionRef.current as HostSession).startGame()} canStart={isHost && humanReady} />
+      {toast && <div className="rr-toast">{toast}</div>}
+    </main>;
   }
 
   if (!view || !me) return <main className="rr-shell"><p>接続中…</p></main>;
@@ -304,6 +427,7 @@ export function App() {
   const stock = node?.kind === "shop" ? (view.state.shopStock[node.id] ?? []).map(id => content.cards[id]).filter(Boolean) : [];
   const winner = view.state.winner === null ? null : view.state.players[view.state.winner];
   return <main className="rr-game">
+    <div className="rr-game-header"><MuteToggle /></div>
     <div className="rr-game-layout">
       <div className="rr-board-wrap"><BoardCanvas view={view} reachable={reachable} onMove={target => send({ k: "moveTo", node: target })} />
         {combat && !ownCombat && <div className="rr-combat-banner">{view.state.players[view.state.current]?.name} が戦闘中...</div>}
@@ -315,9 +439,10 @@ export function App() {
       {ownCombat && monster && <CombatPanel combat={combat} monster={monster} player={me} />}
       {stock.length > 0 && <div className="rr-buybar rr-panel"><strong>ショップ</strong>{stock.map(card =>
         <button type="button" className="rr-chip" key={card.id} disabled={!myTurn || me.gold < card.price}
-          onClick={() => send({ k: "buy", card: card.id })}>{card.nameJa}・{card.price} G</button>)}</div>}
+          onClick={() => { sfx.play("ui-click"); send({ k: "buy", card: card.id }); }}>{card.nameJa}・{card.price} G</button>)}</div>}
       {node?.kind === "camp" && !combat && <div className="rr-restbar"><button className="rr-button" type="button"
-        disabled={!myTurn || !!view.yours.pendingChoice} onClick={() => send({ k: "rest" })}>REST・休息する</button></div>}
+        disabled={!myTurn || !!view.yours.pendingChoice}
+        onClick={() => { sfx.play("ui-click"); send({ k: "rest" }); }}>REST・休息する</button></div>}
       <HandBar hand={handEntries.map(entry => entry.card)} energy={view.state.energy} moves={view.state.moves}
         canPlay={canPlay} onPlay={playCard}
         onEndTurn={() => send({ k: "endTurn" })} myTurn={myTurn} inCombat={ownCombat}

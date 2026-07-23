@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { CardDef, EventDef, PendingChoice } from "../engine/types";
+import { sfx } from "../sfx";
 
 export function useModalFocus() {
   const dialogRef = useRef<HTMLElement>(null);
@@ -36,22 +37,32 @@ export function ChoiceModal({ choice, event, cards, gold, onChoose }: {
 }) {
   const isEvent = choice.t === "event";
   const dialogRef = useModalFocus();
-  return <div className="rr-modal-backdrop" role="presentation"><section ref={dialogRef} className="rr-modal rr-panel" role="dialog" aria-modal="true" aria-labelledby="rr-choice-title">
+  const modalKind = choice.t === "levelup" ? "levelup" : choice.t === "loot" ? "loot" : "event";
+  return <div className="rr-modal-backdrop" role="presentation"><section ref={dialogRef}
+    className={`rr-modal rr-panel rr-modal--${modalKind}`}
+    role="dialog" aria-modal="true" aria-labelledby="rr-choice-title">
     <span className="rr-kicker">{choice.t === "levelup" ? "レベルアップ" : choice.t === "loot" ? "戦利品" : "イベント"}</span>
     <h2 id="rr-choice-title">{isEvent ? event?.nameJa ?? "運命の選択" : "ひとつ選んでください"}</h2>
     {isEvent ? <>
       <p>{event?.textJa}</p><div className="rr-choice-list">{event?.choices.map((option, i) => {
         const disabled = (option.goldCost ?? 0) > gold;
-        return <button className="rr-button" type="button" key={i} disabled={disabled} onClick={() => onChoose(i)}>
+        return <button className="rr-button" type="button" key={i} disabled={disabled}
+          onClick={() => { sfx.play("ui-click"); onChoose(i); }}>
           {option.labelJa}{option.goldCost != null && `（${option.goldCost} G）`}
         </button>;
       })}</div>
     </> : <div className="rr-choice-cards">{choice.options.map((id, i) => {
       const card = cards[id];
-      return <button className="rr-card rr-card--choice" type="button" key={`${id}-${i}`} onClick={() => onChoose(i)}>
-        <span className="rr-card__studs" /><span className="rr-card__en">{card?.name ?? id}</span><strong>{card?.nameJa ?? id}</strong><span className="rr-card__text">{card?.textJa}</span>
+      return <button className={`rr-card rr-card--choice${card ? ` rr-card--${card.kind}` : ""}`} type="button"
+        key={`${id}-${i}`} onClick={() => { sfx.play("ui-click"); onChoose(i); }}>
+        <span className="rr-card__studs" />
+        {card && <span className="rr-card__cost" aria-hidden="true">{card.energy}</span>}
+        <span className="rr-card__en">{card?.name ?? id}</span>
+        <strong>{card?.nameJa ?? id}</strong>
+        <span className="rr-card__text">{card?.textJa}</span>
       </button>;
     })}</div>}
-    {choice.t === "loot" && <button className="rr-button rr-choice-skip" type="button" onClick={() => onChoose(choice.options.length)}>受け取らない</button>}
+    {choice.t === "loot" && <button className="rr-button rr-choice-skip" type="button"
+      onClick={() => { sfx.play("ui-click"); onChoose(choice.options.length); }}>受け取らない</button>}
   </section></div>;
 }
