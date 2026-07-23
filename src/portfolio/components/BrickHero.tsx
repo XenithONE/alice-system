@@ -8,7 +8,10 @@ const BASE = import.meta.env.BASE_URL;
 
 // Gallery wall order — maps 1:1 onto heroScene's SLOTS (front 5, middle 4,
 // top 4). Featured / flagship titles take the front row.
+// 13 slots on the wall — RELIC ROAD (newest flagship) takes front-center;
+// R'LYEH ENGINE rotates off the wall (still in the catalog below).
 const WALL_ORDER = [
+  "relic-road",
   "hollow-ward",
   "signal-siege",
   "huntcontract",
@@ -20,8 +23,7 @@ const WALL_ORDER = [
   "iwbtg",
   "locker-hunt",
   "signal-runner",
-  "constellation",
-  "rlyeh-engine"
+  "constellation"
 ];
 
 const STATUS_NOTE: Record<Work["status"], string> = {

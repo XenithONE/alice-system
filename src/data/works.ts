@@ -108,6 +108,23 @@ export const WORKS: Work[] = [
 
   // ── NOW PLAYING — browser titles (play now) ─────────────────────────────────
   {
+    id: "relic-road",
+    title: "RELIC ROAD",
+    titleJa: "カード×ボードRPG（2〜4人）",
+    description:
+      "ブロック世界の地図をカードで駆けるデッキ構築ボードRPG。モンスターを倒してレベルアップ、3つのレリックと最終守護者を制した者が勝つ。ルームコードで2〜4人、空席はBOTが参戦。",
+    href: "relic-road.html",
+    cover: "assets/relic-road-brick.webp",
+    year: "2026",
+    kind: "game",
+    engine: "Canvas 2D",
+    platform: ["web"],
+    status: "playable",
+    tags: ["2–4P Multi", "Deckbuilder", "Board-RPG"],
+    aiTools: ["Claude", "ChatGPT", "Grok"],
+    featured: true
+  },
+  {
     id: "hollow-ward",
     title: "THE HOLLOW WARD",
     titleJa: "廃病棟協力型3Dホラー",

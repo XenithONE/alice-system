@@ -17,6 +17,7 @@ export default defineConfig({
         portfolio: fileURLToPath(new URL("./index.html", import.meta.url)),
         "hollow-ward": fileURLToPath(new URL("./hollow-ward.html", import.meta.url)),
         "tower-defense": fileURLToPath(new URL("./tower-defense.html", import.meta.url)),
+        "relic-road": fileURLToPath(new URL("./relic-road.html", import.meta.url)),
         atelier: fileURLToPath(new URL("./atelier.html", import.meta.url))
       },
       // NOTE: no manualChunks here on purpose. rolldown-vite's manualChunks compat
