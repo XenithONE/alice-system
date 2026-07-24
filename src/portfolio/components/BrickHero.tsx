@@ -171,7 +171,6 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
             sceneRef.current = scene;
           }}
           onLiveChange={setGlLive}
-          keepPoster={state.mode === "intro" && !isolatedSkiffReview}
         />
       </div>
 

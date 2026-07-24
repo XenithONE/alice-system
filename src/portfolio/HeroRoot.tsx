@@ -15,18 +15,13 @@ export interface HeroRootProps {
   onState: (state: HarborSceneState) => void;
   onReady?: (scene: HarborScene | null) => void;
   onLiveChange?: (live: boolean) => void;
-  keepPoster?: boolean;
 }
 
 function shouldUsePosterFallback(): boolean {
   const forcedQuality = new URLSearchParams(window.location.search).get("q");
   if (forcedQuality === "high" || forcedQuality === "balanced" || forcedQuality === "low") return false;
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
-  const memory = "deviceMemory" in navigator
-    ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4)
-    : 4;
-  return reducedMotion || Boolean(connection?.saveData) || memory < 3;
+  return Boolean(connection?.saveData);
 }
 
 export function HeroRoot({
@@ -36,8 +31,7 @@ export function HeroRoot({
   onSelectWork,
   onState,
   onReady,
-  onLiveChange,
-  keepPoster = false
+  onLiveChange
 }: HeroRootProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [live, setLive] = useState(false);
@@ -48,13 +42,13 @@ export function HeroRoot({
 
   useEffect(() => {
     eventsRef.current.onLiveChange?.(live);
-    if (!live || keepPoster) {
+    if (!live) {
       setPosterGone(false);
       return;
     }
     const timer = window.setTimeout(() => setPosterGone(true), 1100);
     return () => window.clearTimeout(timer);
-  }, [keepPoster, live]);
+  }, [live]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -64,8 +58,6 @@ export function HeroRoot({
     let booting = false;
     let bootVersion = 0;
     let scene: HarborScene | null = null;
-    let idleId = 0;
-    let timeoutId = 0;
     let restoreRaf = 0;
 
     const stopScene = (updateState: boolean): void => {
@@ -133,17 +125,13 @@ export function HeroRoot({
     canvas.addEventListener("webglcontextlost", onContextLost);
     canvas.addEventListener("webglcontextrestored", onContextRestored);
 
-    if (typeof window.requestIdleCallback === "function") {
-      idleId = window.requestIdleCallback(() => void boot(), { timeout: 1800 });
-    } else {
-      timeoutId = window.setTimeout(() => void boot(), 180);
-    }
+    // The harbor is the hero, so start it on the first paint. Low-memory devices
+    // use the low tier; the poster is only a loading cover or WebGL fallback.
+    restoreRaf = window.requestAnimationFrame(() => void boot());
 
     return () => {
       disposed = true;
       bootVersion += 1;
-      if (idleId) window.cancelIdleCallback?.(idleId);
-      if (timeoutId) window.clearTimeout(timeoutId);
       window.cancelAnimationFrame(restoreRaf);
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
@@ -156,9 +144,9 @@ export function HeroRoot({
       {poster && !posterGone && (
         <div
           className="bh-poster"
-          style={{ backgroundImage: `url("${poster}")`, opacity: live && !keepPoster ? 0 : 1 }}
+          style={{ backgroundImage: `url("${poster}")`, opacity: live ? 0 : 1 }}
           onTransitionEnd={() => {
-            if (live && !keepPoster) setPosterGone(true);
+            if (live) setPosterGone(true);
           }}
           aria-hidden="true"
         />

@@ -719,9 +719,18 @@ function initHarbor(
   const updateIntro = (delta: number, time: number): void => {
     updateBoatBob(time, 0.75);
     skiff.rotation.y = 0;
-    const desired = new THREE.Vector3(1.8, 8.6, 33.5);
+    const motion = quality.motionScale;
+    const desired = new THREE.Vector3(
+      1.8 + Math.sin(time * 0.16) * 1.1 * motion,
+      8.6 + Math.sin(time * 0.21) * 0.18 * motion,
+      33.5 + Math.cos(time * 0.16) * 0.55 * motion
+    );
     dampVector(camera.position, desired, 3.5, delta);
-    camera.lookAt(-2.5, 3.4, -9.8);
+    camera.lookAt(
+      -2.5 + Math.sin(time * 0.12) * 0.25 * motion,
+      3.4,
+      -9.8
+    );
     mutable.speed = 0;
     mutable.nearDock = false;
   };
@@ -797,7 +806,9 @@ function initHarbor(
     if (now - lastFrame < minFrame) return;
     const delta = Math.min(0.05, Math.max(0.001, (now - lastFrame) / 1000));
     lastFrame = now;
-    elapsed += delta;
+    // Reduced motion freezes ambient loops, but the render loop stays alive so
+    // voyage controls, camera changes, and landmark navigation still respond.
+    elapsed += delta * quality.motionScale;
     update(delta, elapsed);
     renderOnce();
   };
@@ -946,12 +957,7 @@ function initHarbor(
   resize();
   emitState();
 
-  if (quality.motionScale === 0) {
-    update(0, 1.2);
-    renderOnce();
-  } else {
-    raf = window.requestAnimationFrame(frame);
-  }
+  raf = window.requestAnimationFrame(frame);
 
   return {
     startVoyage,
