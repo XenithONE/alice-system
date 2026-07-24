@@ -1,12 +1,12 @@
 {
   "name": "AlicE sYsTeM",
   "short_name": "AlicE sYsTeM",
-  "description": "AIと共作したゲーム、映像、プロンプト、モデル比較を公開する3Dポートフォリオ。",
+  "description": "小舟でブロック港町を巡り、作品を発見する3Dポートフォリオ。",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#fbf9f6",
-  "theme_color": "#fbf9f6",
+  "background_color": "#061c31",
+  "theme_color": "#061c31",
   "icons": [
     { "src": "assets/favicon-64.png", "sizes": "64x64", "type": "image/png" },
     { "src": "assets/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },

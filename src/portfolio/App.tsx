@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { SiteNav } from "./components/SiteNav";
 import { BrickHero } from "./components/BrickHero";
 import { GamesSection } from "./components/GamesSection";
 import { GameDetail } from "./components/GameDetail";
@@ -68,8 +67,6 @@ export default function PortfolioApp() {
       </a>
       <CursorFX />
       <ScrollProgress />
-      <SiteNav />
-
       <main id="main-content">
         <BrickHero onOpenDetail={setDetail} />
         <GamesSection onOpenDetail={setDetail} />

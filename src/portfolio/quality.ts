@@ -53,10 +53,11 @@ export function detectHeroQuality(): HeroQuality {
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const coarse = window.matchMedia("(pointer: coarse)").matches;
 
-  const forced = new URLSearchParams(window.location.search).get("q");
+  const params = new URLSearchParams(window.location.search);
+  const forced = params.get("q");
   if (forced === "high" || forced === "balanced" || forced === "low") {
     // QA override: force the tier and ignore reduced-motion (headless previews force it).
-    return build(forced, false, false);
+    return build(forced, false, params.get("mobile") === "1");
   }
 
   const preferred = document.documentElement.dataset.experienceQuality;
