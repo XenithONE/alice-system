@@ -55,6 +55,9 @@ export interface HarborScene {
     mode: HarborMode;
     playerPos: { x: number; y: number; z: number };
     camPos: { x: number; y: number; z: number };
+    /** unit heading the hull actually points, taken from its world matrix */
+    bow: { x: number; z: number };
+    boatYaw: number;
     camYaw: number;
     camPitch: number;
     nearDock: boolean;
@@ -111,6 +114,20 @@ const WATER_MAX_Z = 23;
 // fairway straight ahead of the spawn: 3s of straight sailing ended in a
 // 94% speed loss and a 37 degree yank off course.
 const DOCK_COLLIDER = { x: -2.94, z: 1.05, r: 2.2 } as const;
+// The hull is modelled bow-first along local -Z: the bow taper runs out to
+// z -3.45 while the rudder and wake sit at +3.2 and +3.4. So `rotation.y = yaw`
+// points the bow exactly here. Travel, autopilot bearings and the cinematic
+// path all derive from this one function -- when they were written out by hand
+// they disagreed on the sign of x, and the skiff sailed mirrored to the way it
+// was facing (identical only when heading due north, which is why straight-line
+// tests passed).
+const bowDirection = (yaw: number, target = new THREE.Vector3()): THREE.Vector3 =>
+  target.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+/** Yaw that puts the bow on the given world-space heading. Inverse of bowDirection. */
+const yawTowards = (dx: number, dz: number): number => Math.atan2(-dx, -dz);
+// The chase camera looks along its own yaw's bow direction reversed, so parking
+// it half a turn behind the helm keeps it dead astern.
+const CHASE_CAM_OFFSET = Math.PI;
 const MOORING_MARGIN = 0.2;
 const MOORED_SKIFF_POINT = (() => {
   const fromDock = new THREE.Vector2(
@@ -123,6 +140,48 @@ const MOORED_SKIFF_POINT = (() => {
     DOCK_COLLIDER.z + fromDock.y
   );
 })();
+
+// Bow pointing away from the pier, so casting off heads for open water.
+// Derived rather than written down: any heading with north in it drives the
+// hull straight back into the pier it is moored against.
+const MOORED_SKIFF_YAW = yawTowards(
+  MOORED_SKIFF_POINT.x - DOCK_COLLIDER.x,
+  MOORED_SKIFF_POINT.z - DOCK_COLLIDER.z
+);
+
+/**
+ * Bearing for the autopilot: the mooring, but rounding the pier instead of
+ * driving at it. Steering the direct line wedged the hull between the pier's
+ * collider and the west edge of the harbour and left it stranded 6.8 units
+ * short. When the pier stands in the way the boat is aimed at one of the
+ * tangents of the blocked circle, preferring the smaller turn but never a
+ * tangent that runs it into the harbour wall.
+ */
+const autoDockBearing = (from: THREE.Vector3): number => {
+  const toTargetX = MOORED_SKIFF_POINT.x - from.x;
+  const toTargetZ = MOORED_SKIFF_POINT.z - from.z;
+  const direct = yawTowards(toTargetX, toTargetZ);
+  const cx = DOCK_COLLIDER.x - from.x;
+  const cz = DOCK_COLLIDER.z - from.z;
+  const toCentre = Math.hypot(cx, cz);
+  const clearance = DOCK_COLLIDER.r + SKIFF_R + 0.45;
+  if (toCentre <= clearance) return yawTowards(-cx, -cz);
+  // Anything further away than the mooring cannot be between us and it.
+  if (toCentre > Math.hypot(toTargetX, toTargetZ)) return direct;
+  const centreBearing = yawTowards(cx, cz);
+  const half = Math.asin(clearance / toCentre);
+  const off = Math.atan2(Math.sin(direct - centreBearing), Math.cos(direct - centreBearing));
+  if (Math.abs(off) >= half) return direct;
+  const navigable = (yaw: number): boolean => {
+    const probe = bowDirection(yaw).multiplyScalar(3.2);
+    const x = from.x + probe.x;
+    const z = from.z + probe.z;
+    return x > WATER_MIN_X && x < WATER_MAX_X && z > WATER_MIN_Z && z < WATER_MAX_Z;
+  };
+  const near = centreBearing + (off >= 0 ? half : -half);
+  const far = centreBearing + (off >= 0 ? -half : half);
+  return navigable(near) || !navigable(far) ? near : far;
+};
 
 function makeWaterTexture(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
@@ -738,7 +797,7 @@ function initHarbor(
   let boatProgressTimer = 0;
   let camYaw = figure.root.rotation.y;
   let camPitch = 0;
-  let boatCamYawOffset = Math.PI;
+  let boatCamYawOffset = CHASE_CAM_OFFSET;
   let pointerDown = false;
   let pointerMoved = false;
   let pointerStartX = 0;
@@ -845,11 +904,11 @@ function initHarbor(
       if (throttle !== 0 || steering !== 0) {
         autoDocking = false;
       } else {
-        const bearing = Math.atan2(DOCK_POINT.x - skiff.position.x, -(DOCK_POINT.z - skiff.position.z));
+        const bearing = autoDockBearing(skiff.position);
         let off = bearing - boatYaw;
         off = Math.atan2(Math.sin(off), Math.cos(off));
         steering = Math.abs(off) < 0.05 ? 0 : (off > 0 ? 1 : -1);
-        const distance = skiff.position.distanceTo(DOCK_POINT);
+        const distance = skiff.position.distanceTo(MOORED_SKIFF_POINT);
         // ease off so the arrival is slow enough for the dock prompt to arm
         throttle = distance < 6 && Math.abs(boatSpeed) > 1.6 ? -1 : 1;
         if (mutable.nearDock) autoDocking = false;
@@ -857,7 +916,7 @@ function initHarbor(
     }
     boatSpeed = approach(boatSpeed, throttle > 0 ? 6.2 : throttle < 0 ? -2.4 : 0, throttle === 0 ? 2.4 : 3.2, delta);
     boatYaw += steering * delta * (0.65 + Math.min(1, Math.abs(boatSpeed) / 4) * 0.75);
-    const forward = new THREE.Vector3(Math.sin(boatYaw), 0, -Math.cos(boatYaw));
+    const forward = bowDirection(boatYaw);
     const travel = boatSpeed * delta;
     const fromX = skiff.position.x;
     const fromZ = skiff.position.z;
@@ -1073,7 +1132,7 @@ function initHarbor(
     const point = cinematicPath.getPointAt(cinematicT);
     const tangent = cinematicPath.getTangentAt(Math.min(0.995, cinematicT + 0.002)).normalize();
     skiff.position.copy(point);
-    boatYaw = Math.atan2(tangent.x, -tangent.z);
+    boatYaw = yawTowards(tangent.x, tangent.z);
     skiff.rotation.y = boatYaw;
     updateBoatBob(time, 0.9);
     const cameraTrail = quality.coarse ? 15.8 : 9.1;
@@ -1251,8 +1310,8 @@ function initHarbor(
     // exactly 5.1 units from its centre (0.2 clearance), so boarding cannot
     // trigger the collision resolver's former ~0.9-unit first-frame push.
     skiff.position.copy(MOORED_SKIFF_POINT);
-    skiff.rotation.y = Math.PI / 2;
-    boatYaw = Math.PI / 2;
+    skiff.rotation.y = MOORED_SKIFF_YAW;
+    boatYaw = MOORED_SKIFF_YAW;
     figure.root.visible = true;
     figure.root.position.copy(qaJourney ? new THREE.Vector3(-12.85, 0.72, -2.8) : WALK_SPAWN);
     figure.root.rotation.y = Math.PI;
@@ -1269,7 +1328,9 @@ function initHarbor(
   const board = (): void => {
     mutable.mode = "sailing";
     figure.root.visible = false;
-    boatCamYawOffset = camYaw - boatYaw;
+    // Carrying the walking camera's yaw across left the chase view 90 degrees
+    // off the stern; the helm must always be framed from directly behind.
+    boatCamYawOffset = CHASE_CAM_OFFSET;
     const skipper = skiffModel.runtime.nodes.skipper;
     if (skipper) skipper.visible = true;
     mutable.activeWorkId = null;
@@ -1369,10 +1430,18 @@ function initHarbor(
     },
     getDebugState() {
       const player = mutable.mode === "walking" ? figure.root.position : skiff.position;
+      // Bow read off the rendered matrix rather than recomputed from boatYaw,
+      // so a heading that disagrees with the hull on screen shows up here.
+      const bow = new THREE.Vector3(0, 0, -1)
+        .applyQuaternion(skiff.getWorldQuaternion(new THREE.Quaternion()))
+        .setY(0)
+        .normalize();
       return {
         mode: mutable.mode,
         playerPos: { x: player.x, y: player.y, z: player.z },
         camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+        bow: { x: bow.x, z: bow.z },
+        boatYaw,
         camYaw,
         camPitch,
         nearDock: mutable.nearDock,
