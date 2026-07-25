@@ -63,6 +63,8 @@ export interface HarborScene {
   };
   startVoyage(): void;
   interact(): void;
+  /** steer the skiff to the pier by itself; cancels on any helm input */
+  autoDock(): void;
   goToLandmark(index: number): void;
   setPaused(paused: boolean): void;
   pause(): void;
@@ -105,7 +107,10 @@ const WATER_MIN_X = -4.8;
 const WATER_MAX_X = 12.8;
 const WATER_MIN_Z = -8.5;
 const WATER_MAX_Z = 23;
-const DOCK_COLLIDER = { x: -2.94, z: 1.05, r: 4.0 } as const;
+// Sized to the visible planks. At r 4.0 this invisible ring covered the
+// fairway straight ahead of the spawn: 3s of straight sailing ended in a
+// 94% speed loss and a 37 degree yank off course.
+const DOCK_COLLIDER = { x: -2.94, z: 1.05, r: 2.2 } as const;
 const MOORING_MARGIN = 0.2;
 const MOORED_SKIFF_POINT = (() => {
   const fromDock = new THREE.Vector2(
@@ -727,6 +732,7 @@ function initHarbor(
   let boatSpeed = 0;
   // seconds the hull has been pinned with the throttle open
   let boatStuckTime = 0;
+  let autoDocking = false;
   let camYaw = figure.root.rotation.y;
   let camPitch = 0;
   let boatCamYawOffset = Math.PI;
@@ -828,8 +834,24 @@ function initHarbor(
   };
 
   const updateSailing = (delta: number, ambientTime: number, operationTime: number): void => {
-    const throttle = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
-    const steering = (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0);
+    let throttle = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
+    let steering = (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0);
+    // Autopilot: the HUD used to show a dead, disabled "桟橋へ近づく" button.
+    // It now actually sails there, and any helm input hands control straight back.
+    if (autoDocking) {
+      if (throttle !== 0 || steering !== 0) {
+        autoDocking = false;
+      } else {
+        const bearing = Math.atan2(DOCK_POINT.x - skiff.position.x, -(DOCK_POINT.z - skiff.position.z));
+        let off = bearing - boatYaw;
+        off = Math.atan2(Math.sin(off), Math.cos(off));
+        steering = Math.abs(off) < 0.05 ? 0 : (off > 0 ? 1 : -1);
+        const distance = skiff.position.distanceTo(DOCK_POINT);
+        // ease off so the arrival is slow enough for the dock prompt to arm
+        throttle = distance < 6 && Math.abs(boatSpeed) > 1.6 ? -1 : 1;
+        if (mutable.nearDock) autoDocking = false;
+      }
+    }
     boatSpeed = approach(boatSpeed, throttle > 0 ? 6.2 : throttle < 0 ? -2.4 : 0, throttle === 0 ? 2.4 : 3.2, delta);
     boatYaw += steering * delta * (0.65 + Math.min(1, Math.abs(boatSpeed) / 4) * 0.75);
     const forward = new THREE.Vector3(Math.sin(boatYaw), 0, -Math.cos(boatYaw));
@@ -863,7 +885,8 @@ function initHarbor(
         const targetYaw = Math.atan2(tx, -tz);
         let diff = targetYaw - boatYaw;
         diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-        boatYaw += diff * Math.min(1, delta * 3);
+        // never fight the helm: only nudge when the player is not steering
+        if (steering === 0) boatYaw += diff * Math.min(1, delta * 1.1);
       }
     }
     // The water used to be a hard clamp: aim into a corner and the skiff parked
@@ -884,7 +907,7 @@ function initHarbor(
       const targetYaw = Math.atan2(inwardX, -inwardZ);
       let diff = targetYaw - boatYaw;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff)); // shortest arc
-      boatYaw += diff * Math.min(1, delta * 2.4);
+      if (steering === 0) boatYaw += diff * Math.min(1, delta * 2.4);
     }
     skiff.rotation.y = boatYaw;
     updateBoatBob(ambientTime, Math.min(1, 0.35 + Math.abs(boatSpeed) * 0.12));
@@ -1319,6 +1342,9 @@ function initHarbor(
   return {
     startVoyage,
     interact,
+    autoDock() {
+      if (mutable.mode === "sailing") autoDocking = true;
+    },
     goToLandmark,
     setPaused,
     pause,

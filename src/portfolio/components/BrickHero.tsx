@@ -330,10 +330,11 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
           <button
             className={`harbor-interact ${state.nearDock ? "is-ready" : ""}`}
             type="button"
-            onClick={() => sceneRef.current?.interact()}
-            disabled={!state.nearDock}
+            onClick={() =>
+              state.nearDock ? sceneRef.current?.interact() : sceneRef.current?.autoDock()
+            }
           >
-            {state.nearDock ? "E　上陸する" : "桟橋へ近づく"}
+            {state.nearDock ? "E　上陸する" : "桟橋へ自動で向かう"}
           </button>
         </>
       )}
