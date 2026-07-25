@@ -261,6 +261,38 @@ body {
   backdrop-filter: blur(7px);
 }
 
+.harbor-interact-group {
+  position: absolute;
+  z-index: 9;
+  bottom: clamp(30px, 4vh, 58px);
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  transform: translateX(-50%);
+}
+
+.harbor-interact-group .harbor-interact {
+  position: static;
+  transform: none;
+}
+
+.harbor-interact-secondary {
+  min-height: 44px;
+  padding: 9px 16px;
+  color: #fff6df;
+  border-bottom: 1px solid #e6ad46;
+  background: rgba(6, 28, 49, 0.88);
+  font-family: var(--jp);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  backdrop-filter: blur(7px);
+}
+
+.harbor-touch-stick {
+  display: none;
+}
+
 .harbor-interact.is-ready {
   color: #fff6df;
   border-color: #e6ad46;
@@ -767,6 +799,282 @@ body {
   border-color: rgba(230, 173, 70, 0.62);
 }
 
+.hb-arcade {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  color: #061c31;
+  background: #06121e;
+  animation: hb-arcade-enter 220ms ease-out both;
+}
+
+.hb-arcade::backdrop {
+  background: rgba(2, 8, 17, 0.78);
+}
+
+.hb-arcade :focus-visible {
+  outline: 2px solid #061c31;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px #fff;
+}
+
+@keyframes hb-arcade-enter {
+  from {
+    opacity: 0;
+    background-color: #000;
+  }
+
+  to {
+    opacity: 1;
+    background-color: #06121e;
+  }
+}
+
+.hb-arcade-bar {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(240px, 2fr) minmax(150px, 1fr);
+  align-items: center;
+  min-height: 76px;
+  padding: 12px clamp(16px, 3vw, 48px);
+  border-bottom: 1px solid rgba(6, 28, 49, 0.22);
+  background: #fff;
+  box-shadow: 0 5px 0 rgba(6, 28, 49, 0.18);
+}
+
+.hb-arcade-bar button,
+.hb-arcade-bar a {
+  min-height: 42px;
+  color: #061c31;
+  font-family: var(--jp);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.hb-arcade-close {
+  justify-self: start;
+  padding: 8px 14px;
+  border: 1px solid rgba(6, 28, 49, 0.28);
+  background: #fff;
+  box-shadow: inset 0 -3px rgba(6, 28, 49, 0.13);
+}
+
+.hb-arcade-close:active,
+.hb-arcade-showcase-copy button:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 -1px rgba(6, 28, 49, 0.18);
+}
+
+.hb-arcade-bar h2 {
+  margin: 0;
+  color: #061c31;
+  font-family: var(--display);
+  font-size: clamp(1.35rem, 2.4vw, 2.1rem);
+  font-weight: 700;
+  line-height: 0.95;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.hb-arcade-bar h2 small {
+  display: block;
+  margin-top: 6px;
+  color: #61717d;
+  font-family: var(--jp);
+  font-size: 0.65rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+}
+
+.hb-arcade-external,
+.hb-arcade-status {
+  justify-self: end;
+}
+
+.hb-arcade-escape-hint {
+  position: absolute;
+  right: clamp(16px, 3vw, 48px);
+  bottom: 4px;
+  color: #465968;
+  font-family: var(--jp);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.hb-arcade-external {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 2px solid #e6ad46;
+}
+
+.hb-arcade-status {
+  color: #9c6d24;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.hb-arcade-frame {
+  width: calc(100% - clamp(20px, 3vw, 48px));
+  height: calc(100% - clamp(20px, 3vw, 48px));
+  min-height: 0;
+  margin: auto;
+  border: 1px solid rgba(246, 241, 231, 0.26);
+  border-radius: 12px;
+  background: #020811;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.46);
+}
+
+.hb-arcade-showcase {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  align-items: stretch;
+  min-height: 0;
+  padding: clamp(18px, 3vw, 48px);
+  background: #efe3d0;
+}
+
+.hb-arcade-showcase > img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  border: 1px solid rgba(6, 28, 49, 0.24);
+  border-radius: 10px 0 0 10px;
+  background: #0a2944;
+  box-shadow: 0 9px 0 rgba(6, 28, 49, 0.16);
+}
+
+.hb-arcade-showcase-copy {
+  align-self: center;
+  padding: clamp(30px, 5vw, 74px);
+  border: 1px solid rgba(6, 28, 49, 0.2);
+  border-left: 0;
+  background: #fff;
+  box-shadow: 0 9px 0 rgba(6, 28, 49, 0.16);
+}
+
+.hb-arcade-kicker {
+  color: #9c6d24;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.hb-arcade-showcase-copy h3 {
+  margin: 12px 0 18px;
+  color: #061c31;
+  font-family: var(--display);
+  font-size: clamp(2.8rem, 5vw, 5.8rem);
+  line-height: 0.88;
+}
+
+.hb-arcade-showcase-copy > p:not(.hb-arcade-kicker) {
+  color: #465968;
+  font-family: var(--jp);
+  font-size: 0.92rem;
+  line-height: 1.9;
+}
+
+.hb-arcade-progress {
+  height: 12px;
+  margin: 30px 0;
+  padding: 2px;
+  border: 1px solid rgba(6, 28, 49, 0.32);
+  background: #efe3d0;
+  box-shadow: inset 0 2px rgba(6, 28, 49, 0.1);
+}
+
+.hb-arcade-progress span {
+  display: block;
+  width: 48%;
+  height: 100%;
+  background: #e6ad46;
+}
+
+.hb-arcade-showcase-copy button {
+  min-height: 46px;
+  padding: 11px 18px;
+  color: #fff;
+  border: 1px solid #061c31;
+  background: #0a2944;
+  font-family: var(--jp);
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: inset 0 -4px rgba(0, 0, 0, 0.24);
+}
+
+@media (max-width: 860px) {
+  .hb-arcade-bar {
+    grid-template-columns: 1fr 1fr;
+    min-height: 92px;
+    padding: 9px 12px;
+  }
+
+  .hb-arcade-bar h2 {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    font-size: 1.2rem;
+  }
+
+  .hb-arcade-bar h2 small {
+    display: none;
+  }
+
+  .hb-arcade-close {
+    grid-row: 2;
+    grid-column: 1;
+    padding: 6px 10px;
+  }
+
+  .hb-arcade-external,
+  .hb-arcade-status {
+    grid-row: 2;
+    grid-column: 2;
+    font-size: 0.68rem;
+  }
+
+  .hb-arcade-escape-hint {
+    right: 12px;
+    bottom: 2px;
+    font-size: 0.58rem;
+  }
+
+  .hb-arcade-showcase {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 42vh) auto;
+    overflow-y: auto;
+    padding: 14px;
+  }
+
+  .hb-arcade-showcase > img {
+    border-radius: 8px 8px 0 0;
+  }
+
+  .hb-arcade-showcase-copy {
+    padding: 28px 22px;
+    border-top: 0;
+    border-left: 1px solid rgba(6, 28, 49, 0.2);
+  }
+}
+
 @media (max-width: 980px) {
   .harbor-primary-nav {
     gap: 20px;
@@ -843,6 +1151,13 @@ body {
     bottom: 24px;
   }
 
+  .harbor-interact-group {
+    right: 14px;
+    bottom: 18px;
+    left: auto;
+    transform: none;
+  }
+
   .harbor-project-rail {
     top: auto;
     left: 0;
@@ -902,8 +1217,9 @@ body {
   }
 
   .harbor-cinematic-tools button {
-    margin-right: 16px;
-    padding-bottom: 4px;
+    min-height: 44px;
+    margin-right: 10px;
+    padding: 8px 4px;
     color: #fff;
     border-bottom: 1px solid rgba(255, 255, 255, 0.7);
     font: inherit;
@@ -1035,6 +1351,73 @@ body {
   }
 }
 
+@media (pointer: coarse) and (max-width: 860px) {
+  .harbor-hero.mode-walking .harbor-controls-walk {
+    display: none;
+  }
+
+  .harbor-hero.mode-walking .harbor-minimap {
+    top: 92px;
+    right: 14px;
+    bottom: auto;
+    width: 76px;
+  }
+
+  .harbor-touch-stick {
+    position: absolute;
+    z-index: 8;
+    bottom: max(22px, env(safe-area-inset-bottom));
+    left: max(18px, env(safe-area-inset-left));
+    display: block;
+    width: 120px;
+    height: 120px;
+    border: 2px solid rgba(255, 255, 255, 0.78);
+    border-radius: 50%;
+    background: rgba(6, 28, 49, 0.62);
+    box-shadow: 0 10px 28px rgba(2, 19, 33, 0.34);
+    touch-action: none;
+    user-select: none;
+  }
+
+  .harbor-touch-stick::before,
+  .harbor-touch-stick::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    transform: translate(-50%, -50%);
+  }
+
+  .harbor-touch-stick::before {
+    width: 64%;
+    height: 1px;
+  }
+
+  .harbor-touch-stick::after {
+    width: 1px;
+    height: 64%;
+  }
+
+  .harbor-touch-stick-knob {
+    position: absolute;
+    z-index: 1;
+    top: calc(50% - 24px);
+    left: calc(50% - 24px);
+    width: 48px;
+    height: 48px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    background: #0a2944;
+    box-shadow: 0 5px 14px rgba(2, 19, 33, 0.42);
+  }
+
+  .harbor-interact-group .harbor-interact,
+  .harbor-interact-secondary {
+    min-height: 44px;
+  }
+}
+
 @media (max-height: 640px) and (min-width: 721px) {
   .harbor-hero {
     min-height: 640px;
@@ -1058,11 +1441,17 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .hb-arcade,
   .harbor-hero .bh-poster,
   .harbor-hero .brick-hero-canvas,
   .harbor-primary-nav a::after,
   .harbor-primary-nav button::after,
   .harbor-start {
+    animation: none;
+    transition: none;
+  }
+
+  .harbor-touch-stick-knob {
     transition: none;
   }
 }

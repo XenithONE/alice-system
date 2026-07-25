@@ -12,6 +12,7 @@ export interface HeroRootProps {
   works: HarborWorkItem[];
   onHoverWork: (id: string | null) => void;
   onSelectWork: (id: string) => void;
+  onEnterHouse?: (id: string) => void;
   onState: (state: HarborSceneState) => void;
   onReady?: (scene: HarborScene | null) => void;
   onLiveChange?: (live: boolean) => void;
@@ -29,6 +30,7 @@ export function HeroRoot({
   works,
   onHoverWork,
   onSelectWork,
+  onEnterHouse,
   onState,
   onReady,
   onLiveChange
@@ -36,8 +38,8 @@ export function HeroRoot({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [live, setLive] = useState(false);
   const [posterGone, setPosterGone] = useState(false);
-  const eventsRef = useRef({ onHoverWork, onSelectWork, onState, onReady, onLiveChange });
-  eventsRef.current = { onHoverWork, onSelectWork, onState, onReady, onLiveChange };
+  const eventsRef = useRef({ onHoverWork, onSelectWork, onEnterHouse, onState, onReady, onLiveChange });
+  eventsRef.current = { onHoverWork, onSelectWork, onEnterHouse, onState, onReady, onLiveChange };
   const worksRef = useRef(works);
 
   useEffect(() => {
@@ -58,13 +60,13 @@ export function HeroRoot({
     let booting = false;
     let bootVersion = 0;
     let scene: HarborScene | null = null;
-    let restoreRaf = 0;
+    let cancelBootSchedule = (): void => {};
 
     const stopScene = (updateState: boolean): void => {
       try {
         scene?.dispose();
       } catch (error) {
-        if (import.meta.env.DEV) console.warn("Harbor world cleanup failed.", error);
+        console.warn("Harbor world cleanup failed.", error);
       }
       scene = null;
       delete (window as { __harborHero?: HarborScene }).__harborHero;
@@ -92,6 +94,7 @@ export function HeroRoot({
         const next = createHarborScene(canvas, quality, worksRef.current, {
           onHoverWork: (id) => eventsRef.current.onHoverWork(id),
           onSelectWork: (id) => eventsRef.current.onSelectWork(id),
+          onEnterHouse: (id) => eventsRef.current.onEnterHouse?.(id),
           onState: (state) => eventsRef.current.onState(state)
         });
         if (disposed || version !== bootVersion) {
@@ -103,23 +106,53 @@ export function HeroRoot({
         eventsRef.current.onReady?.(next);
         setLive(true);
       } catch (error) {
-        if (import.meta.env.DEV) console.warn("Harbor world unavailable; using poster fallback.", error);
+        console.warn("Harbor world unavailable; using poster fallback.", error);
         stopScene(true);
       } finally {
         if (version === bootVersion) booting = false;
       }
     };
 
+    const scheduleBoot = (): void => {
+      cancelBootSchedule();
+      let fired = false;
+      let rafId = 0;
+      let timeoutId = 0;
+      let idleId: number | undefined;
+      const idleWindow = window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+      const cancel = (): void => {
+        window.cancelAnimationFrame(rafId);
+        window.clearTimeout(timeoutId);
+        if (idleId !== undefined) idleWindow.cancelIdleCallback?.(idleId);
+      };
+      const runOnce = (): void => {
+        if (fired || disposed) return;
+        fired = true;
+        cancel();
+        void boot();
+      };
+      rafId = window.requestAnimationFrame(runOnce);
+      idleId = idleWindow.requestIdleCallback?.(runOnce, { timeout: 1200 });
+      timeoutId = window.setTimeout(runOnce, 400);
+      cancelBootSchedule = () => {
+        fired = true;
+        cancel();
+      };
+    };
+
     const onContextLost = (event: Event): void => {
       event.preventDefault();
+      cancelBootSchedule();
       bootVersion += 1;
       booting = false;
       stopScene(true);
     };
     const onContextRestored = (): void => {
       if (disposed) return;
-      window.cancelAnimationFrame(restoreRaf);
-      restoreRaf = window.requestAnimationFrame(() => void boot());
+      scheduleBoot();
     };
 
     canvas.addEventListener("webglcontextlost", onContextLost);
@@ -127,12 +160,12 @@ export function HeroRoot({
 
     // The harbor is the hero, so start it on the first paint. Low-memory devices
     // use the low tier; the poster is only a loading cover or WebGL fallback.
-    restoreRaf = window.requestAnimationFrame(() => void boot());
+    scheduleBoot();
 
     return () => {
       disposed = true;
       bootVersion += 1;
-      window.cancelAnimationFrame(restoreRaf);
+      cancelBootSchedule();
       canvas.removeEventListener("webglcontextlost", onContextLost);
       canvas.removeEventListener("webglcontextrestored", onContextRestored);
       stopScene(false);
@@ -154,7 +187,8 @@ export function HeroRoot({
       <canvas
         ref={canvasRef}
         className={`brick-hero-canvas ${live ? "is-live" : ""}`}
-        aria-hidden="true"
+        tabIndex={-1}
+        aria-label="HARBOR WORLD 3D 探索画面"
       />
     </>
   );

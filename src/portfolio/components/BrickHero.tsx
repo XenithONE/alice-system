@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HeroRoot } from "../HeroRoot";
+import { ArcadeOverlay } from "./ArcadeOverlay";
 import type {
   HarborLandmark,
   HarborScene,
@@ -15,6 +16,8 @@ const DEFAULT_STATE: HarborSceneState = {
   mode: "intro",
   nearDock: false,
   activeWorkId: null,
+  activeHouseId: null,
+  activeHouseTitle: null,
   activeLandmark: "works",
   speed: 0,
   cinematicStop: 0,
@@ -57,7 +60,12 @@ function ProjectRail({
 }) {
   const href = primaryHref(work);
   return (
-    <aside className="harbor-project-rail" aria-label={`${work.title} 作品情報`}>
+    <aside
+      id="harbor-active-project"
+      className="harbor-project-rail"
+      aria-label={`${work.title} 作品情報`}
+      tabIndex={-1}
+    >
       <button className="harbor-rail-close" type="button" onClick={() => onOpenDetail(work)}>
         詳細
       </button>
@@ -87,6 +95,90 @@ function ProjectRail({
   );
 }
 
+const STICK_KEYS = {
+  KeyW: "w",
+  KeyA: "a",
+  KeyS: "s",
+  KeyD: "d"
+} as const;
+
+type StickKey = keyof typeof STICK_KEYS;
+
+function dispatchStickKey(code: StickKey, type: "keydown" | "keyup"): void {
+  window.dispatchEvent(new KeyboardEvent(type, {
+    key: STICK_KEYS[code],
+    code,
+    bubbles: true,
+    cancelable: true
+  }));
+}
+
+function HarborTouchStick() {
+  const padRef = useRef<HTMLDivElement | null>(null);
+  const heldKeysRef = useRef<Set<StickKey>>(new Set());
+  const [knobOffset, setKnobOffset] = useState({ x: 0, y: 0 });
+
+  const releaseKeys = useCallback((): void => {
+    heldKeysRef.current.forEach((code) => dispatchStickKey(code, "keyup"));
+    heldKeysRef.current.clear();
+    setKnobOffset({ x: 0, y: 0 });
+  }, []);
+
+  useEffect(() => releaseKeys, [releaseKeys]);
+
+  const updateStick = (event: React.PointerEvent<HTMLDivElement>): void => {
+    const rect = padRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const radius = rect.width / 2;
+    const rawX = event.clientX - (rect.left + radius);
+    const rawY = event.clientY - (rect.top + radius);
+    const distance = Math.hypot(rawX, rawY);
+    const scale = distance > radius ? radius / distance : 1;
+    const x = rawX * scale;
+    const y = rawY * scale;
+    const threshold = radius * 0.28;
+    const nextKeys = new Set<StickKey>();
+    if (y < -threshold) nextKeys.add("KeyW");
+    if (y > threshold) nextKeys.add("KeyS");
+    if (x < -threshold) nextKeys.add("KeyA");
+    if (x > threshold) nextKeys.add("KeyD");
+
+    heldKeysRef.current.forEach((code) => {
+      if (!nextKeys.has(code)) dispatchStickKey(code, "keyup");
+    });
+    nextKeys.forEach((code) => {
+      if (!heldKeysRef.current.has(code)) dispatchStickKey(code, "keydown");
+    });
+    heldKeysRef.current = nextKeys;
+    setKnobOffset({ x, y });
+  };
+
+  return (
+    <div
+      ref={padRef}
+      className="harbor-touch-stick"
+      role="group"
+      aria-label="歩行スティック"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        updateStick(event);
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) updateStick(event);
+      }}
+      onPointerUp={releaseKeys}
+      onPointerCancel={releaseKeys}
+      onLostPointerCapture={releaseKeys}
+    >
+      <span
+        className="harbor-touch-stick-knob"
+        style={{ transform: `translate(${knobOffset.x}px, ${knobOffset.y}px)` }}
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
 export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void }) {
   const isolatedSkiffReview =
     new URLSearchParams(window.location.search).get("skiff-review") === "1";
@@ -95,6 +187,7 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [glLive, setGlLive] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [arcadeHouse, setArcadeHouse] = useState<Work | null>(null);
 
   const harborWorks = useMemo<HarborWorkItem[]>(
     () =>
@@ -113,13 +206,29 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
     if (!id) return null;
     return WORKS.find((work) => work.id === id) ?? null;
   }, [hoveredId, state.activeWorkId]);
-
   const mobileWork = WORKS[0]!;
 
   const selectWork = (id: string): void => {
     const work = WORKS.find((item) => item.id === id);
     if (work) onOpenDetail(work);
   };
+
+  const enterHouse = useCallback((id: string): void => {
+    const work = WORKS.find((item) => item.id === id);
+    if (!work) return;
+    sceneRef.current?.pause();
+    setMapOpen(false);
+    setArcadeHouse(work);
+  }, []);
+
+  const closeArcade = useCallback((): void => {
+    setArcadeHouse(null);
+    sceneRef.current?.resume();
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLCanvasElement>(".harbor-hero .brick-hero-canvas")
+        ?.focus({ preventScroll: true });
+    });
+  }, []);
 
   const startVoyage = (): void => {
     if (sceneRef.current) {
@@ -141,8 +250,12 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
 
   const modeAnnouncement =
     state.mode === "walking"
-      ? state.activeWorkId
-        ? `${focusedWork?.title ?? "作品"}を調べられます。`
+      ? state.activeHouseId
+        ? state.activeWorkId
+          ? `${state.activeHouseTitle ?? "作品"}のゲームハウスに入れます。${focusedWork?.title ?? "作品"}の作品情報も確認できます。`
+          : `${state.activeHouseTitle ?? "作品"}のゲームハウスに入れます。`
+        : state.activeWorkId
+          ? `${focusedWork?.title ?? "作品"}を調べられます。`
         : state.nearDock
           ? "小舟に戻れます。"
           : "港の遊歩道を歩いています。"
@@ -166,9 +279,11 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
           works={harborWorks}
           onHoverWork={setHoveredId}
           onSelectWork={selectWork}
+          onEnterHouse={enterHouse}
           onState={setState}
           onReady={(scene) => {
             sceneRef.current = scene;
+            if (scene && arcadeHouse) scene.pause();
           }}
           onLiveChange={setGlLive}
         />
@@ -230,11 +345,30 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
             <span><kbd>SHIFT</kbd> 走る</span>
             <span><kbd>E</kbd> 調べる</span>
           </div>
-          {(state.activeWorkId || state.nearDock) && (
-            <button className="harbor-interact is-ready" type="button" onClick={() => sceneRef.current?.interact()}>
-              {state.activeWorkId ? `E　${focusedWork?.title ?? "作品"}を調べる` : "E　小舟に戻る"}
-            </button>
+          {(state.activeHouseId || state.activeWorkId || state.nearDock) && (
+            <div className="harbor-interact-group">
+              <button className="harbor-interact is-ready" type="button" onClick={() => sceneRef.current?.interact()}>
+                {state.activeHouseId
+                  ? `E　${state.activeHouseTitle ?? "作品"} に入る`
+                  : state.activeWorkId
+                    ? `E　${focusedWork?.title ?? "作品"}を調べる`
+                    : "E　小舟に戻る"}
+              </button>
+              {state.activeHouseId && state.activeWorkId && focusedWork && (
+                <button
+                  className="harbor-interact-secondary"
+                  type="button"
+                  onClick={() => {
+                    document.getElementById("harbor-active-project")
+                      ?.focus({ preventScroll: true });
+                  }}
+                >
+                  作品情報を見る
+                </button>
+              )}
+            </div>
           )}
+          <HarborTouchStick />
         </>
       )}
 
@@ -259,6 +393,9 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
               aria-pressed={state.paused}
             >
               {state.paused ? "再生" : "一時停止"}
+            </button>
+            <button type="button" onClick={() => sceneRef.current?.interact()}>
+              港に降りる
             </button>
             <span aria-hidden="true">左右にスワイプ</span>
           </div>
@@ -323,6 +460,7 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
       <a className="harbor-scroll-cue" href="#games">
         WORKS <span aria-hidden="true">↓</span>
       </a>
+      <ArcadeOverlay house={arcadeHouse} onClose={closeArcade} />
     </section>
   );
 }

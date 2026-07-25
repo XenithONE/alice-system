@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { HeroQuality } from "../../quality";
+import { createHouses, type HouseSpec } from "./harborHouses";
 import {
   createBlockFigure,
   createCastleGate,
@@ -31,6 +32,8 @@ export interface HarborSceneState {
   mode: HarborMode;
   nearDock: boolean;
   activeWorkId: string | null;
+  activeHouseId: string | null;
+  activeHouseTitle: string | null;
   activeLandmark: HarborLandmark;
   speed: number;
   cinematicStop: number;
@@ -41,15 +44,29 @@ export interface HarborSceneEvents {
   onState(state: HarborSceneState): void;
   onHoverWork(id: string | null): void;
   onSelectWork(id: string): void;
+  onEnterHouse?: (id: string) => void;
 }
 
 export interface HarborScene {
   dispose(): void;
   captureFrame(advance?: number): string;
+  debugTick(deltaSeconds: number): void;
+  getDebugState(): {
+    mode: HarborMode;
+    playerPos: { x: number; y: number; z: number };
+    camPos: { x: number; y: number; z: number };
+    camYaw: number;
+    camPitch: number;
+    nearDock: boolean;
+    activeWorkId: string | null;
+    speed: number;
+  };
   startVoyage(): void;
   interact(): void;
   goToLandmark(index: number): void;
   setPaused(paused: boolean): void;
+  pause(): void;
+  resume(): void;
 }
 
 interface PortalRuntime {
@@ -62,15 +79,40 @@ interface MutableState {
   mode: HarborMode;
   nearDock: boolean;
   activeWorkId: string | null;
+  activeHouseId: string | null;
+  activeHouseTitle: string | null;
   activeLandmark: HarborLandmark;
   speed: number;
   cinematicStop: number;
   paused: boolean;
 }
 
+interface CircleCollider {
+  x: number;
+  z: number;
+  r: number;
+}
+
 const DOCK_POINT = new THREE.Vector3(-2.75, 0.55, 5.05);
 const WALK_SPAWN = new THREE.Vector3(-8.2, 0.72, 0.85);
 const CINEMATIC_STOPS = [0.13, 0.34, 0.61, 0.86] as const;
+const PLAYER_R = 0.42;
+// z band where the castle's west tower projects into the promenade.
+const CASTLE_BAND: readonly [number, number] = [-30.0, -25.0];
+const SKIFF_R = 0.9;
+const DOCK_COLLIDER = { x: -2.94, z: 1.05, r: 4.0 } as const;
+const MOORING_MARGIN = 0.2;
+const MOORED_SKIFF_POINT = (() => {
+  const fromDock = new THREE.Vector2(
+    DOCK_POINT.x - DOCK_COLLIDER.x,
+    DOCK_POINT.z - DOCK_COLLIDER.z
+  ).normalize().multiplyScalar(DOCK_COLLIDER.r + SKIFF_R + MOORING_MARGIN);
+  return new THREE.Vector3(
+    DOCK_COLLIDER.x + fromDock.x,
+    DOCK_POINT.y,
+    DOCK_COLLIDER.z + fromDock.y
+  );
+})();
 
 function makeWaterTexture(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
@@ -303,6 +345,61 @@ function dampVector(current: THREE.Vector3, target: THREE.Vector3, lambda: numbe
   current.lerp(target, factor);
 }
 
+function resolveCirclePenetrations(
+  position: THREE.Vector3,
+  radius: number,
+  colliders: CircleCollider[],
+  fallbackX: number,
+  fallbackZ: number
+): boolean {
+  let collided = false;
+  for (let pass = 0; pass < 3; pass += 1) {
+    let adjusted = false;
+    for (const collider of colliders) {
+      const dx = position.x - collider.x;
+      const dz = position.z - collider.z;
+      const minDistance = radius + collider.r;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq >= minDistance * minDistance) continue;
+
+      let normalX = dx;
+      let normalZ = dz;
+      let distance = Math.sqrt(distanceSq);
+      if (distance < 1e-6) {
+        const fallbackLength = Math.hypot(fallbackX, fallbackZ);
+        normalX = fallbackLength > 1e-6 ? -fallbackX / fallbackLength : 1;
+        normalZ = fallbackLength > 1e-6 ? -fallbackZ / fallbackLength : 0;
+        distance = 0;
+      } else {
+        normalX /= distance;
+        normalZ /= distance;
+      }
+      const push = minDistance - distance;
+      position.x += normalX * push;
+      position.z += normalZ * push;
+      collided = true;
+      adjusted = true;
+    }
+    if (!adjusted) break;
+  }
+  return collided;
+}
+
+function moveWithCircleCollisions(
+  position: THREE.Vector3,
+  deltaX: number,
+  deltaZ: number,
+  radius: number,
+  colliders: CircleCollider[]
+): boolean {
+  let collided = false;
+  position.x += deltaX;
+  collided = resolveCirclePenetrations(position, radius, colliders, deltaX, 0) || collided;
+  position.z += deltaZ;
+  collided = resolveCirclePenetrations(position, radius, colliders, 0, deltaZ) || collided;
+  return collided;
+}
+
 export function createHarborScene(
   canvas: HTMLCanvasElement,
   quality: HeroQuality,
@@ -404,7 +501,13 @@ function initHarbor(
   scene.add(market);
   const castle = createCastleGate(materials, quality.tier);
   castle.position.set(-8.5, 0.62, -27.5);
-  castle.scale.setScalar(1.55);
+  const CASTLE_SCALE = 1.55;
+  castle.scale.setScalar(CASTLE_SCALE);
+  const castleWestTowerCollider: CircleCollider = {
+    x: -8.5 - 3.4 * CASTLE_SCALE,
+    z: -27.5,
+    r: 2.1 * CASTLE_SCALE
+  };
   scene.add(castle);
   const lighthouse = createLighthouse(materials, quality.tier);
   lighthouse.position.set(16.5, 0.55, -14.5);
@@ -423,7 +526,7 @@ function initHarbor(
 
   const skiffModel = createPlayableSkiff(quality.tier, renderer.shadowMap.enabled);
   const skiff = skiffModel.root;
-  skiff.position.copy(qaJourney ? DOCK_POINT.clone().add(new THREE.Vector3(0.55, 0, 0.8)) : new THREE.Vector3(0.3, 0.55, 17.5));
+  skiff.position.copy(qaJourney ? MOORED_SKIFF_POINT : new THREE.Vector3(0.3, 0.55, 17.5));
   skiff.rotation.y = 0;
   skiff.scale.setScalar(0.72);
   skiff.scale.x *= 1.16;
@@ -447,10 +550,12 @@ function initHarbor(
 
   const textureLoader = new THREE.TextureLoader();
   const textures: THREE.Texture[] = [];
+  const coverTextures = new Map<string, THREE.Texture>();
   const portals: PortalRuntime[] = [];
   const pickMeshes: THREE.Mesh[] = [];
-  for (let i = 0; i < works.length; i += 1) {
-    const work = works[i]!;
+  // Create each cover once before houses so both the portal easel and its house
+  // sign share the same GPU texture upload.
+  for (const work of works) {
     const texture = textureLoader.load(
       work.cover,
       () => renderOnce(),
@@ -460,6 +565,41 @@ function initHarbor(
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = Math.min(6, renderer.capabilities.getMaxAnisotropy());
     textures.push(texture);
+    coverTextures.set(work.id, texture);
+  }
+  const housePalette = [0xb84235, 0x356eb8, 0x3b8b62, 0xd2a536];
+  // Only browser-playable works become enterable houses — the promenade is
+  // 38 units long, so packing every work in would shrink them below their own
+  // footprint. In-development titles stay as poster easels.
+  const houseSpecs: HouseSpec[] = works
+    .filter((work) => work.status === "playable")
+    .map((work, index) => ({
+      id: work.id,
+      title: work.title,
+      cover: work.cover,
+      color: housePalette[index % housePalette.length]!
+    }));
+  const houseCollection = createHouses(
+    houseSpecs,
+    materials,
+    quality,
+    coverTextures,
+    {
+      forbiddenBand: CASTLE_BAND,
+      collider: castleWestTowerCollider,
+      playerRadius: PLAYER_R
+    }
+  );
+  scene.add(houseCollection.group);
+  const housePickMeshes: THREE.Mesh[] = [];
+  houseCollection.group.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (mesh.isMesh && typeof mesh.userData.houseId === "string") housePickMeshes.push(mesh);
+  });
+  for (let i = 0; i < works.length; i += 1) {
+    const work = works[i]!;
+    const texture = coverTextures.get(work.id);
+    if (!texture) throw new Error(`missing cover texture for ${work.id}`);
     const portal = createProjectPortal(texture, materials, quality.tier);
     portal.root.position.set(-14.75, 0.63, -2.8 - i * 2.55);
     portal.root.rotation.y = Math.PI / 2;
@@ -470,6 +610,44 @@ function initHarbor(
     portals.push({ id: work.id, model: portal, baseScale: 0.78 });
     pickMeshes.push(portal.pick);
   }
+
+  // Static promenade obstacles, derived from the placements above and in
+  // createPromenade/createMarket/createCastleGate.
+  const colliders: CircleCollider[] = [
+    ...houseCollection.houses.map((house) => house.collider),
+    ...portals.map((portal) => ({
+      x: portal.model.root.position.x,
+      z: portal.model.root.position.z,
+      r: 0.72
+    })),
+    ...Array.from({ length: quality.tier === "low" ? 3 : 5 }, (_, index) => ({
+      x: -17.1,
+      z: -4.5 - index * 5.5,
+      r: 1.35
+    })),
+    ...Array.from({ length: lanternCount }, (_, index) => ({
+      x: -7.45,
+      z: -35.4 + index * (34 / Math.max(1, lanternCount - 1)),
+      r: 0.24
+    })),
+    // The scaled castle's west tower and gate-side masonry reach the walkway.
+    // The west tower's local radius is 2.1 (createTower in harborModels), so its
+    // real world footprint is 2.1 * CASTLE_SCALE = 3.255 — the old 2.05 let the
+    // walker stand 0.75 inside visible masonry.
+    castleWestTowerCollider,
+    { x: -10.55, z: -28.15, r: 1.35 }
+  ];
+
+  // Water hazards use the same circle resolver. The island values come from
+  // the actual createRockIsland placements; the dock center spans its planks.
+  const sailingColliders: CircleCollider[] = [
+    DOCK_COLLIDER,
+    { x: castleIsland.position.x, z: castleIsland.position.z, r: 15.2 },
+    { x: cityIsland.position.x, z: cityIsland.position.z, r: 26.5 },
+    { x: lighthouseIsland.position.x, z: lighthouseIsland.position.z, r: 6.2 },
+    { x: lighthouse.position.x, z: lighthouse.position.z, r: 2.2 },
+    { x: backgroundSkiff.position.x, z: backgroundSkiff.position.z, r: 1.25 }
+  ];
 
   if (skiffReview) {
     scene.fog = null;
@@ -530,6 +708,8 @@ function initHarbor(
     mode: initialMode,
     nearDock: false,
     activeWorkId: null,
+    activeHouseId: null,
+    activeHouseTitle: null,
     activeLandmark: "works",
     speed: 0,
     cinematicStop: 0,
@@ -540,8 +720,9 @@ function initHarbor(
   let cinematicTarget: number = CINEMATIC_STOPS[0];
   let boatYaw = 0;
   let boatSpeed = 0;
-  let orbitYaw = 0;
-  let orbitPitch = 0;
+  let camYaw = figure.root.rotation.y;
+  let camPitch = 0;
+  let boatCamYawOffset = Math.PI;
   let pointerDown = false;
   let pointerMoved = false;
   let pointerStartX = 0;
@@ -551,15 +732,19 @@ function initHarbor(
   const raycaster = new THREE.Raycaster();
   const keys = new Set<string>();
   let running = true;
+  let disposed = false;
   let raf = 0;
   let lastFrame = 0;
   let elapsed = 0;
+  let gameplayTime = 0;
 
   const emitState = (): void => {
     const publicState: HarborSceneState = {
       mode: mutable.mode,
       nearDock: mutable.nearDock,
       activeWorkId: mutable.activeWorkId,
+      activeHouseId: mutable.activeHouseId,
+      activeHouseTitle: mutable.activeHouseTitle,
       activeLandmark: mutable.activeLandmark,
       speed: mutable.speed,
       cinematicStop: mutable.cinematicStop,
@@ -575,6 +760,16 @@ function initHarbor(
     if (hoveredWorkId === id) return;
     hoveredWorkId = id;
     events.onHoverWork(id);
+  };
+
+  const setActiveHouse = (id: string | null): void => {
+    mutable.activeHouseId = id;
+    mutable.activeHouseTitle = id
+      ? works.find((work) => work.id === id)?.title ?? null
+      : null;
+    for (const house of houseCollection.houses) {
+      house.setHighlight(house.id === id);
+    }
   };
 
   const updatePortalHighlights = (delta: number): void => {
@@ -625,23 +820,37 @@ function initHarbor(
     skiff.rotation.x = Math.sin(time * 0.66 + 0.8) * 0.025 * intensity;
   };
 
-  const updateSailing = (delta: number, time: number): void => {
+  const updateSailing = (delta: number, ambientTime: number, operationTime: number): void => {
     const throttle = (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0) - (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0);
     const steering = (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0) - (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0);
     boatSpeed = approach(boatSpeed, throttle > 0 ? 6.2 : throttle < 0 ? -2.4 : 0, throttle === 0 ? 2.4 : 3.2, delta);
     boatYaw += steering * delta * (0.65 + Math.min(1, Math.abs(boatSpeed) / 4) * 0.75);
     const forward = new THREE.Vector3(Math.sin(boatYaw), 0, -Math.cos(boatYaw));
-    skiff.position.addScaledVector(forward, boatSpeed * delta);
+    const travel = boatSpeed * delta;
+    const collided = moveWithCircleCollisions(
+      skiff.position,
+      forward.x * travel,
+      forward.z * travel,
+      SKIFF_R,
+      sailingColliders
+    );
+    if (collided) boatSpeed *= 0.35;
     skiff.position.x = THREE.MathUtils.clamp(skiff.position.x, -4.8, 12.8);
     skiff.position.z = THREE.MathUtils.clamp(skiff.position.z, -8.5, 23);
     skiff.rotation.y = boatYaw;
-    updateBoatBob(time, Math.min(1, 0.35 + Math.abs(boatSpeed) * 0.12));
+    updateBoatBob(ambientTime, Math.min(1, 0.35 + Math.abs(boatSpeed) * 0.12));
     const rudder = skiffModel.runtime.nodes.rudder;
     const wheel = skiffModel.runtime.nodes["steering-wheel"];
     if (rudder) rudder.rotation.y = THREE.MathUtils.damp(rudder.rotation.y, steering * 0.48, 7, delta);
     if (wheel) wheel.rotation.z = THREE.MathUtils.damp(wheel.rotation.z, -steering * 0.82, 8, delta);
     wake.visible = Math.abs(boatSpeed) > 0.3;
     wake.scale.z = THREE.MathUtils.damp(wake.scale.z, 0.7 + Math.abs(boatSpeed) * 0.15, 6, delta);
+    wake.scale.x = THREE.MathUtils.damp(
+      wake.scale.x,
+      1 + (wake.visible ? Math.sin(operationTime * 9) * 0.035 : 0),
+      7,
+      delta
+    );
     const wakeMesh = wake.children[0] as THREE.Mesh | undefined;
     const wakeMaterial = wakeMesh?.material as THREE.MeshBasicMaterial | undefined;
     if (wakeMaterial) wakeMaterial.opacity = 0.2 + Math.abs(boatSpeed) * 0.045;
@@ -650,17 +859,14 @@ function initHarbor(
     mutable.nearDock = distanceToDock < 4.25 && Math.abs(boatSpeed) < 2.35;
     mutable.speed = Math.round(Math.abs(boatSpeed) * 10) / 10;
 
-    const localOffset = new THREE.Vector3(
-      Math.sin(orbitYaw) * 3.6,
-      5.4 + orbitPitch * 3.2,
-      12.4 + Math.cos(orbitYaw) * 1.1
-    ).applyAxisAngle(new THREE.Vector3(0, 1, 0), boatYaw);
-    const desiredCamera = skiff.position.clone().add(localOffset);
-    dampVector(camera.position, desiredCamera, 5.4, delta);
-    const lookTarget = skiff.position
+    camYaw = boatYaw + boatCamYawOffset;
+    const back = new THREE.Vector3(-Math.sin(camYaw), 0, -Math.cos(camYaw));
+    const desiredCamera = skiff.position
       .clone()
-      .add(new THREE.Vector3(0, 1.55, -3.15).applyAxisAngle(new THREE.Vector3(0, 1, 0), boatYaw));
-    camera.lookAt(lookTarget);
+      .addScaledVector(back, 12.4)
+      .add(new THREE.Vector3(0, 5.4 + camPitch * 3.2, 0));
+    dampVector(camera.position, desiredCamera, 5.4, delta);
+    camera.lookAt(skiff.position.x, skiff.position.y + 1.55, skiff.position.z);
   };
 
   const walkablePosition = (candidate: THREE.Vector3): THREE.Vector3 => {
@@ -670,26 +876,45 @@ function initHarbor(
     return candidate;
   };
 
-  const updateWalking = (delta: number, time: number): void => {
+  const updateWalking = (delta: number, ambientTime: number, operationTime: number): void => {
     const xInput = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
     const zInput = (keys.has("KeyS") ? 1 : 0) - (keys.has("KeyW") ? 1 : 0);
-    const direction = new THREE.Vector3(xInput, 0, zInput);
-    const moving = direction.lengthSq() > 0.01;
+    const camForward = new THREE.Vector3();
+    camera.getWorldDirection(camForward);
+    camForward.y = 0;
+    if (camForward.lengthSq() > 1e-6) {
+      camForward.normalize();
+    } else {
+      camForward.set(Math.sin(camYaw), 0, Math.cos(camYaw));
+    }
+    // Right-hand rule: facing north (0,0,-1) the screen-right axis is +X (east).
+    // The mirrored form made D strafe west and A strafe east.
+    const camRight = new THREE.Vector3(-camForward.z, 0, camForward.x);
+    const move = camRight.multiplyScalar(xInput).add(camForward.multiplyScalar(-zInput));
+    move.y = 0;
+    const moving = move.lengthSq() > 1e-4;
     const run = keys.has("ShiftLeft") || keys.has("ShiftRight");
     const moveSpeed = run ? 6.2 : 3.6;
     if (moving) {
-      direction.normalize();
-      const candidate = figure.root.position.clone().addScaledVector(direction, moveSpeed * delta);
-      figure.root.position.copy(walkablePosition(candidate));
-      const targetYaw = Math.atan2(direction.x, direction.z);
+      move.normalize();
+      const travel = moveSpeed * delta;
+      moveWithCircleCollisions(
+        figure.root.position,
+        move.x * travel,
+        move.z * travel,
+        PLAYER_R,
+        colliders
+      );
+      walkablePosition(figure.root.position);
+      const targetYaw = Math.atan2(move.x, move.z);
       figure.root.rotation.y = THREE.MathUtils.damp(figure.root.rotation.y, targetYaw, 12, delta);
     }
-    const stride = moving ? Math.sin(time * (run ? 12 : 8)) * (run ? 0.76 : 0.52) : 0;
+    const stride = moving ? Math.sin(operationTime * (run ? 12 : 8)) * (run ? 0.76 : 0.52) : 0;
     figure.leftArm.rotation.x = THREE.MathUtils.damp(figure.leftArm.rotation.x, -stride, 12, delta);
     figure.rightArm.rotation.x = THREE.MathUtils.damp(figure.rightArm.rotation.x, stride, 12, delta);
     figure.leftLeg.rotation.x = THREE.MathUtils.damp(figure.leftLeg.rotation.x, stride, 12, delta);
     figure.rightLeg.rotation.x = THREE.MathUtils.damp(figure.rightLeg.rotation.x, -stride, 12, delta);
-    figure.head.rotation.y = Math.sin(time * 0.58) * 0.08;
+    figure.head.rotation.y = Math.sin(ambientTime * 0.58) * 0.08;
 
     let nearest: PortalRuntime | null = null;
     let nearestDistance = Number.POSITIVE_INFINITY;
@@ -701,19 +926,28 @@ function initHarbor(
       }
     }
     mutable.activeWorkId = nearestDistance < 3.55 ? nearest?.id ?? null : null;
+    let nearestHouseId: string | null = null;
+    let nearestHouseDistance = Number.POSITIVE_INFINITY;
+    for (const house of houseCollection.houses) {
+      const distance = figure.root.position.distanceTo(house.doorPosition);
+      if (distance < nearestHouseDistance) {
+        nearestHouseId = house.id;
+        nearestHouseDistance = distance;
+      }
+    }
+    // Doors sit ~3.35 apart, so a 2.6 radius overlapped two houses at once.
+    setActiveHouse(nearestHouseDistance < 1.9 ? nearestHouseId : null);
     mutable.nearDock = figure.root.position.distanceTo(WALK_SPAWN) < 2.15;
     mutable.speed = moving ? moveSpeed : 0;
 
-    const facing = new THREE.Vector3(Math.sin(figure.root.rotation.y), 0, Math.cos(figure.root.rotation.y));
-    const side = new THREE.Vector3(facing.z, 0, -facing.x);
+    const back = new THREE.Vector3(-Math.sin(camYaw), 0, -Math.cos(camYaw));
     const desiredCamera = figure.root.position
       .clone()
-      .addScaledVector(facing, -6.2)
-      .addScaledVector(side, orbitYaw * 2.6)
-      .add(new THREE.Vector3(0, 3.9 + orbitPitch * 2.1, 0));
+      .addScaledVector(back, 6.2)
+      .add(new THREE.Vector3(0, 2.4 + camPitch * 2.6, 0));
     dampVector(camera.position, desiredCamera, 7.2, delta);
     camera.lookAt(figure.root.position.x, figure.root.position.y + 1.35, figure.root.position.z);
-    updateBoatBob(time, 0.55);
+    updateBoatBob(ambientTime, 0.55);
   };
 
   const updateIntro = (delta: number, time: number): void => {
@@ -777,19 +1011,20 @@ function initHarbor(
     mutable.nearDock = false;
   };
 
-  const update = (delta: number, time: number): void => {
+  const update = (delta: number, ambientTime: number, operationTime: number): void => {
     if (skiffReview) {
-      skiff.position.y = 0.05 + Math.sin(time * 0.65) * 0.025 * quality.motionScale;
-      skiff.rotation.y = Math.sin(time * 0.32) * 0.035 * quality.motionScale;
+      skiff.position.y = 0.05 + Math.sin(ambientTime * 0.65) * 0.025 * quality.motionScale;
+      skiff.rotation.y = Math.sin(ambientTime * 0.32) * 0.035 * quality.motionScale;
       camera.lookAt(0, 2.6, 0);
       emitState();
       return;
     }
-    updateWater(time);
-    if (mutable.mode === "intro") updateIntro(delta, time);
-    if (mutable.mode === "sailing") updateSailing(delta, time);
-    if (mutable.mode === "walking") updateWalking(delta, time);
-    if (mutable.mode === "cinematic") updateCinematic(delta, time);
+    if (mutable.mode !== "walking" && mutable.activeHouseId) setActiveHouse(null);
+    updateWater(ambientTime);
+    if (mutable.mode === "intro") updateIntro(delta, ambientTime);
+    if (mutable.mode === "sailing") updateSailing(delta, ambientTime, operationTime);
+    if (mutable.mode === "walking") updateWalking(delta, ambientTime, operationTime);
+    if (mutable.mode === "cinematic") updateCinematic(delta, ambientTime);
     updatePortalHighlights(delta);
     emitState();
   };
@@ -809,7 +1044,8 @@ function initHarbor(
     // Reduced motion freezes ambient loops, but the render loop stays alive so
     // voyage controls, camera changes, and landmark navigation still respond.
     elapsed += delta * quality.motionScale;
-    update(delta, elapsed);
+    gameplayTime += delta;
+    update(delta, elapsed, gameplayTime);
     renderOnce();
   };
 
@@ -820,13 +1056,22 @@ function initHarbor(
   };
 
   const pickWorkAtPointer = (): string | null => {
-    if (mutable.mode !== "walking") return null;
+    if (!running || mutable.mode !== "walking") return null;
     raycaster.setFromCamera(pointer, camera);
     const hit = raycaster.intersectObjects(pickMeshes, false)[0];
     return (hit?.object.userData.workId as string | undefined) ?? null;
   };
 
+  const pickHouseAtPointer = (): string | null => {
+    if (!running || mutable.mode !== "walking" || !mutable.activeHouseId) return null;
+    raycaster.setFromCamera(pointer, camera);
+    const hit = raycaster.intersectObjects(housePickMeshes, false)[0];
+    const id = hit?.object.userData.houseId as string | undefined;
+    return id === mutable.activeHouseId ? id : null;
+  };
+
   const onPointerDown = (event: PointerEvent): void => {
+    if (!running) return;
     pointerDown = true;
     pointerMoved = false;
     pointerStartX = event.clientX;
@@ -835,14 +1080,20 @@ function initHarbor(
     canvas.setPointerCapture?.(event.pointerId);
   };
   const onPointerMove = (event: PointerEvent): void => {
+    if (!running) return;
     updatePointer(event);
     if (pointerDown) {
       const dx = event.clientX - pointerStartX;
       const dy = event.clientY - pointerStartY;
       if (Math.hypot(dx, dy) > 5) pointerMoved = true;
       if (mutable.mode === "sailing" || mutable.mode === "walking") {
-        orbitYaw = THREE.MathUtils.clamp(orbitYaw - dx * 0.0023, -0.85, 0.85);
-        orbitPitch = THREE.MathUtils.clamp(orbitPitch + dy * 0.0018, -0.4, 0.45);
+        if (mutable.mode === "sailing") {
+          boatCamYawOffset += dx * 0.0023;
+          camYaw = boatYaw + boatCamYawOffset;
+        } else {
+          camYaw += dx * 0.0023;
+        }
+        camPitch = THREE.MathUtils.clamp(camPitch + dy * 0.0018, -0.35, 0.55);
         pointerStartX = event.clientX;
         pointerStartY = event.clientY;
       }
@@ -851,6 +1102,7 @@ function initHarbor(
     setHoveredWork(pickWorkAtPointer());
   };
   const onPointerUp = (event: PointerEvent): void => {
+    if (!running) return;
     updatePointer(event);
     if (mutable.mode === "cinematic") {
       const dx = event.clientX - pointerStartX;
@@ -859,8 +1111,13 @@ function initHarbor(
         cinematicTarget = CINEMATIC_STOPS[next]!;
       }
     } else if (!pointerMoved && mutable.mode === "walking") {
-      const id = pickWorkAtPointer();
-      if (id) events.onSelectWork(id);
+      const houseId = pickHouseAtPointer();
+      if (houseId) {
+        events.onEnterHouse?.(houseId);
+      } else {
+        const id = pickWorkAtPointer();
+        if (id) events.onSelectWork(id);
+      }
     }
     pointerDown = false;
     canvas.releasePointerCapture?.(event.pointerId);
@@ -869,12 +1126,14 @@ function initHarbor(
     if (!pointerDown) setHoveredWork(null);
   };
   const onKeyDown = (event: KeyboardEvent): void => {
+    if (!running) return;
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
     keys.add(event.code);
     if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
     if (event.code === "KeyE" || event.code === "Enter") interact();
   };
   const onKeyUp = (event: KeyboardEvent): void => {
+    if (!running) return;
     keys.delete(event.code);
   };
 
@@ -893,25 +1152,33 @@ function initHarbor(
   const dock = (): void => {
     mutable.mode = "walking";
     boatSpeed = 0;
-    skiff.position.copy(DOCK_POINT);
+    // The dock obstacle is r=4.0 and the skiff is r=0.9. This mooring is
+    // exactly 5.1 units from its centre (0.2 clearance), so boarding cannot
+    // trigger the collision resolver's former ~0.9-unit first-frame push.
+    skiff.position.copy(MOORED_SKIFF_POINT);
     skiff.rotation.y = Math.PI / 2;
     boatYaw = Math.PI / 2;
     figure.root.visible = true;
     figure.root.position.copy(qaJourney ? new THREE.Vector3(-12.85, 0.72, -2.8) : WALK_SPAWN);
     figure.root.rotation.y = Math.PI;
+    camYaw = figure.root.rotation.y;
+    camPitch = 0;
     const skipper = skiffModel.runtime.nodes.skipper;
     if (skipper) skipper.visible = false;
     mutable.nearDock = true;
     mutable.activeWorkId = null;
+    setActiveHouse(null);
     emitState();
   };
 
   const board = (): void => {
     mutable.mode = "sailing";
     figure.root.visible = false;
+    boatCamYawOffset = camYaw - boatYaw;
     const skipper = skiffModel.runtime.nodes.skipper;
     if (skipper) skipper.visible = true;
     mutable.activeWorkId = null;
+    setActiveHouse(null);
     mutable.nearDock = true;
     emitState();
   };
@@ -923,6 +1190,10 @@ function initHarbor(
     }
     if (mutable.mode === "sailing" && mutable.nearDock) {
       dock();
+      return;
+    }
+    if (mutable.mode === "walking" && mutable.activeHouseId) {
+      events.onEnterHouse?.(mutable.activeHouseId);
       return;
     }
     if (mutable.mode === "walking" && mutable.activeWorkId) {
@@ -946,6 +1217,21 @@ function initHarbor(
     emitState();
   };
 
+  const pause = (): void => {
+    if (disposed || !running) return;
+    running = false;
+    keys.clear();
+    pointerDown = false;
+    window.cancelAnimationFrame(raf);
+  };
+
+  const resume = (): void => {
+    if (disposed || running) return;
+    running = true;
+    lastFrame = performance.now();
+    raf = window.requestAnimationFrame(frame);
+  };
+
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", onPointerUp);
@@ -964,13 +1250,41 @@ function initHarbor(
     interact,
     goToLandmark,
     setPaused,
+    pause,
+    resume,
     captureFrame(advance = 1.2) {
-      elapsed += advance;
-      update(Math.min(0.05, advance), elapsed);
+      const safeAdvance = Number.isFinite(advance) ? Math.max(0, advance) : 0;
+      elapsed += safeAdvance * quality.motionScale;
+      gameplayTime += safeAdvance;
+      update(Math.min(0.05, safeAdvance), elapsed, gameplayTime);
       renderOnce();
       return renderer.domElement.toDataURL("image/png");
     },
+    debugTick(deltaSeconds: number) {
+      const delta = Number.isFinite(deltaSeconds)
+        ? THREE.MathUtils.clamp(deltaSeconds, 0, 0.05)
+        : 0;
+      elapsed += delta * quality.motionScale;
+      gameplayTime += delta;
+      update(delta, elapsed, gameplayTime);
+      renderer.render(scene, camera);
+    },
+    getDebugState() {
+      const player = mutable.mode === "walking" ? figure.root.position : skiff.position;
+      return {
+        mode: mutable.mode,
+        playerPos: { x: player.x, y: player.y, z: player.z },
+        camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+        camYaw,
+        camPitch,
+        nearDock: mutable.nearDock,
+        activeWorkId: mutable.activeWorkId,
+        speed: mutable.speed
+      };
+    },
     dispose() {
+      if (disposed) return;
+      disposed = true;
       running = false;
       window.cancelAnimationFrame(raf);
       canvas.removeEventListener("pointerdown", onPointerDown);
@@ -982,6 +1296,8 @@ function initHarbor(
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("resize", resize);
       setHoveredWork(null);
+      scene.remove(houseCollection.group);
+      houseCollection.dispose();
 
       const geometries = new Set<THREE.BufferGeometry>();
       const sceneMaterials = new Set<THREE.Material>();
