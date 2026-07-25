@@ -1,21 +1,27 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { buildBrickGeo, U } from "../../portfolio/gl/brick/brickKit";
-import { CELL, type ArenaDef, type BotSpec, type Catalog, type ChassisDef, type DriveDef, type PartDef, type SeatIndex } from "../sim/types";
+import { CELL, type ArenaDef, type BotSpec, type Catalog, type ChassisDef, type DriveDef, type SeatIndex } from "../sim/types";
 import { INTERP_DELAY } from "../sim/balance";
-import type { BotSnap, Snapshot } from "../net/protocol";
+import type { BotSnap, Snapshot, WeaponSnap } from "../net/protocol";
+import {
+  applyWeaponRig,
+  createIndustrialPart,
+  industrialMaterial,
+  type WeaponRig
+} from "./industrialKit";
 
 const MAX_SNAPSHOTS = 48;
-const MAX_PARTICLES = 96;
+const MAX_SPARKS = 96;
+const MAX_FLAMES = 56;
+const MAX_SMOKE = 32;
 const MAX_DEBRIS = 48;
-const BOT_COLORS = [0xc91a09, 0x0055bf, 0x4b9f4a, 0xf2cd37] as const;
+const BOT_COLORS = [0xc73c32, 0x2878a9, 0x3a8b68, 0xd69a24] as const;
 
 export interface ArenaQuality {
   pixelRatio?: number;
   shadows?: boolean;
   particles?: number;
   antialias?: boolean;
-  /** QA-only renderer seam; production leaves this undefined. */
   rendererFactory?: (
     canvas: HTMLCanvasElement,
     parameters: THREE.WebGLRendererParameters
@@ -23,10 +29,8 @@ export interface ArenaQuality {
 }
 
 export interface ArenaScene {
-  /** 開始時に一度。BotSpec からメッシュを組む */
   setup(specs: readonly (BotSpec | null)[], names: readonly string[], arena: ArenaDef, mySeat: SeatIndex): void;
   pushSnapshot(s: Snapshot): void;
-  /** QA seam: このペインは document.hidden=true で rAF が発火しない。必須 */
   debugTick(dt: number): void;
   getDebugState(): {
     ready: boolean; botCount: number; meshCount: number;
@@ -43,14 +47,13 @@ interface TimedSnapshot {
   readonly receivedAt: number;
   readonly snapshot: Snapshot;
 }
-
 interface PartVisual {
   readonly index: number;
   readonly root: THREE.Object3D;
   readonly drive: DriveDef | null;
+  readonly weapon: WeaponRig | null;
   detached: boolean;
 }
-
 interface BotVisual {
   readonly seat: SeatIndex;
   readonly root: THREE.Group;
@@ -59,18 +62,18 @@ interface BotVisual {
   readonly wheelRadii: number[];
   readonly nameSprite: THREE.Sprite;
   hp: number;
+  burn: number;
   detach: number;
   lastX: number;
   lastZ: number;
   wheelPhase: number;
 }
-
 interface Particle {
   readonly mesh: THREE.Mesh;
   readonly velocity: THREE.Vector3;
   life: number;
+  maxLife: number;
 }
-
 interface Debris {
   readonly mesh: THREE.Mesh;
   readonly velocity: THREE.Vector3;
@@ -80,33 +83,23 @@ interface Debris {
 
 function autoQuality(overrides: ArenaQuality): Required<Omit<ArenaQuality, "rendererFactory">> {
   const requested = new URLSearchParams(location.search).get("q");
-  const weakDevice = (navigator.hardwareConcurrency || 4) <= 4 || (navigator as Navigator & { deviceMemory?: number }).deviceMemory !== undefined &&
-    ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
-  const low = requested === "low" || (requested !== "high" && weakDevice);
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const weakDevice = (navigator.hardwareConcurrency || 4) <= 4 || memory !== undefined && memory <= 4;
+  const low = requested === "low" || requested !== "high" && weakDevice;
   return {
     pixelRatio: overrides.pixelRatio ?? Math.min(devicePixelRatio || 1, low ? 1.15 : 2),
     shadows: overrides.shadows ?? !low,
-    particles: Math.max(0, Math.min(MAX_PARTICLES, overrides.particles ?? (low ? 36 : MAX_PARTICLES))),
+    particles: Math.max(0, Math.min(MAX_SPARKS, overrides.particles ?? (low ? 36 : MAX_SPARKS))),
     antialias: overrides.antialias ?? !low
   };
 }
-
-function dimensions(part: PartDef, rot: number): [number, number] {
+function dimensions(part: { cells: readonly [number, number] }, rot: number): [number, number] {
   return rot % 2 === 1 ? [part.cells[1], part.cells[0]] : [part.cells[0], part.cells[1]];
 }
-
-function localPartPosition(chassis: ChassisDef, part: PartDef, cell: readonly [number, number], rot: number): [number, number] {
+function localPartPosition(chassis: ChassisDef, part: { cells: readonly [number, number] }, cell: readonly [number, number], rot: number): [number, number] {
   const [w, d] = dimensions(part, rot);
-  return [
-    (cell[0] + w / 2 - chassis.deck[0] / 2) * CELL,
-    (cell[1] + d / 2 - chassis.deck[1] / 2) * CELL
-  ];
+  return [(cell[0] + w / 2 - chassis.deck[0] / 2) * CELL, (cell[1] + d / 2 - chassis.deck[1] / 2) * CELL];
 }
-
-function metalMaterial(color: number, roughness = 0.55): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color, roughness, metalness: 0.42 });
-}
-
 function disposeObject(root: THREE.Object3D): void {
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh || object instanceof THREE.LineSegments || object instanceof THREE.Sprite)) return;
@@ -119,98 +112,75 @@ function disposeObject(root: THREE.Object3D): void {
   });
   root.clear();
 }
-
 function makeLabel(text: string, color: number): THREE.Sprite {
-  const label = document.createElement("canvas");
-  label.width = 512;
-  label.height = 96;
-  const context = label.getContext("2d")!;
-  context.fillStyle = "rgba(7,9,10,.82)";
-  context.fillRect(0, 8, label.width, 72);
-  context.strokeStyle = `#${color.toString(16).padStart(6, "0")}`;
-  context.lineWidth = 5;
-  context.strokeRect(2.5, 10.5, label.width - 5, 67);
-  context.fillStyle = "#f3eee3";
-  context.font = "700 38px sans-serif";
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 96;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = "rgba(5,7,8,.86)";
+  context.fillRect(0, 10, 512, 70);
+  context.fillStyle = `#${color.toString(16).padStart(6, "0")}`;
+  context.fillRect(0, 10, 9, 70);
+  context.strokeStyle = "#687174";
+  context.strokeRect(1.5, 11.5, 509, 67);
+  context.fillStyle = "#f1eee6";
+  context.font = "700 37px sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.fillText(text.slice(0, 22), label.width / 2, 45);
-  const texture = new THREE.CanvasTexture(label);
+  context.fillText(text.slice(0, 22), 260, 45);
+  const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
-  sprite.scale.set(2.25, 0.42, 1);
-  sprite.position.y = 1.25;
+  sprite.scale.set(2.2, 0.42, 1);
+  sprite.position.y = 1.22;
   return sprite;
 }
-
-function createPart(part: PartDef, rot: number, paint: number): { root: THREE.Group; wheel: THREE.Object3D | null } {
-  const root = new THREE.Group();
-  root.rotation.y = rot * Math.PI / 2;
-  const [w, d] = dimensions(part, rot);
-  const kind = part.category === "armor" ? "tile" : "plate";
-  const bodyGeo = buildBrickGeo(w, d, kind, 8);
-  bodyGeo.scale(CELL / U, Math.max(part.height, 0.03) / (U * 0.4), CELL / U);
-  const body = new THREE.Mesh(bodyGeo, metalMaterial(part.category === "armor" ? paint : part.color));
-  body.castShadow = true;
-  body.receiveShadow = true;
-  root.add(body);
-
-  let wheel: THREE.Object3D | null = null;
-  if (part.category === "drive") {
-    if (part.kind === "track") {
-      wheel = new THREE.Mesh(
-        new RoundedBoxGeometry(Math.max(w * CELL * 0.82, 0.12), part.radius * 1.35, Math.max(d * CELL * 0.82, 0.16), 2, 0.018),
-        metalMaterial(0x17191a, 0.8)
-      );
-    } else {
-      wheel = new THREE.Mesh(
-        new THREE.CylinderGeometry(part.radius, part.radius, Math.max(Math.min(w, d) * CELL * 0.68, 0.08), 16),
-        metalMaterial(0x17191a, 0.82)
-      );
-      wheel.rotation.z = Math.PI / 2;
-    }
-    wheel.position.y = Math.max(part.radius * 0.56, part.height * 0.5);
-    root.add(wheel);
-  } else if (part.category === "weapon" && part.motion === "spin") {
-    const disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(Math.max(Math.min(w * CELL, d * CELL) * 0.45, 0.11), Math.max(Math.min(w * CELL, d * CELL) * 0.45, 0.11), 0.034, 18),
-      metalMaterial(0x9a9d9c, 0.28)
-    );
-    disc.name = "weapon";
-    disc.position.y = part.height + 0.035;
-    root.add(disc);
+function addChassisDetails(root: THREE.Group, chassis: ChassisDef, paint: number, seat: SeatIndex): void {
+  const w = chassis.deck[0] * CELL;
+  const d = chassis.deck[1] * CELL;
+  const plate = new THREE.Mesh(
+    new RoundedBoxGeometry(w, chassis.height, d, 2, 0.009),
+    industrialMaterial(chassis.material, paint)
+  );
+  plate.position.y = chassis.height * 0.5;
+  plate.castShadow = plate.receiveShadow = true;
+  root.add(plate);
+  const railMaterial = industrialMaterial("steel", BOT_COLORS[seat]);
+  const steel = industrialMaterial("steel", 0x9ba09f);
+  for (const x of [-w * 0.43, w * 0.43]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.045, d * 0.88), railMaterial);
+    rail.position.set(x, chassis.height + 0.017, 0);
+    rail.castShadow = true;
+    root.add(rail);
   }
-  return { root, wheel };
+  for (let index = 0; index < 5; index += 1) {
+    for (const x of [-w * 0.42, w * 0.42]) {
+      const rivet = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.012, 6), steel);
+      rivet.position.set(x, chassis.height + 0.01, THREE.MathUtils.lerp(-d * 0.38, d * 0.38, index / 4));
+      root.add(rivet);
+    }
+  }
+  const access = new THREE.Mesh(new RoundedBoxGeometry(w * 0.34, 0.012, d * 0.28, 1, 0.004), industrialMaterial("steel", 0x4b5051));
+  access.position.set(0, chassis.height + 0.007, d * 0.08);
+  root.add(access);
 }
-
 function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalog): BotVisual | null {
   const chassis = catalog.byId.get(spec.chassisId);
   if (!chassis || chassis.category !== "chassis") return null;
   const root = new THREE.Group();
-  const chassisGeo = new RoundedBoxGeometry(chassis.deck[0] * CELL, chassis.height, chassis.deck[1] * CELL, 3, 0.025);
-  const chassisMesh = new THREE.Mesh(chassisGeo, metalMaterial(spec.paint, 0.46));
-  chassisMesh.position.y = chassis.height * 0.5;
-  chassisMesh.castShadow = true;
-  chassisMesh.receiveShadow = true;
-  root.add(chassisMesh);
-
-  const bumperGeo = new THREE.BoxGeometry(chassis.deck[0] * CELL * 0.78, 0.035, 0.045);
-  const bumper = new THREE.Mesh(bumperGeo, metalMaterial(BOT_COLORS[seat], 0.35));
-  bumper.position.set(0, chassis.height * 0.55, chassis.deck[1] * CELL * 0.51);
-  root.add(bumper);
-
+  addChassisDetails(root, chassis, spec.paint, seat);
   const parts: PartVisual[] = [];
   const wheelRoots: THREE.Object3D[] = [];
   const wheelRadii: number[] = [];
   spec.parts.forEach((placed, index) => {
     const part = catalog.byId.get(placed.partId);
     if (!part || part.category === "chassis") return;
-    const created = createPart(part, placed.rot, spec.paint);
+    const created = createIndustrialPart(part, placed.rot, spec.paint);
     const [x, z] = localPartPosition(chassis, part, placed.cell, placed.rot);
     created.root.position.set(x, chassis.height, z);
     root.add(created.root);
     const drive = part.category === "drive" ? part : null;
-    parts.push({ index, root: created.root, drive, detached: false });
+    parts.push({ index, root: created.root, drive, weapon: created.weapon, detached: false });
     if (created.wheel && drive) {
       wheelRoots.push(created.wheel);
       wheelRadii.push(drive.radius);
@@ -218,89 +188,117 @@ function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalo
   });
   const nameSprite = makeLabel(name || `BOT ${seat + 1}`, BOT_COLORS[seat]);
   root.add(nameSprite);
-  return { seat, root, parts, wheelRoots, wheelRadii, nameSprite, hp: 0, detach: 0, lastX: 0, lastZ: 0, wheelPhase: 0 };
+  return {
+    seat, root, parts, wheelRoots, wheelRadii, nameSprite,
+    hp: 0, burn: 0, detach: 0, lastX: 0, lastZ: 0, wheelPhase: 0
+  };
 }
 
+function lerpWeapons(a: readonly WeaponSnap[], b: readonly WeaponSnap[], alpha: number): WeaponSnap[] {
+  return b.map((next) => {
+    const previous = a.find((item) => item.idx === next.idx) ?? next;
+    return {
+      ...next,
+      a: THREE.MathUtils.lerp(previous.a, next.a, alpha),
+      o: THREE.MathUtils.lerp(previous.o, next.o, alpha),
+      c: THREE.MathUtils.lerp(previous.c, next.c, alpha),
+      f: THREE.MathUtils.lerp(previous.f, next.f, alpha)
+    };
+  });
+}
 function lerpBot(a: BotSnap, b: BotSnap, alpha: number): BotSnap {
-  const qa = new THREE.Quaternion(a.qx, a.qy, a.qz, a.qw);
-  const qb = new THREE.Quaternion(b.qx, b.qy, b.qz, b.qw);
-  qa.slerp(qb, alpha);
   return {
-    seat: b.seat,
+    ...b,
     alive: alpha < 0.5 ? a.alive : b.alive,
     hp: THREE.MathUtils.lerp(a.hp, b.hp, alpha),
     x: THREE.MathUtils.lerp(a.x, b.x, alpha),
     y: THREE.MathUtils.lerp(a.y, b.y, alpha),
     z: THREE.MathUtils.lerp(a.z, b.z, alpha),
-    qx: qa.x, qy: qa.y, qz: qa.z, qw: qa.w,
-    wa: THREE.MathUtils.lerp(a.wa, b.wa, alpha),
-    wo: THREE.MathUtils.lerp(a.wo, b.wo, alpha),
+    // The authoritative snapshot quaternion is applied directly. No Euler/yaw reconstruction.
+    qx: b.qx, qy: b.qy, qz: b.qz, qw: b.qw,
+    w: lerpWeapons(a.w, b.w, alpha),
     wp: a.wp !== 0 || b.wp !== 0 ? THREE.MathUtils.lerp(a.wp, b.wp, alpha) : 0,
+    burn: THREE.MathUtils.lerp(a.burn, b.burn, alpha),
     detach: alpha < 0.5 ? a.detach : b.detach
   };
 }
 
 export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, quality: ArenaQuality = {}): ArenaScene {
   const settings = autoQuality(quality);
-  const rendererParameters: THREE.WebGLRendererParameters = {
-    canvas,
-    antialias: settings.antialias,
-    alpha: false,
-    preserveDrawingBuffer: true,
-    powerPreference: "high-performance"
+  const parameters: THREE.WebGLRendererParameters = {
+    canvas, antialias: settings.antialias, alpha: false,
+    preserveDrawingBuffer: true, powerPreference: "high-performance"
   };
-  const renderer = quality.rendererFactory?.(canvas, rendererParameters) ?? new THREE.WebGLRenderer(rendererParameters);
+  const renderer = quality.rendererFactory?.(canvas, parameters) ?? new THREE.WebGLRenderer(parameters);
   renderer.setPixelRatio(settings.pixelRatio);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.03;
   renderer.shadowMap.enabled = settings.shadows;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.setClearColor(0x07090a);
+  renderer.setClearColor(0x030506);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x07090a);
-  scene.fog = new THREE.FogExp2(0x07090a, 0.032);
-  const camera = new THREE.PerspectiveCamera(43, 1, 0.06, 120);
+  scene.background = new THREE.Color(0x030506);
+  scene.fog = new THREE.FogExp2(0x050708, 0.034);
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.06, 120);
   const arenaRoot = new THREE.Group();
   const botRoot = new THREE.Group();
   const vfxRoot = new THREE.Group();
   scene.add(arenaRoot, botRoot, vfxRoot);
-  scene.add(new THREE.HemisphereLight(0x73818a, 0x160e09, 0.55));
+  scene.add(new THREE.HemisphereLight(0x536570, 0x120b07, 0.26));
+  const rim = new THREE.DirectionalLight(0x4b86a3, 1.4);
+  rim.position.set(-8, 6, 5);
+  scene.add(rim);
+  const key = new THREE.DirectionalLight(0xffc982, 1.25);
+  key.position.set(5, 8, -4);
+  scene.add(key);
 
-  const spotPositions: [number, number, number][] = [[-6, 11, -5], [6, 11, -5], [-6, 11, 5], [6, 11, 5]];
+  const spotPositions: [number, number, number][] = [[-6, 11, -5], [6, 11, -5], [-6, 11, 5], [6, 11, 5], [0, 12, 0]];
   for (const [x, y, z] of spotPositions) {
-    const spot = new THREE.SpotLight(0xffe6bf, 220, 30, Math.PI / 5, 0.55, 1.4);
+    const spot = new THREE.SpotLight(z === 0 ? 0xc8e8ff : 0xffe0b0, 235, 30, Math.PI / 6, 0.48, 1.45);
     spot.position.set(x, y, z);
     spot.target.position.set(0, 0, 0);
     spot.castShadow = settings.shadows;
     if (settings.shadows) spot.shadow.mapSize.set(1024, 1024);
     scene.add(spot, spot.target);
+    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 0.42, 12), industrialMaterial("steel", 0x222729));
+    housing.position.set(x, y, z);
+    housing.rotation.x = Math.PI;
+    scene.add(housing);
   }
 
-  const particles: Particle[] = [];
-  const particleGeo = new THREE.BoxGeometry(0.035, 0.035, 0.12);
-  const particleMat = new THREE.MeshBasicMaterial({ color: 0xffb12b, toneMapped: false });
-  for (let index = 0; index < settings.particles; index += 1) {
-    const mesh = new THREE.Mesh(particleGeo, particleMat);
-    mesh.visible = false;
-    vfxRoot.add(mesh);
-    particles.push({ mesh, velocity: new THREE.Vector3(), life: 0 });
+  function pool(count: number, geometry: THREE.BufferGeometry, material: THREE.Material): Particle[] {
+    return Array.from({ length: count }, () => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.visible = false;
+      vfxRoot.add(mesh);
+      return { mesh, velocity: new THREE.Vector3(), life: 0, maxLife: 1 };
+    });
   }
-  const debris: Debris[] = [];
-  const debrisGeo = new RoundedBoxGeometry(0.14, 0.06, 0.1, 1, 0.012);
-  const debrisMat = metalMaterial(0x6d7172, 0.62);
-  for (let index = 0; index < MAX_DEBRIS; index += 1) {
-    const mesh = new THREE.Mesh(debrisGeo, debrisMat);
+  const sparkGeometry = new THREE.BoxGeometry(0.025, 0.025, 0.18);
+  const sparkMaterial = new THREE.MeshBasicMaterial({ color: 0xffb02f, toneMapped: false });
+  const flameGeometry = new THREE.ConeGeometry(0.08, 0.32, 7);
+  flameGeometry.rotateX(-Math.PI / 2);
+  const flameMaterial = new THREE.MeshBasicMaterial({ color: 0xff6721, transparent: true, opacity: 0.72, toneMapped: false, blending: THREE.AdditiveBlending, depthWrite: false });
+  const smokeGeometry = new THREE.SphereGeometry(0.11, 7, 5);
+  const smokeMaterial = new THREE.MeshBasicMaterial({ color: 0x17191a, transparent: true, opacity: 0.36, depthWrite: false });
+  const sparks = pool(settings.particles, sparkGeometry, sparkMaterial);
+  const flames = pool(Math.min(MAX_FLAMES, Math.max(18, settings.particles)), flameGeometry, flameMaterial);
+  const smoke = pool(Math.min(MAX_SMOKE, Math.max(12, Math.round(settings.particles / 2))), smokeGeometry, smokeMaterial);
+  const debrisGeometry = new RoundedBoxGeometry(0.14, 0.045, 0.1, 1, 0.006);
+  const debrisMaterial = industrialMaterial("steel", 0x6d7272);
+  const debris: Debris[] = Array.from({ length: MAX_DEBRIS }, () => {
+    const mesh = new THREE.Mesh(debrisGeometry, debrisMaterial);
     mesh.visible = false;
     mesh.castShadow = settings.shadows;
     vfxRoot.add(mesh);
-    debris.push({ mesh, velocity: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0 });
-  }
+    return { mesh, velocity: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0 };
+  });
 
   let arena: ArenaDef | null = null;
   let mySeat: SeatIndex = 0;
-  let bots = new Map<number, BotVisual>();
+  const bots = new Map<number, BotVisual>();
   let snapshots: TimedSnapshot[] = [];
   let clock = 0;
   let frame = 0;
@@ -311,91 +309,121 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
   let cameraShake = 0;
   let koFocus: number | null = null;
   let lastSnapshotTick = -1;
+  let vfxCursor = 0;
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   function createArena(next: ArenaDef): void {
     disposeObject(arenaRoot);
-    const floorMaterial = metalMaterial(0x34383a, 0.78);
+    const floorMaterial = industrialMaterial("steel", 0x303638);
     const plateSize = next.size / 8;
     for (let x = 0; x < 8; x += 1) {
       for (let z = 0; z < 8; z += 1) {
-        const plate = new THREE.Mesh(new THREE.BoxGeometry(plateSize - 0.035, 0.08, plateSize - 0.035), floorMaterial.clone());
-        plate.position.set((x - 3.5) * plateSize, -0.06, (z - 3.5) * plateSize);
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(plateSize - 0.045, 0.075, plateSize - 0.045), floorMaterial);
+        plate.position.set((x - 3.5) * plateSize, -0.055, (z - 3.5) * plateSize);
         plate.receiveShadow = true;
         arenaRoot.add(plate);
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+          const floorBolt = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.012, 6), industrialMaterial("steel", 0x8a8f8e, { wear: false }));
+          floorBolt.position.set(plate.position.x + sx * (plateSize * 0.43), -0.008, plate.position.z + sz * (plateSize * 0.43));
+          arenaRoot.add(floorBolt);
+        }
       }
     }
-    const pitMat = new THREE.MeshStandardMaterial({ color: 0x020303, roughness: 1 });
     if (next.pit) {
-      const pit = new THREE.Mesh(new THREE.CylinderGeometry(next.pit.r, next.pit.r, 0.18, 48), pitMat);
-      pit.position.set(next.pit.x, -0.1, next.pit.z);
+      const pit = new THREE.Mesh(new THREE.CylinderGeometry(next.pit.r, next.pit.r, 0.2, 48), new THREE.MeshStandardMaterial({ color: 0x010202, roughness: 1 }));
+      pit.position.set(next.pit.x, -0.11, next.pit.z);
       arenaRoot.add(pit);
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(next.pit.r, next.pit.r + 0.22, 48),
-        new THREE.MeshStandardMaterial({ color: 0xe0a824, roughness: 0.65, side: THREE.DoubleSide })
-      );
+      const ring = new THREE.Mesh(new THREE.RingGeometry(next.pit.r, next.pit.r + 0.22, 48), industrialMaterial("steel", 0xd19418));
       ring.rotation.x = -Math.PI / 2;
-      ring.position.set(next.pit.x, 0.006, next.pit.z);
+      ring.position.set(next.pit.x, 0.004, next.pit.z);
       arenaRoot.add(ring);
     }
     for (const saw of next.saws) {
       const sawRoot = new THREE.Group();
       sawRoot.name = "arena-saw";
-      const disc = new THREE.Mesh(
-        new THREE.CylinderGeometry(saw.r, saw.r, 0.1, 24),
-        metalMaterial(0x8b8e8e, 0.28)
-      );
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(saw.r, saw.r, 0.09, 32), industrialMaterial("hardox", 0x9ca09f));
       disc.rotation.x = Math.PI / 2;
       sawRoot.add(disc);
-      for (let tooth = 0; tooth < 16; tooth += 1) {
-        const angle = tooth / 16 * Math.PI * 2;
-        const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.34, 3), metalMaterial(0xb3b4b1, 0.28));
+      for (let tooth = 0; tooth < 20; tooth += 1) {
+        const angle = tooth / 20 * Math.PI * 2;
+        const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.31, 3), industrialMaterial("hardox", 0xb9bcba));
         mesh.position.set(Math.cos(angle) * (saw.r + 0.07), 0, Math.sin(angle) * (saw.r + 0.07));
         mesh.rotation.set(0, -angle, Math.PI / 2);
         sawRoot.add(mesh);
       }
-      sawRoot.position.set(saw.x, 0.03, saw.z);
+      sawRoot.position.set(saw.x, 0.025, saw.z);
       arenaRoot.add(sawRoot);
+    }
+    for (const jet of next.flameJets) {
+      const jetRoot = new THREE.Group();
+      jetRoot.name = "arena-jet";
+      const grille = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.27, 0.035, 16), industrialMaterial("steel", 0x1a1e20));
+      for (let slit = -2; slit <= 2; slit += 1) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.04, 0.42), industrialMaterial("steel", 0x777c7c));
+        bar.position.x = slit * 0.07;
+        jetRoot.add(bar);
+      }
+      jetRoot.add(grille);
+      jetRoot.position.set(jet.x, 0.01, jet.z);
+      arenaRoot.add(jetRoot);
     }
 
     const half = next.size / 2;
-    const wallMat = metalMaterial(0x454b4d, 0.7);
-    const railGeoX = new THREE.BoxGeometry(next.size + 0.25, 0.16, 0.16);
-    const railGeoZ = new THREE.BoxGeometry(0.16, 0.16, next.size + 0.25);
-    for (const y of [0.12, next.wallHeight]) {
+    const structural = industrialMaterial("steel", 0x3d4548);
+    const poly = new THREE.MeshPhysicalMaterial({ color: 0x9bb0b6, roughness: 0.2, metalness: 0, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide });
+    const railX = new THREE.BoxGeometry(next.size + 0.3, 0.15, 0.15);
+    const railZ = new THREE.BoxGeometry(0.15, 0.15, next.size + 0.3);
+    for (const y of [0.1, next.wallHeight]) {
       for (const z of [-half, half]) {
-        const rail = new THREE.Mesh(railGeoX, wallMat);
+        const rail = new THREE.Mesh(railX, structural);
         rail.position.set(0, y, z);
         arenaRoot.add(rail);
       }
       for (const x of [-half, half]) {
-        const rail = new THREE.Mesh(railGeoZ, wallMat);
+        const rail = new THREE.Mesh(railZ, structural);
         rail.position.set(x, y, 0);
         arenaRoot.add(rail);
       }
     }
-    for (const side of [-1, 1]) {
-      const gridA = new THREE.GridHelper(next.size, 32, 0x6b7172, 0x3f4648);
-      gridA.rotation.z = Math.PI / 2;
-      gridA.position.set(side * half, next.wallHeight / 2, 0);
-      gridA.scale.y = next.wallHeight / next.size;
-      arenaRoot.add(gridA);
-      const gridB = new THREE.GridHelper(next.size, 32, 0x6b7172, 0x3f4648);
-      gridB.rotation.x = Math.PI / 2;
-      gridB.position.set(0, next.wallHeight / 2, side * half);
-      gridB.scale.z = next.wallHeight / next.size;
-      arenaRoot.add(gridB);
+    for (let position = -half; position <= half; position += 2) {
+      for (const side of [-1, 1]) {
+        const postX = new THREE.Mesh(new THREE.BoxGeometry(0.12, next.wallHeight, 0.12), structural);
+        postX.position.set(position, next.wallHeight / 2, side * half);
+        arenaRoot.add(postX);
+        const postZ = new THREE.Mesh(new THREE.BoxGeometry(0.12, next.wallHeight, 0.12), structural);
+        postZ.position.set(side * half, next.wallHeight / 2, position);
+        arenaRoot.add(postZ);
+      }
     }
-    const stripeMaterialA = new THREE.MeshStandardMaterial({ color: 0xe2ad28, roughness: 0.7 });
-    const stripeMaterialB = new THREE.MeshStandardMaterial({ color: 0x17191a, roughness: 0.8 });
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        for (let stripe = 0; stripe < 7; stripe += 1) {
-          const marker = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.025, 1.35), stripe % 2 ? stripeMaterialA : stripeMaterialB);
-          marker.position.set(sx * (half - 0.72) + stripe * sx * 0.08, 0.012, sz * (half - 0.67));
-          marker.rotation.y = sx * sz * 0.55;
-          arenaRoot.add(marker);
-        }
+    for (const side of [-1, 1]) {
+      const wallX = new THREE.Mesh(new THREE.PlaneGeometry(next.size, next.wallHeight), poly);
+      wallX.position.set(0, next.wallHeight / 2, side * half);
+      arenaRoot.add(wallX);
+      const wallZ = new THREE.Mesh(new THREE.PlaneGeometry(next.size, next.wallHeight), poly);
+      wallZ.rotation.y = Math.PI / 2;
+      wallZ.position.set(side * half, next.wallHeight / 2, 0);
+      arenaRoot.add(wallZ);
+      const meshX = new THREE.GridHelper(next.size, 40, 0x596164, 0x363d40);
+      meshX.rotation.z = Math.PI / 2;
+      meshX.position.set(side * half, next.wallHeight * 0.73, 0);
+      meshX.scale.y = next.wallHeight * 0.5 / next.size;
+      arenaRoot.add(meshX);
+      const meshZ = new THREE.GridHelper(next.size, 40, 0x596164, 0x363d40);
+      meshZ.rotation.x = Math.PI / 2;
+      meshZ.position.set(0, next.wallHeight * 0.73, side * half);
+      meshZ.scale.z = next.wallHeight * 0.5 / next.size;
+      arenaRoot.add(meshZ);
+    }
+    for (const y of [7.8, 10.4]) {
+      for (const z of [-6, 0, 6]) {
+        const truss = new THREE.Mesh(new THREE.BoxGeometry(next.size + 5, 0.14, 0.14), structural);
+        truss.position.set(0, y, z);
+        arenaRoot.add(truss);
+      }
+      for (const x of [-6, 0, 6]) {
+        const truss = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, next.size + 5), structural);
+        truss.position.set(x, y, 0);
+        arenaRoot.add(truss);
       }
     }
   }
@@ -411,33 +439,50 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
   resizeObserver.observe(canvas);
 
   function spark(x: number, y: number, z: number, power: number): void {
-    let remaining = Math.min(Math.max(Math.round(power / 12), 5), 20);
-    for (const particle of particles) {
+    let remaining = Math.min(Math.max(Math.round(power / 12), 5), 22);
+    for (const particle of sparks) {
       if (remaining <= 0) break;
       if (particle.life > 0) continue;
       const angle = (remaining * 2.399 + clock * 11) % (Math.PI * 2);
-      const speed = 1.8 + (remaining % 5) * 0.42;
+      const speed = 1.8 + remaining % 5 * 0.42;
       particle.mesh.position.set(x, y, z);
       particle.mesh.rotation.set(angle, angle * 0.5, 0);
-      particle.velocity.set(Math.cos(angle) * speed, 1.2 + (remaining % 4) * 0.5, Math.sin(angle) * speed);
-      particle.life = 0.24 + (remaining % 3) * 0.09;
+      particle.velocity.set(Math.cos(angle) * speed, 1.2 + remaining % 4 * 0.5, Math.sin(angle) * speed);
+      particle.life = particle.maxLife = 0.24 + remaining % 3 * 0.09;
       particle.mesh.visible = true;
       remaining -= 1;
     }
   }
-
+  function flame(x: number, y: number, z: number, dx: number, dz: number, scale = 1): void {
+    const item = flames.find((particle) => particle.life <= 0);
+    if (!item) return;
+    item.mesh.position.set(x, y, z);
+    item.mesh.lookAt(x + dx, y + 0.05, z + dz);
+    item.mesh.scale.setScalar(0.55 + (vfxCursor++ % 5) * 0.11 * scale);
+    item.velocity.set(dx * (2.1 + vfxCursor % 4 * 0.2), 0.25 + vfxCursor % 3 * 0.16, dz * (2.1 + vfxCursor % 4 * 0.2));
+    item.life = item.maxLife = 0.28 + vfxCursor % 4 * 0.05;
+    item.mesh.visible = true;
+  }
+  function puff(x: number, y: number, z: number): void {
+    const item = smoke.find((particle) => particle.life <= 0);
+    if (!item) return;
+    item.mesh.position.set(x, y, z);
+    item.mesh.scale.setScalar(0.45 + vfxCursor++ % 4 * 0.12);
+    item.velocity.set((vfxCursor % 5 - 2) * 0.08, 0.35 + vfxCursor % 4 * 0.09, ((vfxCursor * 3) % 5 - 2) * 0.08);
+    item.life = item.maxLife = 1.25 + vfxCursor % 5 * 0.16;
+    item.mesh.visible = true;
+  }
   function throwDebris(x: number, y: number, z: number, color = 0x777a7a): void {
     const item = debris.find((candidate) => candidate.life <= 0);
     if (!item) return;
     (item.mesh.material as THREE.MeshStandardMaterial).color.setHex(color);
     item.mesh.position.set(x, y, z);
     const seed = ((lastSnapshotTick + 1) * 31 + debris.indexOf(item) * 17) % 97;
-    item.velocity.set(((seed % 9) - 4) * 0.32, 1.4 + (seed % 6) * 0.18, (((seed * 3) % 9) - 4) * 0.32);
+    item.velocity.set((seed % 9 - 4) * 0.32, 1.4 + seed % 6 * 0.18, ((seed * 3) % 9 - 4) * 0.32);
     item.spin.set(2 + seed % 5, 3 + seed % 7, 1 + seed % 3);
     item.life = 3.5;
     item.mesh.visible = true;
   }
-
   function processEvents(snapshot: Snapshot): void {
     for (const event of snapshot.events) {
       if (event.t === "hit") {
@@ -448,20 +493,27 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
         throwDebris(event.x, event.y, event.z, BOT_COLORS[event.seat]);
       } else if (event.t === "hazard") {
         spark(event.x, event.y, event.z, 75);
+      } else if (event.t === "flame") {
+        flame(event.x, event.y, event.z, event.dirX, event.dirZ, 1.3);
+      } else if (event.t === "fire") {
+        const bot = bots.get(event.seat);
+        if (bot) {
+          const point = new THREE.Vector3();
+          bot.root.getWorldPosition(point);
+          spark(point.x, point.y + 0.25, point.z, 45);
+        }
       } else if (event.t === "ko") {
         koFocus = event.seat;
         renderer.toneMappingExposure = 0.74;
       }
     }
   }
-
   function sampledBots(): BotSnap[] {
     if (snapshots.length === 0) return [];
     const target = clock - INTERP_DELAY;
     let older = snapshots[0]!;
     let newer = snapshots[snapshots.length - 1]!;
-    for (let index = 0; index < snapshots.length; index += 1) {
-      const candidate = snapshots[index]!;
+    for (const candidate of snapshots) {
       if (candidate.receivedAt <= target) older = candidate;
       if (candidate.receivedAt >= target) {
         newer = candidate;
@@ -475,7 +527,6 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       return previous ? lerpBot(previous, next, alpha) : next;
     });
   }
-
   function applyBots(nextBots: readonly BotSnap[], dt: number): void {
     for (const snap of nextBots) {
       const visual = bots.get(snap.seat);
@@ -483,26 +534,29 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       const dx = snap.x - visual.lastX;
       const dz = snap.z - visual.lastZ;
       visual.root.position.set(snap.x, snap.y, snap.z);
-      visual.root.quaternion.set(snap.qx, snap.qy, snap.qz, snap.qw).normalize();
+      visual.root.quaternion.set(snap.qx, snap.qy, snap.qz, snap.qw);
       visual.root.visible = true;
       visual.hp = snap.hp;
+      visual.burn = snap.burn;
       visual.detach = snap.detach;
       visual.nameSprite.material.opacity = snap.alive ? 1 : 0.38;
       const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(visual.root.quaternion);
       const forwardDistance = dx * forward.x + dz * forward.z;
-      if (snap.wp !== 0) {
-        visual.wheelPhase = snap.wp;
-      } else if (dt > 0) {
-        const radius = visual.wheelRadii[0] ?? 0.12;
-        visual.wheelPhase += forwardDistance / Math.max(radius, 0.03);
-      }
-      visual.wheelRoots.forEach((wheel) => {
-        wheel.rotation.x = visual.wheelPhase;
-      });
-      visual.root.traverse((object) => {
-        if (object.name === "weapon") object.rotation.y = snap.wa;
-      });
+      if (snap.wp !== 0) visual.wheelPhase = snap.wp;
+      else if (dt > 0) visual.wheelPhase += forwardDistance / Math.max(visual.wheelRadii[0] ?? 0.12, 0.03);
+      visual.wheelRoots.forEach((wheel) => { wheel.rotation.x = visual.wheelPhase; });
       for (const part of visual.parts) {
+        const state = part.weapon ? snap.w.find((weapon) => weapon.idx === part.index) : null;
+        if (part.weapon && state) {
+          applyWeaponRig(part.weapon, state.a, state.o, state.on);
+          if (part.weapon.mode === "flame" && state.on && part.weapon.flameOrigin) {
+            const origin = new THREE.Vector3();
+            const direction = new THREE.Vector3(0, 0, -1);
+            part.weapon.flameOrigin.getWorldPosition(origin);
+            direction.transformDirection(part.weapon.flameOrigin.matrixWorld);
+            flame(origin.x, origin.y, origin.z, direction.x, direction.z, 1.2);
+          }
+        }
         const detached = (snap.detach & 2 ** part.index) !== 0;
         if (detached && !part.detached) {
           const point = new THREE.Vector3();
@@ -512,20 +566,36 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
         part.detached = detached;
         part.root.visible = !detached;
       }
+      if (snap.burn > 0) {
+        const point = new THREE.Vector3();
+        visual.root.getWorldPosition(point);
+        flame(point.x + Math.sin(clock * 9 + snap.seat) * 0.18, point.y + 0.18, point.z + Math.cos(clock * 7 + snap.seat) * 0.18, 0.08, -0.12, 0.7);
+        if ((lastSnapshotTick + snap.seat) % 2 === 0) puff(point.x, point.y + 0.35, point.z);
+      } else if (snap.alive && snap.hp < 110 && (lastSnapshotTick + snap.seat) % 4 === 0) {
+        const point = new THREE.Vector3();
+        visual.root.getWorldPosition(point);
+        puff(point.x, point.y + 0.28, point.z);
+      }
       visual.lastX = snap.x;
       visual.lastZ = snap.z;
     }
   }
-
-  function updateVfx(dt: number): void {
-    for (const particle of particles) {
-      if (particle.life <= 0) continue;
-      particle.life -= dt;
-      particle.velocity.y -= 8.5 * dt;
-      particle.mesh.position.addScaledVector(particle.velocity, dt);
-      particle.mesh.scale.setScalar(Math.max(particle.life * 2.5, 0.1));
-      if (particle.life <= 0) particle.mesh.visible = false;
+  function updateParticles(items: Particle[], dt: number, gravity: number): void {
+    for (const item of items) {
+      if (item.life <= 0) continue;
+      item.life -= dt;
+      item.velocity.y -= gravity * dt;
+      item.mesh.position.addScaledVector(item.velocity, dt);
+      const fraction = Math.max(item.life / item.maxLife, 0);
+      if (item.mesh.material instanceof THREE.MeshBasicMaterial) item.mesh.material.opacity = fraction * (items === smoke ? 0.36 : items === flames ? 0.78 : 1);
+      if (items === smoke) item.mesh.scale.multiplyScalar(1 + dt * 0.75);
+      if (item.life <= 0) item.mesh.visible = false;
     }
+  }
+  function updateVfx(dt: number): void {
+    updateParticles(sparks, dt, 8.5);
+    updateParticles(flames, dt, -0.15);
+    updateParticles(smoke, dt, -0.06);
     for (const item of debris) {
       if (item.life <= 0) continue;
       item.life -= dt;
@@ -541,13 +611,10 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       if (item.life <= 0) item.mesh.visible = false;
     }
   }
-
   function updateCamera(nextBots: readonly BotSnap[], dt: number): void {
     if (nextBots.length === 0) return;
     const alive = nextBots.filter((bot) => bot.alive);
-    const focusSeat = koFocus !== null
-      ? (alive.length === 1 ? alive[0]!.seat : koFocus)
-      : mySeat;
+    const focusSeat = koFocus !== null ? alive.length === 1 ? alive[0]!.seat : koFocus : mySeat;
     const focus = nextBots.find((bot) => bot.seat === focusSeat) ?? alive[0] ?? nextBots[0]!;
     const center = new THREE.Vector3();
     const framing = alive.length > 0 ? alive : nextBots;
@@ -562,18 +629,14 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     const target = new THREE.Vector3(focus.x, Math.max(focus.y, 0) + 0.45, focus.z).lerp(center.setY(0.35), 0.32);
     const desired = target.clone().addScaledVector(back, 5.8 + spread * 0.65);
     desired.y += 3.1 + spread * 0.34;
-    const ease = 1 - Math.exp(-Math.max(dt, 0) * 4.6);
-    camera.position.lerp(desired, ease);
+    camera.position.lerp(desired, 1 - Math.exp(-Math.max(dt, 0) * 4.6));
     if (!reducedMotion && cameraShake > 0.001) {
       camera.position.x += Math.sin(clock * 77) * cameraShake;
       camera.position.y += Math.cos(clock * 91) * cameraShake * 0.45;
       cameraShake *= Math.exp(-dt * 12);
-    } else {
-      cameraShake = 0;
-    }
+    } else cameraShake = 0;
     camera.lookAt(target);
   }
-
   function renderTick(dt: number): void {
     if (disposed || paused) return;
     const safeDt = THREE.MathUtils.clamp(Number.isFinite(dt) ? dt : 0, 0, 0.1);
@@ -581,13 +644,15 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     const nextBots = sampledBots();
     applyBots(nextBots, safeDt);
     updateVfx(safeDt);
-    for (const saw of arenaRoot.children) {
-      if (saw.name === "arena-saw") saw.rotation.y += safeDt * 7;
-    }
+    arenaRoot.traverse((object) => {
+      if (object.name === "arena-saw") object.rotation.y += safeDt * 7;
+      if (object.name === "arena-jet" && Math.sin(clock * 2.4 + object.position.x) > 0.93) {
+        flame(object.position.x, 0.08, object.position.z, 0.05, 0.05, 1.5);
+      }
+    });
     updateCamera(nextBots, safeDt);
     renderer.render(scene, camera);
   }
-
   function loop(now: number): void {
     const dt = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
@@ -597,7 +662,6 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
 
   resize();
   frame = requestAnimationFrame(loop);
-
   return {
     setup(specs, names, nextArena, nextMySeat) {
       disposeObject(botRoot);
@@ -606,7 +670,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       clock = 0;
       lastSnapshotTick = -1;
       koFocus = null;
-      renderer.toneMappingExposure = 1.05;
+      renderer.toneMappingExposure = 1.03;
       arena = nextArena;
       mySeat = nextMySeat;
       createArena(nextArena);
@@ -628,25 +692,17 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       if (snapshots.length > MAX_SNAPSHOTS) snapshots.splice(0, snapshots.length - MAX_SNAPSHOTS);
       processEvents(snapshot);
     },
-    debugTick(dt) {
-      renderTick(dt);
-    },
+    debugTick(dt) { renderTick(dt); },
     getDebugState() {
       let meshCount = 0;
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments || object instanceof THREE.Sprite) meshCount += 1;
       });
       return {
-        ready,
-        botCount: bots.size,
-        meshCount,
+        ready, botCount: bots.size, meshCount,
         bots: [...bots.values()].map((bot) => ({
-          seat: bot.seat,
-          x: bot.root.position.x,
-          y: bot.root.position.y,
-          z: bot.root.position.z,
-          hp: bot.hp,
-          detached: bot.detach
+          seat: bot.seat, x: bot.root.position.x, y: bot.root.position.y, z: bot.root.position.z,
+          hp: bot.hp, detached: bot.detach
         })),
         camPos: [camera.position.x, camera.position.y, camera.position.z],
         lastSnapshotTick
@@ -668,12 +724,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       resizeObserver.disconnect();
       disposeObject(arenaRoot);
       disposeObject(botRoot);
-      particles.forEach((particle) => vfxRoot.remove(particle.mesh));
-      debris.forEach((item) => vfxRoot.remove(item.mesh));
-      particleGeo.dispose();
-      particleMat.dispose();
-      debrisGeo.dispose();
-      debrisMat.dispose();
+      disposeObject(vfxRoot);
       renderer.dispose();
       scene.clear();
       snapshots = [];

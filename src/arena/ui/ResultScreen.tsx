@@ -18,7 +18,8 @@ const REASON = {
 const KO_REASON = {
   damage: "車体破壊",
   immobile: "走行不能",
-  pit: "ピット落下"
+  pit: "ピット落下",
+  fire: "焼損"
 } as const;
 
 export function ResultScreen({ result, names, onRematch, onGarage }: ResultScreenProps) {

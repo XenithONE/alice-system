@@ -6,7 +6,15 @@ import { ARENAS } from "./parts/arenas";
 import { createGuestSession, createHostSession, type GuestSession, type HostSession, type SessionDeps } from "./net/session";
 import { createPeerWire } from "./net/peer";
 import type { HostMessage, SeatInfo, Snapshot, Wire, WireConn } from "./net/protocol";
-import type { ArenaDef, BotSpec, MatchInput, SeatIndex } from "./sim/types";
+import {
+  DEFAULT_ROOM_SETTINGS,
+  type ArenaDef,
+  type BotSpec,
+  type MatchInput,
+  type RoomSettings,
+  type SeatIndex,
+  type WeaponDef
+} from "./sim/types";
 import { createArenaScene, type ArenaScene } from "./render/arenaScene";
 import { TitleScreen } from "./ui/TitleScreen";
 import { LobbyScreen } from "./ui/LobbyScreen";
@@ -22,6 +30,7 @@ interface MatchConfig {
   readonly specs: readonly (BotSpec | null)[];
   readonly names: readonly string[];
   readonly arena: ArenaDef;
+  readonly settings: RoomSettings;
 }
 
 declare global {
@@ -76,6 +85,7 @@ export function App() {
   const [spec, setSpec] = useState<BotSpec>(() => cloneSpec(catalog.presets[0]!));
   const [seats, setSeats] = useState<readonly SeatInfo[]>([]);
   const [ready, setReady] = useState(false);
+  const [settings, setSettings] = useState<RoomSettings>(DEFAULT_ROOM_SETTINGS);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState("");
   const [matchConfig, setMatchConfig] = useState<MatchConfig | null>(null);
@@ -88,7 +98,7 @@ export function App() {
   const latestSnapshotRef = useRef<Snapshot | null>(null);
   const currentScreenRef = useRef<Screen>(screen);
   const configRef = useRef<MatchConfig | null>(null);
-  const arena = ARENAS[1] ?? ARENAS[0]!;
+  const arena = ARENAS.find((candidate) => candidate.id === settings.arenaId) ?? ARENAS[0]!;
 
   useEffect(() => {
     currentScreenRef.current = screen;
@@ -102,22 +112,22 @@ export function App() {
   }, []);
 
   const sessionDeps = useMemo<SessionDeps>(() => ({
-    validateBuild: (candidate) => validateBuild(candidate, catalog),
-    createSim: async ({ seed, specs, names, arenaId }) => {
+    validateBuild: (candidate, roomSettings) => validateBuild(candidate, catalog, roomSettings),
+    createSim: async ({ seed, specs, names, settings: roomSettings }) => {
       const [{ initPhysics, createArenaSim }, { ARENAS: availableArenas }] = await Promise.all([
         import("./sim/world"),
         import("./parts/arenas")
       ]);
       await initPhysics();
-      const selectedArena = availableArenas.find((item) => item.id === arenaId) ?? availableArenas[0]!;
-      return createArenaSim({ seed, specs, names, catalog, arena: selectedArena });
+      const selectedArena = availableArenas.find((item) => item.id === roomSettings.arenaId) ?? availableArenas[0]!;
+      return createArenaSim({ seed, specs, names, catalog, arena: selectedArena, settings: roomSettings });
     },
     aiInput: (sim, seat) => {
       const state = sim.getState();
       const bot = state.bots.find((candidate) => candidate.seat === seat);
       const rivals = state.bots.filter((candidate) => candidate.alive && candidate.seat !== seat);
       if (!bot?.alive || state.phase !== "live" || rivals.length === 0) {
-        return { throttle: 0, steer: 0, weapon: false, selfRight: false };
+        return { throttle: 0, steer: 0, primary: false, secondary: false, selfRight: false };
       }
       const target = rivals.reduce((best, candidate) => {
         const candidateDistance = Math.hypot(candidate.pos[0] - bot.pos[0], candidate.pos[2] - bot.pos[2]);
@@ -132,7 +142,8 @@ export function App() {
       return {
         throttle: Math.abs(delta) > 1.2 ? 0.25 : 1,
         steer: Math.max(-1, Math.min(1, delta)),
-        weapon: true,
+        primary: true,
+        secondary: true,
         selfRight: bot.inverted
       };
     }
@@ -168,6 +179,7 @@ export function App() {
 
   const startFlow = (nextMode: Mode, nextRoom = ""): void => {
     resetSession();
+    setSettings(DEFAULT_ROOM_SETTINGS);
     setMode(nextMode);
     setRoom(nextMode === "solo" ? "LOCAL" : nextMode === "host" ? roomCode() : nextRoom);
     setMySeat(0);
@@ -185,14 +197,17 @@ export function App() {
         let guest: GuestSession | null = null;
         guest = await createGuestSession(createPeerWire(), room, {
           name,
-          onLobby: (nextSeats) => {
+          onLobby: (nextSeats, nextSettings) => {
             setSeats(nextSeats);
+            setSettings(nextSettings);
+            setReady(nextSeats[guest?.seat ?? 0]?.ready ?? false);
             if (guest?.seat !== null && guest?.seat !== undefined) setMySeat(guest.seat);
           },
           onStart: (message) => {
             const seat = guest?.seat ?? 0;
             setMySeat(seat);
-            setMatchConfig({ specs: message.specs, names: message.names, arena });
+            const selectedArena = ARENAS.find((item) => item.id === message.settings.arenaId) ?? ARENAS[0]!;
+            setMatchConfig({ specs: message.specs, names: message.names, arena: selectedArena, settings: message.settings });
           },
           onSnapshot: receiveSnapshot,
           onResult: receiveResult,
@@ -204,14 +219,18 @@ export function App() {
         const wire = mode === "solo" ? new DirectHostWire() : createPeerWire();
         const host = await createHostSession(wire, room, sessionDeps, {
           hostName: name,
-          arenaId: arena.id,
-          onLobby: (nextSeats) => {
+          initialSettings: settings,
+          onLobby: (nextSeats, nextSettings) => {
             setSeats(nextSeats);
+            setSettings(nextSettings);
+            setReady(nextSeats[0]?.ready ?? false);
             if (nextSeats.every((seat) => seat.ready && seat.spec !== null)) {
+              const selectedArena = ARENAS.find((item) => item.id === nextSettings.arenaId) ?? ARENAS[0]!;
               setMatchConfig({
                 specs: nextSeats.map((seat) => seat.spec),
                 names: nextSeats.map((seat) => seat.name),
-                arena
+                arena: selectedArena,
+                settings: nextSettings
               });
             }
           },
@@ -226,11 +245,19 @@ export function App() {
       setConnecting(false);
       setError(reason instanceof Error ? reason.message : "セッションを開始できませんでした。");
     }
-  }, [arena, mode, receiveResult, receiveSnapshot, resetSession, room, sessionDeps]);
+  }, [mode, receiveResult, receiveSnapshot, resetSession, room, sessionDeps, settings]);
 
   const toggleReady = (next: boolean): void => {
     setReady(next);
     sessionRef.current?.ready(next);
+  };
+
+  const updateRoomSettings = (next: RoomSettings): void => {
+    if (mode !== "host" && mode !== "solo") return;
+    setReady(false);
+    setSettings(next);
+    const session = sessionRef.current;
+    if (session && "updateSettings" in session) session.updateSettings(next);
   };
 
   useEffect(() => {
@@ -257,13 +284,14 @@ export function App() {
       const input: MatchInput = {
         throttle: (pressed.has("KeyW") ? 1 : 0) - (pressed.has("KeyS") ? 1 : 0),
         steer: (pressed.has("KeyD") ? 1 : 0) - (pressed.has("KeyA") ? 1 : 0),
-        weapon: pressed.has("Space"),
+        primary: pressed.has("Space"),
+        secondary: pressed.has("ShiftLeft") || pressed.has("ShiftRight"),
         selfRight: pressed.has("KeyR")
       };
       sessionRef.current?.input(input);
     };
     const down = (event: KeyboardEvent): void => {
-      if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "KeyR"].includes(event.code)) {
+      if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "KeyR"].includes(event.code)) {
         event.preventDefault();
         pressed.add(event.code);
         sendInput();
@@ -278,7 +306,7 @@ export function App() {
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
-      sessionRef.current?.input({ throttle: 0, steer: 0, weapon: false, selfRight: false });
+      sessionRef.current?.input({ throttle: 0, steer: 0, primary: false, secondary: false, selfRight: false });
     };
   }, [screen]);
 
@@ -299,6 +327,21 @@ export function App() {
     const chassis = catalog.byId.get(candidate.chassisId);
     return chassis?.category === "chassis" ? chassis.hp : 1;
   }) ?? [], [catalog, matchConfig]);
+  const hudWeapons = useMemo(() => {
+    const mine = matchConfig?.specs[mySeat];
+    if (!mine) return [];
+    return mine.parts.flatMap((placed) => {
+      const part = catalog.byId.get(placed.partId);
+      if (part?.category !== "weapon") return [];
+      const weapon = part as WeaponDef;
+      return [{
+        slot: weapon.slot,
+        name: weapon.nameJa,
+        action: weapon.action,
+        maxOmega: weapon.maxOmega ?? 1
+      }];
+    });
+  }, [catalog, matchConfig, mySeat]);
 
   const toTitle = (): void => {
     resetSession();
@@ -316,13 +359,15 @@ export function App() {
           <button className="sc-text-button" type="button" onClick={toTitle}>← タイトルへ</button>
           <div><span>BOT WORKSHOP</span><strong>{mode === "solo" ? "SOLO" : room}</strong></div>
         </header>
-        <BuilderPanel initialSpec={spec} onLaunch={(next) => void beginSession(next)} />
+        <BuilderPanel initialSpec={spec} settings={settings} onLaunch={(next) => void beginSession(next)} />
       </main>
     );
   }
   if (screen === "lobby") {
     return <LobbyScreen room={room} seats={seats} mySeat={mySeat} ready={ready} loading={connecting} error={error}
-      massOf={(seat) => seat.spec ? computeStats(seat.spec, catalog).mass : null}
+      isHost={mode !== "guest"} settings={settings} arenas={ARENAS}
+      massOf={(seat) => seat.spec ? computeStats(seat.spec, catalog, settings).mass : null}
+      onSettings={updateRoomSettings}
       onReady={toggleReady} onBack={toTitle} />;
   }
   if (screen === "result" && result && matchConfig) {
@@ -334,6 +379,7 @@ export function App() {
     <main className="sc-match">
       <canvas ref={canvasRef} className="sc-match__canvas" aria-label="SCRAP CROWN 試合アリーナ" />
       <MatchHud snapshot={snapshot} names={matchConfig?.names ?? []} mySeat={mySeat} maxHp={maxHp}
+        matchSec={matchConfig?.settings.matchSec ?? settings.matchSec} weapons={hudWeapons}
         paused={paused} onPause={() => setPaused((value) => !value)} />
     </main>
   );

@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { buildBrickGeo, U } from "../../portfolio/gl/brick/brickKit";
+import { createIndustrialPart, industrialMaterial } from "../render/industrialKit";
 import { occupiedCells, partLocalPosition, validateBuild } from "../sim/build";
 import {
   CELL,
@@ -8,6 +8,7 @@ import {
   type Catalog,
   type ChassisDef,
   type PartDef,
+  type RoomSettings,
   type Rot4
 } from "../sim/types";
 
@@ -44,73 +45,16 @@ function disposeTree(root: THREE.Object3D): void {
   root.clear();
 }
 
-function dimensions(part: PartDef, rot: Rot4): [number, number] {
-  return rot === 1 || rot === 3 ? [part.cells[1], part.cells[0]] : [part.cells[0], part.cells[1]];
-}
-
-function wornMaterial(color: number, transparent = false): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.78,
-    metalness: 0.52,
-    transparent,
-    opacity: transparent ? 0.48 : 1,
-    depthWrite: !transparent
-  });
-}
-
 function createPartObject(
   part: PartDef,
   color: number,
   rot: Rot4,
   transparent = false
 ): THREE.Group {
-  const group = new THREE.Group();
-  const [w, d] = dimensions(part, rot);
-  const material = wornMaterial(color, transparent);
-  const geometry = buildBrickGeo(w, d, part.category === "armor" ? "tile" : "plate", 8);
-  geometry.scale(CELL / U, Math.max(part.height, 0.025) / (U * 0.4), CELL / U);
-  const body = new THREE.Mesh(geometry, material);
-  body.castShadow = !transparent;
-  body.receiveShadow = true;
-  group.add(body);
-
-  const edgeGeometry = new THREE.EdgesGeometry(
-    new THREE.BoxGeometry(w * CELL * 0.94, Math.max(part.height, 0.025), d * CELL * 0.94)
-  );
-  const edges = new THREE.LineSegments(
-    edgeGeometry,
-    new THREE.LineBasicMaterial({
-      color: transparent ? 0xffffff : 0x17191a,
-      transparent,
-      opacity: transparent ? 0.75 : 0.45
-    })
-  );
-  edges.position.y = Math.max(part.height, 0.025) * 0.5;
-  group.add(edges);
-
-  if (part.category === "drive") {
-    const radius = part.radius;
-    const wheelGeometry =
-      part.kind === "track"
-        ? new RoundedBoxGeometry(w * CELL * 0.82, radius * 1.3, d * CELL * 0.78, 2, 0.018)
-        : new THREE.CylinderGeometry(radius, radius, Math.min(w, d) * CELL * 0.7, 16);
-    const wheel = new THREE.Mesh(wheelGeometry, wornMaterial(0x202224, transparent));
-    if (part.kind === "wheel") wheel.rotation.z = Math.PI / 2;
-    wheel.position.y = Math.max(radius * 0.55, part.height * 0.45);
-    group.add(wheel);
-  } else if (part.category === "weapon" && part.motion === "spin") {
-    const disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(Math.min(w * CELL, d * CELL) * 0.43, Math.min(w * CELL, d * CELL) * 0.43, 0.026, 24),
-      wornMaterial(0x7b7f80, transparent)
-    );
-    disc.position.y = part.height + 0.025;
-    group.add(disc);
-  }
-  return group;
+  return createIndustrialPart(part, rot, color, transparent).root;
 }
 
-export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog): BuilderScene {
+export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, settings: RoomSettings): BuilderScene {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -193,8 +137,8 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog):
     disposeTree(buildRoot);
     const frame = chassis();
     if (!frame) return;
-    const chassisMaterial = wornMaterial(spec.paint);
-    const chassisGeo = new RoundedBoxGeometry(frame.deck[0] * CELL, frame.height, frame.deck[1] * CELL, 3, 0.025);
+    const chassisMaterial = industrialMaterial(frame.material, spec.paint);
+    const chassisGeo = new RoundedBoxGeometry(frame.deck[0] * CELL, frame.height, frame.deck[1] * CELL, 2, 0.009);
     const chassisMesh = new THREE.Mesh(chassisGeo, chassisMaterial);
     chassisMesh.position.y = frame.height * 0.5;
     chassisMesh.castShadow = true;
@@ -233,8 +177,8 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog):
   }
 
   function placementValid(part: PartDef, cell: [number, number]): boolean {
-    const before = validateBuild(spec, catalog);
-    const after = validateBuild(candidateSpec(part, cell), catalog);
+    const before = validateBuild(spec, catalog, settings);
+    const after = validateBuild(candidateSpec(part, cell), catalog, settings);
     const remaining = [...after.errors];
     for (const error of before.errors) {
       const index = remaining.indexOf(error);
@@ -250,8 +194,8 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog):
     if (!frame || !part) return;
     if (part.category === "chassis") {
       const mesh = new THREE.Mesh(
-        new RoundedBoxGeometry(part.deck[0] * CELL, part.height, part.deck[1] * CELL, 3, 0.025),
-        wornMaterial(part.color, true)
+        new RoundedBoxGeometry(part.deck[0] * CELL, part.height, part.deck[1] * CELL, 2, 0.009),
+        industrialMaterial(part.material, part.color, { transparent: true, opacity: 0.44 })
       );
       mesh.position.y = part.height * 0.5 + 0.004;
       ghostRoot.add(mesh);
@@ -419,7 +363,7 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog):
         partCount: spec.parts.length,
         camYaw,
         hoverCell: hoverCell ? [...hoverCell] as [number, number] : null,
-        valid: validateBuild(spec, catalog).ok
+        valid: validateBuild(spec, catalog, settings).ok
       };
     },
     captureFrame() {

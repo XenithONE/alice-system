@@ -1,4 +1,5 @@
 import type { SeatInfo } from "../net/protocol";
+import { POINT_BUDGET_PRESETS, type ArenaDef, type RoomSettings } from "../sim/types";
 
 interface LobbyScreenProps {
   room: string;
@@ -7,7 +8,11 @@ interface LobbyScreenProps {
   ready: boolean;
   loading: boolean;
   error: string;
+  isHost: boolean;
+  settings: RoomSettings;
+  arenas: readonly ArenaDef[];
   massOf(seat: SeatInfo): number | null;
+  onSettings(settings: RoomSettings): void;
   onReady(ready: boolean): void;
   onBack(): void;
 }
@@ -19,7 +24,10 @@ const OCCUPANT: Record<SeatInfo["occupant"], string> = {
   empty: "空席"
 };
 
-export function LobbyScreen({ room, seats, mySeat, ready, loading, error, massOf, onReady, onBack }: LobbyScreenProps) {
+export function LobbyScreen({
+  room, seats, mySeat, ready, loading, error, isHost, settings, arenas,
+  massOf, onSettings, onReady, onBack
+}: LobbyScreenProps) {
   const copyRoom = async (): Promise<void> => {
     try {
       await navigator.clipboard.writeText(room);
@@ -31,14 +39,31 @@ export function LobbyScreen({ room, seats, mySeat, ready, loading, error, massOf
     <main className="sc-lobby">
       <header className="sc-screen-head">
         <button className="sc-text-button" type="button" onClick={onBack}>← タイトルへ</button>
-        <div>
-          <span>FIGHT LOBBY</span>
-          <h1>出撃準備</h1>
-        </div>
+        <div><span>FIGHT LOBBY</span><h1>出撃準備</h1></div>
         <button className="sc-room-code" type="button" onClick={() => void copyRoom()} title="ルームコードをコピー">
           <small>ROOM CODE</small><strong>{room}</strong><i>コピー</i>
         </button>
       </header>
+
+      <section className="sc-room-settings" aria-label="ルーム設定">
+        <div>
+          <label htmlFor="sc-budget-select">POINT BUDGET</label>
+          <select id="sc-budget-select" value={settings.pointBudget} disabled={!isHost || loading}
+            onChange={(event) => onSettings({ ...settings, pointBudget: Number(event.target.value) })}>
+            {POINT_BUDGET_PRESETS.map((budget) => <option value={budget} key={budget}>{budget} PT</option>)}
+          </select>
+          <small>{isHost ? "変更すると全員のREADYが解除されます" : "ホストが設定"}</small>
+        </div>
+        <div>
+          <label htmlFor="sc-arena-select">ARENA</label>
+          <select id="sc-arena-select" value={settings.arenaId} disabled={!isHost || loading}
+            onChange={(event) => onSettings({ ...settings, arenaId: event.target.value })}>
+            {arenas.map((arena) => <option value={arena.id} key={arena.id}>{arena.nameJa} / {arena.name}</option>)}
+          </select>
+          <small>{isHost ? "ホストのみ変更可能" : "表示のみ"}</small>
+        </div>
+      </section>
+
       <section className="sc-seats" aria-label="参加者">
         {Array.from({ length: 4 }, (_, index) => {
           const seat = seats[index] ?? {
@@ -52,7 +77,7 @@ export function LobbyScreen({ room, seats, mySeat, ready, loading, error, massOf
               <h2>{seat.name}</h2>
               <dl>
                 <div><dt>機体</dt><dd>{seat.spec?.name ?? "未登録"}</dd></div>
-                <div><dt>質量</dt><dd>{mass === null ? "—" : `${mass.toFixed(1)} kg`}</dd></div>
+                <div><dt>重量</dt><dd>{mass === null ? "—" : `${mass.toFixed(1)} kg`}</dd></div>
               </dl>
               <div className={`sc-seat__ready${seat.ready ? " is-ready" : ""}`}>{seat.ready ? "READY" : "STANDBY"}</div>
             </article>

@@ -2,10 +2,12 @@ import { FIXED_DT, INPUT_HZ, SNAPSHOT_HZ } from "../sim/balance";
 import {
   NEUTRAL_INPUT,
   SEATS,
+  DEFAULT_ROOM_SETTINGS,
   type ArenaDef,
   type ArenaSim,
   type BotSpec,
   type MatchInput,
+  type RoomSettings,
   type SeatIndex,
 } from "../sim/types";
 import {
@@ -19,12 +21,12 @@ import {
 } from "./protocol";
 
 export interface SessionDeps {
-  validateBuild(spec: BotSpec): { ok: boolean; errors: readonly string[] };
+  validateBuild(spec: BotSpec, settings: RoomSettings): { ok: boolean; errors: readonly string[] };
   createSim(opts: {
     seed: number;
     specs: readonly (BotSpec | null)[];
     names: readonly string[];
-    arenaId: string;
+    settings: RoomSettings;
   }): Promise<ArenaSim>;
   aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput;
 }
@@ -32,6 +34,7 @@ export interface SessionDeps {
 export interface HostSession {
   build(spec: BotSpec): void;
   ready(ready: boolean): void;
+  updateSettings(settings: RoomSettings): void;
   input(input: MatchInput): void;
   dispose(): void;
 }
@@ -47,15 +50,15 @@ export interface GuestSession {
 
 interface HostOptions {
   hostName: string;
-  arenaId: string;
-  onLobby(seats: readonly SeatInfo[]): void;
+  initialSettings?: RoomSettings;
+  onLobby(seats: readonly SeatInfo[], settings: RoomSettings): void;
   onSnapshot(s: Snapshot): void;
   onResult(r: HostMessage & { t: "result" }): void;
 }
 
 interface GuestOptions {
   name: string;
-  onLobby(seats: readonly SeatInfo[]): void;
+  onLobby(seats: readonly SeatInfo[], settings: RoomSettings): void;
   onStart(m: HostMessage & { t: "start" }): void;
   onSnapshot(s: Snapshot): void;
   onResult(r: HostMessage & { t: "result" }): void;
@@ -79,6 +82,8 @@ function isClientMessage(value: unknown): value is ClientMessage {
       return typeof value.v === "number" && typeof value.name === "string";
     case "build":
       return isRecord(value.spec);
+    case "settings":
+      return isRecord(value.settings);
     case "ready":
       return typeof value.ready === "boolean";
     case "input":
@@ -100,7 +105,8 @@ function validInput(value: MatchInput): boolean {
     value.throttle >= -1 && value.throttle <= 1 &&
     Number.isFinite(value.steer) &&
     value.steer >= -1 && value.steer <= 1 &&
-    typeof value.weapon === "boolean" &&
+    typeof value.primary === "boolean" &&
+    typeof value.secondary === "boolean" &&
     typeof value.selfRight === "boolean";
 }
 
@@ -108,7 +114,8 @@ function copyInput(value: MatchInput): MatchInput {
   return {
     throttle: value.throttle,
     steer: value.steer,
-    weapon: value.weapon,
+    primary: value.primary,
+    secondary: value.secondary,
     selfRight: value.selfRight,
   };
 }
@@ -126,6 +133,7 @@ function arenaDescriptor(id: string): ArenaDef {
     wallHeight: 2.4,
     pit: null,
     saws: [],
+    flameJets: [],
   };
 }
 
@@ -146,10 +154,18 @@ function snapshotOf(sim: ArenaSim): Snapshot {
       qy: bot.quat[1],
       qz: bot.quat[2],
       qw: bot.quat[3],
-      wa: bot.weaponAngle,
-      wo: bot.weaponOmega,
+      w: bot.weapons.map((weapon) => ({
+        idx: weapon.partIdx,
+        slot: weapon.slot,
+        on: weapon.active,
+        a: weapon.angle,
+        o: weapon.omega,
+        c: weapon.charge,
+        f: weapon.fuel,
+      })),
       wp: 0,
       detach: bot.detached.reduce((mask, index) => mask + 2 ** index, 0),
+      burn: bot.burningFor,
     })),
     events: sim.drainEvents(),
   };
@@ -166,12 +182,14 @@ class HostSessionImpl implements HostSession {
   private lastLoopAt = 0;
   private accumulator = 0;
   private stepsSinceSnapshot = 0;
+  private settings: RoomSettings;
 
   constructor(
     private readonly wire: Wire,
     private readonly deps: SessionDeps,
     private readonly opts: HostOptions,
   ) {
+    this.settings = { ...(opts.initialSettings ?? DEFAULT_ROOM_SETTINGS) };
     this.seats = Array.from({ length: SEATS }, (_, index): SeatInfo => ({
       seat: seatIndex(index),
       name: index === 0 ? opts.hostName : `AI ${index + 1}`,
@@ -201,9 +219,25 @@ class HostSessionImpl implements HostSession {
   ready(ready: boolean): void {
     if (this.disposed || this.sim) return;
     const host = this.seats[0]!;
-    this.updateSeat(0, { ready: ready && host.spec !== null });
+    const valid = host.spec !== null && this.validate(host.spec).ok;
+    this.updateSeat(0, { ready: ready && valid });
     this.publishLobby();
     this.maybeStart();
+  }
+
+  updateSettings(settings: RoomSettings): void {
+    if (this.disposed || this.sim || this.starting) return;
+    const next = {
+      pointBudget: Math.max(1, Math.round(settings.pointBudget)),
+      arenaId: settings.arenaId.slice(0, 80),
+      matchSec: Math.max(30, Math.round(settings.matchSec)),
+    };
+    if (next.pointBudget === this.settings.pointBudget &&
+        next.arenaId === this.settings.arenaId &&
+        next.matchSec === this.settings.matchSec) return;
+    this.settings = next;
+    for (const seat of this.seats) this.updateSeat(seat.seat, { ready: false });
+    this.publishLobby();
   }
 
   input(input: MatchInput): void {
@@ -272,9 +306,10 @@ class HostSessionImpl implements HostSession {
         t: "welcome",
         v: PROTOCOL_VERSION,
         seat: free.seat,
-        arena: arenaDescriptor(this.opts.arenaId),
+        arena: arenaDescriptor(this.settings.arenaId),
+        settings: this.settings,
       } satisfies HostMessage);
-      guest.conn.send({ t: "lobby", seats: this.copySeats() } satisfies HostMessage);
+      guest.conn.send({ t: "lobby", seats: this.copySeats(), settings: this.settings } satisfies HostMessage);
       return;
     }
     if (guest.seat === null) return;
@@ -283,6 +318,7 @@ class HostSessionImpl implements HostSession {
       if (validInput(msg.input)) this.inputs[seat] = copyInput(msg.input);
       return;
     }
+    if (msg.t === "settings") return;
     if (this.sim || this.starting) return;
     if (msg.t === "build") {
       const validation = this.validate(msg.spec);
@@ -301,7 +337,8 @@ class HostSessionImpl implements HostSession {
     }
     if (msg.t === "ready") {
       const current = this.seats[seat]!;
-      this.updateSeat(seat, { ready: msg.ready && current.occupant === "guest" && current.spec !== null });
+      const valid = current.spec !== null && this.validate(current.spec).ok;
+      this.updateSeat(seat, { ready: msg.ready && current.occupant === "guest" && valid });
       this.publishLobby();
       this.maybeStart();
       return;
@@ -310,7 +347,7 @@ class HostSessionImpl implements HostSession {
 
   private validate(spec: BotSpec): { ok: boolean; errors: readonly string[] } {
     try {
-      return this.deps.validateBuild(spec);
+      return this.deps.validateBuild(spec, this.settings);
     } catch {
       return { ok: false, errors: ["Build validation failed"] };
     }
@@ -357,7 +394,7 @@ class HostSessionImpl implements HostSession {
     const specs = this.seats.map((seat) => seat.spec);
     const names = this.seats.map((seat) => seat.name);
     const seed = Date.now() >>> 0;
-    const start = { t: "start", specs, names, seed } satisfies HostMessage;
+    const start = { t: "start", specs, names, seed, settings: this.settings } satisfies HostMessage;
     this.broadcast(start);
     void this.createAndRun(seed, specs, names);
   }
@@ -368,7 +405,7 @@ class HostSessionImpl implements HostSession {
     names: readonly string[],
   ): Promise<void> {
     try {
-      const sim = await this.deps.createSim({ seed, specs, names, arenaId: this.opts.arenaId });
+      const sim = await this.deps.createSim({ seed, specs, names, settings: this.settings });
       if (this.disposed) {
         sim.dispose();
         return;
@@ -451,8 +488,8 @@ class HostSessionImpl implements HostSession {
 
   private publishLobby(): void {
     const seats = this.copySeats();
-    this.opts.onLobby(seats);
-    this.broadcast({ t: "lobby", seats });
+    this.opts.onLobby(seats, this.settings);
+    this.broadcast({ t: "lobby", seats, settings: this.settings });
   }
 
   private broadcast(message: HostMessage): void {
@@ -521,7 +558,7 @@ class GuestSessionImpl implements GuestSession {
         this.currentSeat = raw.seat;
         return;
       case "lobby":
-        this.opts.onLobby(raw.seats);
+        this.opts.onLobby(raw.seats, raw.settings);
         return;
       case "start":
         this.opts.onStart(raw);

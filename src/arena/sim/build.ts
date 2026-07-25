@@ -1,4 +1,4 @@
-import { IMPACT_SCALE, MASS_LIMIT } from "./balance";
+import { IMPACT_SCALE } from "./balance";
 import {
   CELL,
   type BotSpec,
@@ -7,6 +7,7 @@ import {
   type Catalog,
   type ChassisDef,
   type PartDef,
+  type RoomSettings,
   type Rot4
 } from "./types";
 
@@ -30,8 +31,13 @@ function chassisFor(spec: BotSpec, catalog: Catalog): ChassisDef | null {
   return part?.category === "chassis" ? part : null;
 }
 
-export function computeStats(spec: BotSpec, catalog: Catalog): BuildStats {
+export function computeStats(
+  spec: BotSpec,
+  catalog: Catalog,
+  settings: RoomSettings
+): BuildStats {
   const chassis = chassisFor(spec, catalog);
+  let cost = chassis?.cost ?? 0;
   let mass = chassis?.mass ?? 0;
   let hp = chassis?.hp ?? 0;
   let armor = chassis?.armor ?? 0;
@@ -40,12 +46,15 @@ export function computeStats(spec: BotSpec, catalog: Catalog): BuildStats {
   let baseTorque = 0;
   let powerMul = 1;
   let hitPower = 0;
-  let weaponId: string | null = null;
+  let sustainedDps = 0;
+  let primaryId: string | null = null;
+  let secondaryId: string | null = null;
   let hasSelfRight = false;
 
   for (const placed of spec.parts) {
     const part = catalog.byId.get(placed.partId);
     if (!part || part.category === "chassis") continue;
+    cost += part.cost;
     mass += part.mass;
     hp += part.hp;
     armor += part.armor;
@@ -54,8 +63,12 @@ export function computeStats(spec: BotSpec, catalog: Catalog): BuildStats {
       topSpeed = Math.min(topSpeed, part.maxOmega * part.radius);
       baseTorque += part.torque;
     } else if (part.category === "weapon") {
-      weaponId ??= part.id;
+      if (part.slot === "primary") primaryId ??= part.id;
+      else secondaryId ??= part.id;
       hitPower = Math.max(hitPower, part.mass * part.damageMul * IMPACT_SCALE);
+      if (part.effect === "grind" || part.effect === "clamp" || part.effect === "flame") {
+        sustainedDps += part.dps ?? 0;
+      }
     } else if (part.category === "utility") {
       powerMul *= part.powerMul ?? 1;
       hasSelfRight ||= part.selfRight === true;
@@ -63,82 +76,42 @@ export function computeStats(spec: BotSpec, catalog: Catalog): BuildStats {
   }
 
   return {
+    cost,
+    pointBudget: settings.pointBudget,
     mass,
-    massLimit: MASS_LIMIT,
     hp,
     armor,
     topSpeed: Number.isFinite(topSpeed) ? topSpeed : 0,
     torque: baseTorque * powerMul,
     hitPower,
+    sustainedDps,
     driveCount,
-    weaponId,
-    hasSelfRight
+    primaryId,
+    secondaryId,
+    hasSelfRight,
+    invertible: chassis?.invertible ?? false
   };
 }
 
-type Point = readonly [number, number];
-
-function cross(o: Point, a: Point, b: Point): number {
-  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-}
-
-function convexHull(points: Point[]): Point[] {
-  const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const unique = sorted.filter(
-    (point, index) =>
-      index === 0 || point[0] !== sorted[index - 1]![0] || point[1] !== sorted[index - 1]![1]
-  );
-  if (unique.length <= 2) return unique;
-  const lower: Point[] = [];
-  for (const point of unique) {
-    while (lower.length >= 2 && cross(lower.at(-2)!, lower.at(-1)!, point) <= 0) lower.pop();
-    lower.push(point);
-  }
-  const upper: Point[] = [];
-  for (let index = unique.length - 1; index >= 0; index -= 1) {
-    const point = unique[index]!;
-    while (upper.length >= 2 && cross(upper.at(-2)!, upper.at(-1)!, point) <= 0) upper.pop();
-    upper.push(point);
-  }
-  lower.pop();
-  upper.pop();
-  return lower.concat(upper);
-}
-
-function insideConvex(point: Point, polygon: Point[]): boolean {
-  if (polygon.length < 3) return false;
-  let sign = 0;
-  for (let index = 0; index < polygon.length; index += 1) {
-    const value = cross(polygon[index]!, polygon[(index + 1) % polygon.length]!, point);
-    if (Math.abs(value) <= Number.EPSILON) continue;
-    const nextSign = Math.sign(value);
-    if (sign !== 0 && nextSign !== sign) return false;
-    sign = nextSign;
-  }
-  return true;
-}
-
-export function validateBuild(spec: BotSpec, catalog: Catalog): BuildValidation {
+export function validateBuild(
+  spec: BotSpec,
+  catalog: Catalog,
+  settings: RoomSettings
+): BuildValidation {
   const errors: string[] = [];
-  const stats = computeStats(spec, catalog);
+  const stats = computeStats(spec, catalog, settings);
   const chassis = chassisFor(spec, catalog);
   if (!chassis) errors.push("有効なシャーシが必要です。");
-  if (spec.v !== 1) errors.push("未対応の機体データ形式です。");
+  if (spec.v !== 2) errors.push("未対応の機体データ形式です。");
 
   let weaponCount = 0;
+  let primaryCount = 0;
+  let secondaryCount = 0;
   let leftDrive = 0;
   let rightDrive = 0;
   const occupied = new Set<string>();
-  const supportPoints: Point[] = [];
-  let weightedX = 0;
-  let weightedZ = 0;
-  let knownMass = chassis?.mass ?? 0;
   const deckW = chassis?.deck[0] ?? 0;
   const deckD = chassis?.deck[1] ?? 0;
-  if (chassis) {
-    weightedX = chassis.mass * deckW / 2;
-    weightedZ = chassis.mass * deckD / 2;
-  }
 
   for (const [partIdx, placed] of spec.parts.entries()) {
     const part = catalog.byId.get(placed.partId);
@@ -172,39 +145,28 @@ export function validateBuild(spec: BotSpec, catalog: Catalog): BuildValidation 
 
     const [baseW, baseD] = part.cells;
     const w = placed.rot === 1 || placed.rot === 3 ? baseD : baseW;
-    const d = placed.rot === 1 || placed.rot === 3 ? baseW : baseD;
     const centerX = placed.cell[0] + w / 2;
-    const centerZ = placed.cell[1] + d / 2;
-    knownMass += part.mass;
-    weightedX += part.mass * centerX;
-    weightedZ += part.mass * centerZ;
     if (part.category === "drive") {
       if (centerX < deckW / 2) leftDrive += 1;
       else if (centerX > deckW / 2) rightDrive += 1;
-      supportPoints.push(
-        [placed.cell[0], placed.cell[1]],
-        [placed.cell[0] + w, placed.cell[1]],
-        [placed.cell[0] + w, placed.cell[1] + d],
-        [placed.cell[0], placed.cell[1] + d]
-      );
     }
-    if (part.category === "weapon") weaponCount += 1;
+    if (part.category === "weapon") {
+      weaponCount += 1;
+      if (part.slot === "primary") primaryCount += 1;
+      else secondaryCount += 1;
+    }
   }
 
+  if (stats.cost > settings.pointBudget) {
+    errors.push(`合計コストがポイント上限${settings.pointBudget}を超えています。`);
+  }
   if (stats.driveCount < 2) errors.push("駆動パーツを2個以上取り付けてください。");
   if (leftDrive === 0 || rightDrive === 0) {
     errors.push("機体の左右それぞれに駆動パーツが必要です。");
   }
-  if (weaponCount > 1) errors.push("武器は1個までしか取り付けられません。");
-  if (stats.mass > MASS_LIMIT) {
-    errors.push(`総質量が上限${MASS_LIMIT}kgを超えています。`);
-  }
-  if (chassis && knownMass > 0) {
-    const centerOfMass: Point = [weightedX / knownMass, weightedZ / knownMass];
-    if (!insideConvex(centerOfMass, convexHull(supportPoints))) {
-      errors.push("重心が駆動パーツの接地範囲から外れています。");
-    }
-  }
+  if (weaponCount > 2) errors.push("武装は2個までしか取り付けられません。");
+  if (primaryCount > 1) errors.push("primary武装は1個までです。");
+  if (secondaryCount > 1) errors.push("secondary武装は1個までです。");
 
   return { ok: errors.length === 0, errors, stats };
 }

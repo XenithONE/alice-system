@@ -21,10 +21,10 @@ export function TitleScreen({ initialRoom, onSolo, onHost, onJoin }: TitleScreen
         <a className="sc-backlink" href="index.html#games">← AlicE sYsTeM</a>
         <div className="sc-title__mark" aria-hidden="true"><i /><i /><i /></div>
         <h1>SCRAP<br /><span>CROWN</span></h1>
-        <p className="sc-title__lead">ブロックを組め。鉄屑になるまで戦え。</p>
+        <p className="sc-title__lead">鋼板を組め。鉄屑になるまで戦え。</p>
         <ol className="sc-howto" aria-label="遊び方">
-          <li><b>01</b><span>120kg以内で機体を組み立てる</span></li>
-          <li><b>02</b><span>武器を回し、金網アリーナで激突</span></li>
+          <li><b>01</b><span>ポイント予算で実戦機を設計する</span></li>
+          <li><b>02</b><span>主兵装と副兵装を操り、鋼鉄アリーナで激突</span></li>
           <li><b>03</b><span>KOかジャッジ判定で王冠を奪う</span></li>
         </ol>
         <div className="sc-title__actions">

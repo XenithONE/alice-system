@@ -28,6 +28,24 @@ export const RAM_FACTOR = 0.35;
 /** A spinner at rest is nearly harmless; this is the floor of its damage curve. */
 export const SPIN_DAMAGE_FLOOR = 0.25;
 
+/* ---------------- weapon systems (v2) ---------------- */
+
+/** Grind and clamp damage is applied on a tick rather than per contact. */
+export const SUSTAINED_TICK = 0.2;
+/** A flame hit keeps burning after the jet moves off. */
+export const BURN_SEC = 2.5;
+export const BURN_DPS = 9;
+/** Fire ignores plate; only a heat shield helps. */
+export const FLAME_ARMOR_FACTOR = 0.15;
+/** A clamp releases early if the victim rips free this hard. */
+export const CLAMP_BREAK_IMPULSE = 260;
+/** Extra damage a spear does for punching a single point. */
+export const SPEAR_PIERCE = 1.6;
+/** Triggered weapons cannot be spammed mid-stroke. */
+export const MIN_TRIGGER_GAP = 0.25;
+/** Held weapons that run dry need this long before they can be used again. */
+export const DRY_LOCKOUT = 1.5;
+
 /** KO by immobility. */
 export const IMMOBILE_SPEED = 0.15;
 export const IMMOBILE_WEAPON_OMEGA = 1;

@@ -1,13 +1,22 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { DEBRIS_COLLISION_GROUPS } from "./assemble";
-import type { AssembledBot, ColliderOwner, RuntimePart } from "./assemble";
+import type {
+  AssembledBot,
+  ColliderOwner,
+  RuntimePart,
+  WeaponRuntime
+} from "./assemble";
 import {
   AGGRESSION_UNIT,
+  BURN_DPS,
+  BURN_SEC,
+  CLAMP_BREAK_IMPULSE,
   CONTACT_COOLDOWN,
   CONTROL_RANGE,
   CONTROL_UNIT,
   DEBRIS_LIFETIME,
   FIXED_DT,
+  FLAME_ARMOR_FACTOR,
   IMMOBILE_SEC,
   IMMOBILE_SPEED,
   IMMOBILE_WEAPON_OMEGA,
@@ -16,24 +25,29 @@ import {
   JUDGE_AGGRESSION,
   JUDGE_CONTROL,
   JUDGE_DAMAGE,
-  MATCH_SEC,
   MAX_DEBRIS,
   MAX_HIT_DAMAGE,
   MIN_HIT_IMPULSE,
   PIT_Y,
   RAM_FACTOR,
   SAW_DAMAGE,
-  SPIN_DAMAGE_FLOOR
+  SPEAR_PIERCE,
+  SPIN_DAMAGE_FLOOR,
+  SUSTAINED_TICK
 } from "./balance";
 import {
   CELL,
+  type ArenaDef,
   type BotState,
   type JudgeScore,
   type KoReason,
   type MatchResult,
+  type RoomSettings,
   type SeatIndex,
   type SimEvent,
-  type WeaponDef
+  type WeaponDef,
+  type WeaponEffect,
+  type WeaponState
 } from "./types";
 
 export interface DamageBot {
@@ -50,6 +64,8 @@ export interface DamageBot {
   control: number;
   contactCount: number;
   lastNearestDistance: number;
+  burningFor: number;
+  burningBy: SeatIndex | null;
 }
 
 interface Debris {
@@ -86,19 +102,31 @@ function scoreShares(
   return values.map((current) => current / total * points);
 }
 
+function chassisForward(bot: DamageBot): readonly [number, number] {
+  const q = bot.assembled.chassis.rotation();
+  const x = -2 * (q.x * q.z + q.w * q.y);
+  const z = -(1 - 2 * (q.x * q.x + q.y * q.y));
+  const length = Math.hypot(x, z);
+  return length > Number.EPSILON ? [x / length, z / length] : [0, -1];
+}
+
 export class DamageSystem {
   private readonly ownerByCollider = new Map<number, ColliderOwner>();
   private readonly botBySeat = new Map<SeatIndex, DamageBot>();
   private readonly sawColliders = new Set<number>();
   private readonly cooldowns = new Map<string, number>();
+  private readonly sustainedNext = new Map<string, number>();
   private readonly pendingAttacks = new Map<string, PendingAttack>();
   private readonly debris: Debris[] = [];
   private readonly kos: { seat: SeatIndex; reason: KoReason; at: number }[] = [];
+  private currentTime = 0;
 
   constructor(
     private readonly world: RAPIER.World,
     readonly bots: readonly DamageBot[],
-    private readonly events: SimEvent[]
+    private readonly events: SimEvent[],
+    private readonly arena: ArenaDef,
+    private readonly settings: RoomSettings
   ) {
     for (const bot of bots) {
       this.botBySeat.set(bot.assembled.seat, bot);
@@ -121,22 +149,45 @@ export class DamageSystem {
     );
   }
 
-  private weaponOmega(bot: DamageBot): number {
-    const weapon = bot.assembled.weapon;
-    return weapon && !weapon.detached ? magnitude(weapon.body.angvel()) : 0;
+  private weaponFor(owner: ColliderOwner): WeaponRuntime | null {
+    const part = this.partFor(owner);
+    if (part?.def.category !== "weapon") return null;
+    return (
+      this.botBySeat
+        .get(owner.seat)
+        ?.assembled.weapons.find((weapon) => weapon.idx === owner.partIdx) ?? null
+    );
   }
 
-  private attackFactor(owner: ColliderOwner): { factor: number; selfMul: number } {
-    const part = this.partFor(owner);
-    if (part?.def.category !== "weapon") return { factor: RAM_FACTOR, selfMul: 0 };
-    if (part.def.motion === "spin") {
-      const bot = this.botBySeat.get(owner.seat)!;
+  private weaponOmega(weapon: WeaponRuntime): number {
+    return !weapon.detached && weapon.body.isValid() ? magnitude(weapon.body.angvel()) : 0;
+  }
+
+  private maximumWeaponOmega(bot: DamageBot): number {
+    let omega = 0;
+    for (const weapon of bot.assembled.weapons) omega = Math.max(omega, this.weaponOmega(weapon));
+    return omega;
+  }
+
+  private attackFactor(owner: ColliderOwner): {
+    factor: number;
+    selfMul: number;
+    effect: WeaponEffect;
+  } {
+    const weapon = this.weaponFor(owner);
+    if (!weapon) return { factor: RAM_FACTOR, selfMul: 0, effect: "static" };
+    if (weapon.def.effect === "spin") {
       return {
-        factor: spinnerFactor(part.def, this.weaponOmega(bot)),
-        selfMul: part.def.selfDamageMul
+        factor: spinnerFactor(weapon.def, this.weaponOmega(weapon)),
+        selfMul: weapon.def.selfDamageMul,
+        effect: "spin"
       };
     }
-    return { factor: part.def.damageMul, selfMul: part.def.selfDamageMul };
+    return {
+      factor: weapon.def.damageMul,
+      selfMul: weapon.def.selfDamageMul,
+      effect: weapon.def.effect
+    };
   }
 
   private damageTarget(
@@ -145,11 +196,20 @@ export class DamageSystem {
     amount: number,
     by: SeatIndex,
     point: RAPIER.Vector,
-    creditAttacker = true
+    effect: WeaponEffect,
+    options: {
+      creditAttacker?: boolean;
+      armorFactor?: number;
+      resist?: number;
+    } = {}
   ): number {
     const part = this.partFor(owner);
     const armor = part?.def.armor ?? defender.assembled.chassisDef.armor;
-    const damage = Math.min(MAX_HIT_DAMAGE, Math.max(0, amount - armor));
+    const resisted = amount * (options.resist ?? 1);
+    const damage = Math.min(
+      MAX_HIT_DAMAGE,
+      Math.max(0, resisted - armor * (options.armorFactor ?? 1))
+    );
     if (damage <= 0) return 0;
     if (part && !part.detached) {
       part.hp -= damage;
@@ -158,7 +218,7 @@ export class DamageSystem {
       defender.chassisHp -= damage;
     }
     defender.damageTaken += damage;
-    const attacker = creditAttacker ? this.botBySeat.get(by) : null;
+    const attacker = options.creditAttacker === false ? null : this.botBySeat.get(by);
     if (attacker) attacker.damageDealt += damage;
     this.events.push({
       t: "hit",
@@ -167,7 +227,8 @@ export class DamageSystem {
       x: point.x,
       y: point.y,
       z: point.z,
-      power: damage
+      power: damage,
+      effect
     });
     return damage;
   }
@@ -217,8 +278,6 @@ export class DamageSystem {
     });
   }
 
-  private currentTime = 0;
-
   processContact(
     collider1: number,
     collider2: number,
@@ -237,9 +296,84 @@ export class DamageSystem {
       this.processHazard(owner1, point);
       return;
     }
-    if (impulse < MIN_HIT_IMPULSE || !owner1 || !owner2 || owner1.seat === owner2.seat) return;
-    this.queueAttack(owner1, owner2, impulse, point);
-    this.queueAttack(owner2, owner1, impulse, point);
+    if (!owner1 || !owner2 || owner1.seat === owner2.seat) return;
+
+    const special1 = this.processWeaponContact(owner1, owner2, impulse, point);
+    const special2 = this.processWeaponContact(owner2, owner1, impulse, point);
+    if (impulse < MIN_HIT_IMPULSE) return;
+    if (!special1) this.queueAttack(owner1, owner2, impulse, point);
+    if (!special2) this.queueAttack(owner2, owner1, impulse, point);
+  }
+
+  private processWeaponContact(
+    attackerOwner: ColliderOwner,
+    defenderOwner: ColliderOwner,
+    impulse: number,
+    point: RAPIER.Vector
+  ): boolean {
+    const weapon = this.weaponFor(attackerOwner);
+    const attacker = this.botBySeat.get(attackerOwner.seat);
+    const defender = this.botBySeat.get(defenderOwner.seat);
+    if (!weapon || !attacker?.alive || !defender?.alive) return false;
+
+    if (weapon.def.effect === "grind") {
+      if (weapon.active) {
+        const key = `grind:${weapon.idx}:${attackerOwner.seat}>${defenderOwner.seat}`;
+        if ((this.sustainedNext.get(key) ?? -Infinity) <= this.currentTime) {
+          this.sustainedNext.set(key, this.currentTime + SUSTAINED_TICK);
+          this.damageTarget(
+            defender,
+            defenderOwner,
+            (weapon.def.dps ?? 0) * SUSTAINED_TICK,
+            attackerOwner.seat,
+            point,
+            "grind",
+            { armorFactor: SUSTAINED_TICK }
+          );
+        }
+      }
+      return true;
+    }
+
+    if (weapon.def.effect === "clamp") {
+      if (weapon.active && weapon.clamping === null) {
+        weapon.clamping = defenderOwner.seat;
+        weapon.clampLeft = weapon.def.holdSec ?? 0;
+        this.events.push({
+          t: "clamp",
+          seat: attackerOwner.seat,
+          victim: defenderOwner.seat
+        });
+      } else if (weapon.clamping === defenderOwner.seat && impulse > CLAMP_BREAK_IMPULSE) {
+        this.releaseClamp(weapon);
+      }
+      return true;
+    }
+
+    if (weapon.def.effect === "impulse") {
+      if (!weapon.active || weapon.impulseVictims.has(defenderOwner.seat)) return true;
+      weapon.impulseVictims.add(defenderOwner.seat);
+      const amount = weapon.def.impulse ?? 0;
+      const [forwardX, forwardZ] = chassisForward(attacker);
+      const flipper = weapon.def.launch === "flip";
+      const vertical = flipper ? amount * 0.85 : weapon.spear ? amount * 0.08 : amount * 0.35;
+      const horizontal = flipper ? amount * 0.45 : amount * 0.9;
+      defender.assembled.chassis.applyImpulse(
+        { x: forwardX * horizontal, y: vertical, z: forwardZ * horizontal },
+        true
+      );
+      this.damageTarget(
+        defender,
+        defenderOwner,
+        amount * weapon.def.damageMul * IMPACT_SCALE * (weapon.spear ? SPEAR_PIERCE : 1),
+        attackerOwner.seat,
+        point,
+        "impulse"
+      );
+      return true;
+    }
+
+    return weapon.def.effect === "flame";
   }
 
   private queueAttack(
@@ -263,12 +397,8 @@ export class DamageSystem {
     }
   }
 
-  private processAttack(
-    attackerOwner: ColliderOwner,
-    defenderOwner: ColliderOwner,
-    impulse: number,
-    point: RAPIER.Vector
-  ): void {
+  private processAttack(attack: PendingAttack): void {
+    const { attackerOwner, defenderOwner, impulse, point } = attack;
     const attacker = this.botBySeat.get(attackerOwner.seat);
     const defender = this.botBySeat.get(defenderOwner.seat);
     if (!attacker?.alive || !defender?.alive) return;
@@ -276,13 +406,15 @@ export class DamageSystem {
     if ((this.cooldowns.get(key) ?? -Infinity) + CONTACT_COOLDOWN > this.currentTime) return;
     this.cooldowns.set(key, this.currentTime);
     attacker.contactCount += 1;
-    const attack = this.attackFactor(attackerOwner);
-    const raw = impulse * attack.factor * IMPACT_SCALE;
-    this.damageTarget(defender, defenderOwner, raw, attackerOwner.seat, point);
+    const factor = this.attackFactor(attackerOwner);
+    const raw = impulse * factor.factor * IMPACT_SCALE;
+    this.damageTarget(defender, defenderOwner, raw, attackerOwner.seat, point, factor.effect, {
+      resist: factor.effect === "spin" ? defender.assembled.spinnerResist : 1
+    });
 
     const attackerPart = this.partFor(attackerOwner);
-    if (attackerPart && attack.selfMul > 0 && !attackerPart.detached) {
-      const selfDamage = Math.min(MAX_HIT_DAMAGE, raw * attack.selfMul);
+    if (attackerPart && factor.selfMul > 0 && !attackerPart.detached) {
+      const selfDamage = Math.min(MAX_HIT_DAMAGE, raw * factor.selfMul);
       attackerPart.hp -= selfDamage;
       attacker.damageTaken += selfDamage;
       if (attackerPart.hp <= 0) this.detach(attacker, attackerPart, point);
@@ -295,8 +427,164 @@ export class DamageSystem {
     const key = `saw>${owner.seat}`;
     if ((this.cooldowns.get(key) ?? -Infinity) + CONTACT_COOLDOWN > this.currentTime) return;
     this.cooldowns.set(key, this.currentTime);
-    this.damageTarget(bot, owner, SAW_DAMAGE, owner.seat, point, false);
+    this.damageTarget(bot, owner, SAW_DAMAGE, owner.seat, point, "static", {
+      creditAttacker: false
+    });
     this.events.push({ t: "hazard", seat: owner.seat, x: point.x, y: point.y, z: point.z });
+  }
+
+  private releaseClamp(weapon: WeaponRuntime): void {
+    weapon.clamping = null;
+    weapon.clampLeft = 0;
+    weapon.active = false;
+    if (weapon.joint?.isValid()) {
+      const stroke = Math.max(weapon.def.strokeSec ?? 0.25, FIXED_DT);
+      weapon.joint.configureMotorPosition(
+        0,
+        weapon.def.mass * 4 / (stroke * stroke),
+        4 * weapon.def.mass / stroke
+      );
+    }
+  }
+
+  private updateClamps(): void {
+    for (const attacker of this.bots) {
+      if (!attacker.alive) continue;
+      for (const weapon of attacker.assembled.weapons) {
+        if (weapon.clamping === null) continue;
+        const victim = this.botBySeat.get(weapon.clamping);
+        weapon.clampLeft = Math.max(0, weapon.clampLeft - FIXED_DT);
+        if (!victim?.alive || weapon.detached || weapon.clampLeft === 0) {
+          this.releaseClamp(weapon);
+          continue;
+        }
+        const av = attacker.assembled.chassis.linvel();
+        const vv = victim.assembled.chassis.linvel();
+        const relativeImpulse =
+          Math.hypot(vv.x - av.x, vv.y - av.y, vv.z - av.z) *
+          Math.min(attacker.assembled.chassis.mass(), victim.assembled.chassis.mass());
+        if (relativeImpulse > CLAMP_BREAK_IMPULSE) {
+          this.releaseClamp(weapon);
+          continue;
+        }
+        const ap = attacker.assembled.chassis.translation();
+        const vp = victim.assembled.chassis.translation();
+        victim.assembled.chassis.setLinvel(
+          {
+            x: av.x + (ap.x - vp.x) * 3,
+            y: av.y + (ap.y - vp.y) * 3,
+            z: av.z + (ap.z - vp.z) * 3
+          },
+          true
+        );
+        const key = `clamp:${weapon.idx}:${attacker.assembled.seat}>${victim.assembled.seat}`;
+        if ((this.sustainedNext.get(key) ?? -Infinity) <= this.currentTime) {
+          this.sustainedNext.set(key, this.currentTime + SUSTAINED_TICK);
+          this.damageTarget(
+            victim,
+            { seat: victim.assembled.seat, partIdx: null },
+            (weapon.def.dps ?? 0) * SUSTAINED_TICK,
+            attacker.assembled.seat,
+            vp,
+            "clamp",
+            { armorFactor: SUSTAINED_TICK }
+          );
+        }
+      }
+    }
+  }
+
+  private ignite(
+    victim: DamageBot,
+    by: SeatIndex,
+    point: RAPIER.Vector,
+    directDamage: number
+  ): void {
+    this.damageTarget(
+      victim,
+      { seat: victim.assembled.seat, partIdx: null },
+      directDamage,
+      by,
+      point,
+      "flame",
+      {
+        armorFactor: FLAME_ARMOR_FACTOR * FIXED_DT,
+        resist: victim.assembled.flameResist
+      }
+    );
+    victim.burningFor = BURN_SEC;
+    victim.burningBy = by;
+  }
+
+  private updateFlames(): void {
+    for (const attacker of this.bots) {
+      if (!attacker.alive) continue;
+      const ap = attacker.assembled.chassis.translation();
+      const [forwardX, forwardZ] = chassisForward(attacker);
+      for (const weapon of attacker.assembled.weapons) {
+        if (!weapon.active || weapon.detached || weapon.def.effect !== "flame") continue;
+        const range = weapon.def.coneRange ?? weapon.def.reach;
+        const cosine = Math.cos(weapon.def.coneAngle ?? 0);
+        this.events.push({
+          t: "flame",
+          seat: attacker.assembled.seat,
+          x: ap.x,
+          y: ap.y,
+          z: ap.z,
+          dirX: forwardX,
+          dirZ: forwardZ
+        });
+        for (const victim of this.bots) {
+          if (!victim.alive || victim === attacker) continue;
+          const vp = victim.assembled.chassis.translation();
+          const dx = vp.x - ap.x;
+          const dz = vp.z - ap.z;
+          const distance = Math.hypot(dx, dz);
+          const dot =
+            distance > Number.EPSILON ? (dx * forwardX + dz * forwardZ) / distance : 1;
+          if (distance <= range && dot >= cosine) {
+            this.ignite(victim, attacker.assembled.seat, vp, (weapon.def.dps ?? 0) * FIXED_DT);
+          }
+        }
+      }
+    }
+  }
+
+  private updateBurning(): void {
+    for (const bot of this.bots) {
+      if (!bot.alive || bot.burningFor <= 0) continue;
+      bot.burningFor = Math.max(0, bot.burningFor - FIXED_DT);
+      const point = bot.assembled.chassis.translation();
+      this.damageTarget(
+        bot,
+        { seat: bot.assembled.seat, partIdx: null },
+        BURN_DPS * FIXED_DT,
+        bot.burningBy ?? bot.assembled.seat,
+        point,
+        "flame",
+        {
+          creditAttacker: bot.burningBy !== null,
+          armorFactor: FLAME_ARMOR_FACTOR * FIXED_DT,
+          resist: bot.assembled.flameResist
+        }
+      );
+      if (bot.chassisHp <= 0) this.ko(bot, "fire");
+      if (bot.burningFor === 0) bot.burningBy = null;
+    }
+  }
+
+  private updateFlameJets(): void {
+    const cycle = this.currentTime % 5;
+    if (cycle >= 1.25) return;
+    for (const jet of this.arena.flameJets) {
+      for (const bot of this.bots) {
+        if (!bot.alive) continue;
+        const p = bot.assembled.chassis.translation();
+        if (Math.hypot(p.x - jet.x, p.z - jet.z) > 0.9) continue;
+        this.ignite(bot, bot.assembled.seat, p, BURN_DPS * 1.5 * FIXED_DT);
+        this.events.push({ t: "hazard", seat: bot.assembled.seat, x: jet.x, y: 0, z: jet.z });
+      }
+    }
   }
 
   private ko(bot: DamageBot, reason: KoReason): void {
@@ -313,31 +601,26 @@ export class DamageSystem {
 
   update(elapsed: number): void {
     this.currentTime = elapsed;
-    for (const attack of this.pendingAttacks.values()) {
-      this.processAttack(
-        attack.attackerOwner,
-        attack.defenderOwner,
-        attack.impulse,
-        attack.point
-      );
-    }
+    for (const attack of this.pendingAttacks.values()) this.processAttack(attack);
     this.pendingAttacks.clear();
     for (const [key, time] of this.cooldowns) {
       if (time + CONTACT_COOLDOWN < elapsed) this.cooldowns.delete(key);
     }
+    this.updateClamps();
+    this.updateFlames();
+    this.updateFlameJets();
+    this.updateBurning();
     for (const bot of this.bots) {
       if (!bot.alive) continue;
       const body = bot.assembled.chassis;
       const position = body.translation();
-      const velocity = body.linvel();
-      const speed = magnitude(velocity);
-      const weaponOmega = this.weaponOmega(bot);
-      if (speed < IMMOBILE_SPEED && weaponOmega < IMMOBILE_WEAPON_OMEGA) {
+      const speed = magnitude(body.linvel());
+      if (speed < IMMOBILE_SPEED && this.maximumWeaponOmega(bot) < IMMOBILE_WEAPON_OMEGA) {
         bot.immobileFor += FIXED_DT;
       } else {
         bot.immobileFor = 0;
       }
-      if (bot.chassisHp <= 0) this.ko(bot, "damage");
+      if (bot.chassisHp <= 0) this.ko(bot, bot.burningFor > 0 ? "fire" : "damage");
       else if (position.y < PIT_Y) this.ko(bot, "pit");
       else if (bot.immobileFor >= IMMOBILE_SEC) this.ko(bot, "immobile");
     }
@@ -385,13 +668,33 @@ export class DamageSystem {
     const q = body.rotation();
     const v = body.linvel();
     const upDot = 1 - 2 * (q.x * q.x + q.z * q.z);
-    const weapon = bot.assembled.weapon;
-    const omega = this.weaponOmega(bot);
-    const weaponRotation =
-      weapon && !weapon.detached && weapon.body.isValid() ? weapon.body.rotation() : null;
-    const weaponAngle = weaponRotation
-      ? 2 * Math.atan2(Math.hypot(weaponRotation.x, weaponRotation.y, weaponRotation.z), weaponRotation.w)
-      : 0;
+    const weapons: WeaponState[] = bot.assembled.weapons.map((weapon) => {
+      const rotation =
+        !weapon.detached && weapon.body.isValid() ? weapon.body.rotation() : qIdentity;
+      const angle =
+        2 * Math.atan2(
+          Math.hypot(rotation.x, rotation.y, rotation.z),
+          rotation.w
+        );
+      const cooldown = Math.max(weapon.def.cooldown ?? 0, Number.EPSILON);
+      const capacity = weapon.def.fuel ?? 0;
+      return {
+        partIdx: weapon.idx,
+        slot: weapon.def.slot,
+        active: weapon.active,
+        omega:
+          weapon.def.effect === "spin" || weapon.def.effect === "grind"
+            ? this.weaponOmega(weapon)
+            : 0,
+        angle,
+        charge:
+          weapon.def.action === "triggered"
+            ? Math.max(0, Math.min(1, 1 - weapon.cooldownLeft / cooldown))
+            : 1,
+        fuel: capacity > 0 ? Math.max(0, Math.min(1, weapon.fuelLeft / capacity)) : 1,
+        clamping: weapon.clamping
+      };
+    });
     return {
       seat: bot.assembled.seat,
       name: bot.name,
@@ -401,13 +704,13 @@ export class DamageSystem {
       pos: [p.x, p.y, p.z],
       quat: [q.x, q.y, q.z, q.w],
       vel: [v.x, v.y, v.z],
-      weaponOmega: omega,
-      weaponAngle,
+      weapons,
       detached: bot.detached,
       immobileFor: bot.immobileFor,
       damageDealt: bot.damageDealt,
       damageTaken: bot.damageTaken,
       inverted: upDot < INVERTED_DOT,
+      burningFor: bot.burningFor,
       selfRightCooldown: bot.assembled.selfRightCooldown
     };
   }
@@ -423,7 +726,7 @@ export class DamageSystem {
         kos: [...this.kos]
       };
     }
-    if (elapsed < MATCH_SEC) return null;
+    if (elapsed < this.settings.matchSec) return null;
     const scores = this.scores();
     const ranked = [...this.bots].sort((a, b) => {
       const scoreA = scores.find((score) => score.seat === a.assembled.seat)!.total;
@@ -461,3 +764,5 @@ export class DamageSystem {
     }));
   }
 }
+
+const qIdentity = { x: 0, y: 0, z: 0, w: 1 };

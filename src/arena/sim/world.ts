@@ -17,7 +17,8 @@ import {
   type MatchResult,
   type MatchState,
   type SeatIndex,
-  type SimEvent
+  type SimEvent,
+  type WeaponDef
 } from "./types";
 
 let initPromise: Promise<void> | null = null;
@@ -29,12 +30,17 @@ export async function initPhysics(): Promise<void> {
 
 interface SimMetadata {
   readonly arena: ArenaDef;
+  readonly weaponsBySeat: ReadonlyMap<SeatIndex, readonly WeaponDef[]>;
 }
 
 const metadata = new WeakMap<ArenaSim, SimMetadata>();
 
 export function arenaForSim(sim: ArenaSim): ArenaDef | null {
   return metadata.get(sim)?.arena ?? null;
+}
+
+export function weaponsForSim(sim: ArenaSim, seat: SeatIndex): readonly WeaponDef[] {
+  return metadata.get(sim)?.weaponsBySeat.get(seat) ?? [];
 }
 
 function addFixedBox(
@@ -115,6 +121,7 @@ function addWalls(world: RAPIER.World, arena: ArenaDef): void {
 function spawnFor(
   arena: ArenaDef,
   seat: SeatIndex,
+  cornerOffset: number,
   offsetJitter: number,
   facingJitter: number
 ): { origin: readonly [number, number, number]; facing: number } {
@@ -125,7 +132,11 @@ function spawnFor(
     [1, 1],
     [-1, 1]
   ];
-  const [sx, sz] = signs[seat]!;
+  // Corners are not equivalent: the pit sits off-centre and the flame jets are
+  // not symmetric, so a fixed seat-to-corner mapping hands one seat a
+  // permanent disadvantage. Measured over 20 matches with the mapping fixed,
+  // seat 3 won 0. Rotating the mapping per match averages the arena out.
+  const [sx, sz] = signs[(seat + cornerOffset) % 4]!;
   const x = sx * (offset + offsetJitter);
   const z = sz * (offset - offsetJitter);
   const facing = Math.atan2(x, z) + facingJitter;
@@ -142,6 +153,7 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
   addWalls(world, opts.arena);
 
   const bots: DamageBot[] = [];
+  const cornerOffset = rng.int(4);
   const assemblyOrder: SeatIndex[] = [0, 1, 2, 3];
   for (let index = assemblyOrder.length - 1; index > 0; index -= 1) {
     const other = rng.int(index + 1);
@@ -151,13 +163,14 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
     const seat = rawSeat as SeatIndex;
     const spec = opts.specs[seat] ?? null;
     if (!spec) continue;
-    const validation = validateBuild(spec, opts.catalog);
+    const validation = validateBuild(spec, opts.catalog, opts.settings);
     if (!validation.ok) {
       throw new Error(`Invalid bot for seat ${seat}: ${validation.errors.join(" / ")}`);
     }
     const spawn = spawnFor(
       opts.arena,
       seat,
+      cornerOffset,
       rng.range(-CELL * 4, CELL * 4),
       rng.range(-CELL * 2, CELL * 2)
     );
@@ -182,12 +195,14 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
       aggression: 0,
       control: 0,
       contactCount: 0,
-      lastNearestDistance: Number.POSITIVE_INFINITY
+      lastNearestDistance: Number.POSITIVE_INFINITY,
+      burningFor: 0,
+      burningBy: null
     });
   }
   bots.sort((a, b) => a.assembled.seat - b.assembled.seat);
 
-  const damage = new DamageSystem(world, bots, events);
+  const damage = new DamageSystem(world, bots, events, opts.arena, opts.settings);
   for (const saw of opts.arena.saws) {
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicVelocityBased().setTranslation(saw.x, CELL / 2, saw.z)
@@ -226,7 +241,13 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
       for (const bot of bots) {
         const state = damage.stateFor(bot);
         const input = inputs[bot.assembled.seat] ?? NEUTRAL_INPUT;
-        const flipped = driveBot(bot.assembled, input, phase, { inverted: state.inverted });
+        const flipped = driveBot(
+          bot.assembled,
+          input,
+          phase,
+          { inverted: state.inverted },
+          events
+        );
         if (flipped) events.push({ t: "flip", seat: bot.assembled.seat });
       }
       world.step(queue);
@@ -276,6 +297,14 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
       metadata.delete(sim);
     }
   };
-  metadata.set(sim, { arena: opts.arena });
+  metadata.set(sim, {
+    arena: opts.arena,
+    weaponsBySeat: new Map(
+      bots.map((bot) => [
+        bot.assembled.seat,
+        bot.assembled.weapons.map((weapon) => weapon.def)
+      ])
+    )
+  });
   return sim;
 }

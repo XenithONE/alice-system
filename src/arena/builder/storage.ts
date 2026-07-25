@@ -44,7 +44,7 @@ function decodePlacedPart(value: unknown): PlacedPart | null {
 }
 
 function decodeValue(value: unknown): BotSpec | null {
-  if (!isRecord(value) || value.v !== 1) return null;
+  if (!isRecord(value) || value.v !== 2) return null;
   const candidatePaint = value.paint;
   if (
     typeof value.name !== "string" ||
@@ -71,7 +71,7 @@ function decodeValue(value: unknown): BotSpec | null {
     parts.push(part);
   }
   return {
-    v: 1,
+    v: 2,
     name: value.name,
     chassisId: value.chassisId,
     paint: candidatePaint,

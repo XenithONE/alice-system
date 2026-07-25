@@ -1,10 +1,21 @@
 /**
- * SCRAP CROWN — frozen type contract.
+ * SCRAP CROWN — frozen type contract (v2: realistic combat robots).
  *
  * Owned by the architect. Implementers must not edit this file; propose changes
  * in your report instead. Everything downstream (catalog, sim, builder, render,
  * net) is written against these shapes, so a unilateral edit desynchronises the
  * whole build.
+ *
+ * v2 changes the game, not just the numbers:
+ *  - the build budget is POINTS, set per room by the host. Mass stays as a
+ *    physical property so armour still makes you slow, but what you can afford
+ *    is now the room's call. Cheap heavy steel vs expensive light titanium is
+ *    the interesting decision and it did not exist when mass was the budget.
+ *  - weapons have an ACTION: always running, live while you hold the button, or
+ *    one-shot on a cooldown. A machine can carry two, so "spinning side saws
+ *    plus a launcher" is a build you can actually make.
+ *  - the look is real machinery: welded plate, hydraulics, scorched steel. The
+ *    toy-brick language belongs to the site, not to this game.
  *
  * Units are metres, kilograms, seconds, radians. One grid cell is 0.12 m.
  */
@@ -18,14 +29,32 @@ export type Rot4 = 0 | 1 | 2 | 3;
 
 export type PartCategory = "chassis" | "drive" | "weapon" | "armor" | "utility";
 
-/** How a weapon puts energy into the other robot. */
-export type WeaponMotion =
-  /** free-spinning mass: builds up omega, hits hardest at full speed */
+/** When the weapon does its work. */
+export type WeaponAction =
+  /** runs from the start of the match and never stops: side saws, shell spinners */
+  | "passive"
+  /** live only while the player holds the button: flamethrower, cutting disc */
+  | "held"
+  /** one shot, then a cooldown: flipper, spear, hammer, crusher */
+  | "triggered";
+
+/** How the weapon converts energy into someone else's bad day. */
+export type WeaponEffect =
+  /** rotating mass; impact damage scales with how much speed it has built up */
   | "spin"
-  /** one-shot swing on a cooldown: flipper, hammer */
-  | "swing"
-  /** no moving part: wedges win by control, not damage */
-  | "none";
+  /** continuous cutting while in contact and active */
+  | "grind"
+  /** a single violent push: flippers, lifters, spears, hammers */
+  | "impulse"
+  /** grabs and squeezes, holding the victim while it chews through armour */
+  | "clamp"
+  /** cone of fire; damage over time, burns fuel, ignores most armour */
+  | "flame"
+  /** no moving parts; wedges, forks and spikes win by geometry */
+  | "static";
+
+/** Which button drives it. Two weapons means two buttons. */
+export type WeaponSlot = "primary" | "secondary";
 
 interface PartDefBase {
   /** stable kebab-case key; referenced by BotSpec and never renamed */
@@ -33,7 +62,9 @@ interface PartDefBase {
   readonly name: string;
   readonly nameJa: string;
   readonly category: PartCategory;
-  /** kg — this is the build budget AND the physical mass. There is no separate cost. */
+  /** what the part costs out of the room's budget */
+  readonly cost: number;
+  /** kg — physical mass. Affects handling and impact, but is not the budget. */
   readonly mass: number;
   /** part is destroyed and falls off at 0 */
   readonly hp: number;
@@ -43,11 +74,24 @@ interface PartDefBase {
   readonly cells: readonly [number, number];
   /** m, above the deck — drives both the collider and the mesh */
   readonly height: number;
-  /** base brick colour, 0xRRGGBB */
+  /** how it is rendered: real machinery, not painted plastic */
+  readonly material: SurfaceMaterial;
+  /** base colour, 0xRRGGBB */
   readonly color: number;
   /** one line of Japanese shown in the builder */
   readonly blurb: string;
 }
+
+/** Render hints so the whole machine reads as fabricated metal. */
+export type SurfaceMaterial =
+  | "steel"
+  | "titanium"
+  | "hardox"
+  | "aluminium"
+  | "polymer"
+  | "rubber"
+  | "carbon"
+  | "brass";
 
 export interface ChassisDef extends PartDefBase {
   readonly category: "chassis";
@@ -55,6 +99,8 @@ export interface ChassisDef extends PartDefBase {
   readonly deck: readonly [number, number];
   /** m between the deck underside and the floor */
   readonly groundClearance: number;
+  /** drive still works upside down (a real invertible design) */
+  readonly invertible: boolean;
 }
 
 export interface DriveDef extends PartDefBase {
@@ -71,25 +117,66 @@ export interface DriveDef extends PartDefBase {
 
 export interface WeaponDef extends PartDefBase {
   readonly category: "weapon";
-  readonly motion: WeaponMotion;
+  readonly action: WeaponAction;
+  readonly effect: WeaponEffect;
+  readonly slot: WeaponSlot;
   /** impact multiplier; see the damage formula in ARCHITECTURE.md */
   readonly damageMul: number;
-  /** fraction of dealt damage the weapon takes back. 0 for wedges. */
+  /** fraction of dealt damage the weapon takes back. 0 for wedges and flame. */
   readonly selfDamageMul: number;
-  /** m the weapon sticks out past its mount, for collider placement */
+  /** m the weapon reaches past its mount */
   readonly reach: number;
-  /** spin only */
+
+  /*
+   * Mechanism, stated rather than guessed. The first pass inferred all of this
+   * from substrings of the part id ("spear", "flip", "disc", "side-saws"),
+   * which works only for the exact ids that existed when it was written: add a
+   * "hydraulic-lance" to the catalog and it silently mounts as the wrong joint
+   * and throws its victim the wrong way. These say it outright.
+   */
+  /** how the moving part is attached; "fixed" weapons have no joint at all */
+  readonly mechanism: "revolute" | "prismatic" | "fixed";
+  /** spin plane, for spin/grind weapons */
+  readonly spinAxis?: "horizontal" | "vertical";
+  /** impulse weapons: throw the victim up and over, or drive straight through */
+  readonly launch?: "flip" | "punch";
+  /** mounted as a mirrored pair on both flanks */
+  readonly pairMount?: boolean;
+
+  /** spin / grind */
   readonly maxOmega?: number;
   readonly spinUpTorque?: number;
   readonly inertia?: number;
-  /** swing only */
+  /** grind / clamp: hit points per second of sustained contact */
+  readonly dps?: number;
+
+  /** impulse: N·s delivered to whatever it catches */
   readonly impulse?: number;
+  /** impulse / clamp / triggered: seconds between uses */
   readonly cooldown?: number;
+  /** impulse: radians the arm sweeps, or metres a spear extends */
   readonly sweep?: number;
+  /** impulse: how long the stroke takes */
+  readonly strokeSec?: number;
+
+  /** clamp: seconds it can hold a victim before releasing */
+  readonly holdSec?: number;
+
+  /** flame: cone half-angle in radians and its length in metres */
+  readonly coneAngle?: number;
+  readonly coneRange?: number;
+  /** held weapons: seconds of use before the tank is dry (0 = unlimited) */
+  readonly fuel?: number;
+  /** seconds to refill one second of fuel while not firing */
+  readonly refuelRate?: number;
 }
 
 export interface ArmorDef extends PartDefBase {
   readonly category: "armor";
+  /** multiplier applied to spinner damage specifically, e.g. 0.6 for UHMW */
+  readonly spinnerResist?: number;
+  /** multiplier applied to flame damage, e.g. 0.4 for a heat shield */
+  readonly flameResist?: number;
 }
 
 export interface UtilityDef extends PartDefBase {
@@ -98,6 +185,8 @@ export interface UtilityDef extends PartDefBase {
   readonly selfRight?: boolean;
   /** multiplies drive torque, e.g. 1.15 */
   readonly powerMul?: number;
+  /** multiplies weapon spin-up torque */
+  readonly weaponPowerMul?: number;
 }
 
 export type PartDef = ChassisDef | DriveDef | WeaponDef | ArmorDef | UtilityDef;
@@ -119,18 +208,34 @@ export interface PlacedPart {
 
 /** Everything a player designs. Serialisable, shareable, untrusted over the wire. */
 export interface BotSpec {
-  readonly v: 1;
+  readonly v: 2;
   readonly name: string;
   readonly chassisId: string;
-  /** paint colour, 0xRRGGBB */
+  /** livery colour, 0xRRGGBB */
   readonly paint: number;
   readonly parts: readonly PlacedPart[];
 }
 
+/** Room rules the host picks before the match. */
+export interface RoomSettings {
+  /** build budget in points; the whole reason two rooms play differently */
+  readonly pointBudget: number;
+  readonly arenaId: string;
+  readonly matchSec: number;
+}
+
+export const POINT_BUDGET_PRESETS = [600, 1000, 1500, 2200] as const;
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
+  pointBudget: 1000,
+  arenaId: "the-box",
+  matchSec: 180
+};
+
 /** Derived numbers shown in the builder and used by validation. */
 export interface BuildStats {
+  readonly cost: number;
+  readonly pointBudget: number;
   readonly mass: number;
-  readonly massLimit: number;
   readonly hp: number;
   readonly armor: number;
   /** m/s on a flat floor */
@@ -138,9 +243,13 @@ export interface BuildStats {
   readonly torque: number;
   /** indicative damage per hit at full weapon speed */
   readonly hitPower: number;
+  /** sustained damage per second from grind/flame/clamp weapons */
+  readonly sustainedDps: number;
   readonly driveCount: number;
-  readonly weaponId: string | null;
+  readonly primaryId: string | null;
+  readonly secondaryId: string | null;
   readonly hasSelfRight: boolean;
+  readonly invertible: boolean;
 }
 
 export interface BuildValidation {
@@ -161,8 +270,10 @@ export interface MatchInput {
   readonly throttle: number;
   /** -1 left .. 1 right */
   readonly steer: number;
-  /** weapon held */
-  readonly weapon: boolean;
+  /** primary weapon button */
+  readonly primary: boolean;
+  /** secondary weapon button */
+  readonly secondary: boolean;
   /** self-right requested this frame */
   readonly selfRight: boolean;
 }
@@ -170,7 +281,8 @@ export interface MatchInput {
 export const NEUTRAL_INPUT: MatchInput = {
   throttle: 0,
   steer: 0,
-  weapon: false,
+  primary: false,
+  secondary: false,
   selfRight: false
 };
 
@@ -183,6 +295,22 @@ export interface JudgeScore {
   readonly total: number;
 }
 
+/** Live state of one weapon, for the HUD and the renderer. */
+export interface WeaponState {
+  readonly partIdx: number;
+  readonly slot: WeaponSlot;
+  readonly active: boolean;
+  /** rad/s for spin/grind, 0 otherwise */
+  readonly omega: number;
+  readonly angle: number;
+  /** 0..1 ready meter for triggered weapons */
+  readonly charge: number;
+  /** 0..1 remaining fuel for held weapons; 1 when the weapon needs none */
+  readonly fuel: number;
+  /** seat currently held in a clamp, if any */
+  readonly clamping: SeatIndex | null;
+}
+
 export interface BotState {
   readonly seat: SeatIndex;
   readonly name: string;
@@ -192,9 +320,7 @@ export interface BotState {
   readonly pos: readonly [number, number, number];
   readonly quat: readonly [number, number, number, number];
   readonly vel: readonly [number, number, number];
-  /** rad/s of the weapon, 0 when it has none */
-  readonly weaponOmega: number;
-  readonly weaponAngle: number;
+  readonly weapons: readonly WeaponState[];
   /** indices into BotSpec.parts that have fallen off */
   readonly detached: readonly number[];
   /** seconds the bot has been under the immobility threshold */
@@ -203,18 +329,23 @@ export interface BotState {
   readonly damageTaken: number;
   /** true while the chassis is upside down */
   readonly inverted: boolean;
+  /** seconds of burning damage still to come */
+  readonly burningFor: number;
   readonly selfRightCooldown: number;
 }
 
 /** Fire-and-forget signals for VFX and audio; not authoritative state. */
 export type SimEvent =
-  | { readonly t: "hit"; readonly seat: SeatIndex; readonly by: SeatIndex; readonly x: number; readonly y: number; readonly z: number; readonly power: number }
+  | { readonly t: "hit"; readonly seat: SeatIndex; readonly by: SeatIndex; readonly x: number; readonly y: number; readonly z: number; readonly power: number; readonly effect: WeaponEffect }
   | { readonly t: "detach"; readonly seat: SeatIndex; readonly partIdx: number; readonly x: number; readonly y: number; readonly z: number }
+  | { readonly t: "fire"; readonly seat: SeatIndex; readonly slot: WeaponSlot; readonly effect: WeaponEffect }
+  | { readonly t: "flame"; readonly seat: SeatIndex; readonly x: number; readonly y: number; readonly z: number; readonly dirX: number; readonly dirZ: number }
+  | { readonly t: "clamp"; readonly seat: SeatIndex; readonly victim: SeatIndex }
   | { readonly t: "ko"; readonly seat: SeatIndex; readonly reason: KoReason }
   | { readonly t: "flip"; readonly seat: SeatIndex }
   | { readonly t: "hazard"; readonly seat: SeatIndex; readonly x: number; readonly y: number; readonly z: number };
 
-export type KoReason = "damage" | "immobile" | "pit";
+export type KoReason = "damage" | "immobile" | "pit" | "fire";
 
 export interface MatchState {
   readonly tick: number;
@@ -237,8 +368,11 @@ export interface ArenaDef {
   readonly nameJa: string;
   readonly size: number;
   readonly wallHeight: number;
+  /** square hole; `r` is the half-side */
   readonly pit: { readonly x: number; readonly z: number; readonly r: number } | null;
   readonly saws: readonly { readonly x: number; readonly z: number; readonly r: number }[];
+  /** floor flame jets that fire on a cycle */
+  readonly flameJets: readonly { readonly x: number; readonly z: number }[];
 }
 
 /** Injected randomness. Never call Math.random inside sim/. */
@@ -268,4 +402,5 @@ export interface CreateSimOptions {
   readonly names: readonly string[];
   readonly catalog: Catalog;
   readonly arena: ArenaDef;
+  readonly settings: RoomSettings;
 }

@@ -16,11 +16,13 @@ import type {
   KoReason,
   MatchInput,
   MatchPhase,
+  RoomSettings,
   SeatIndex,
-  SimEvent
+  SimEvent,
+  WeaponSlot
 } from "../sim/types";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** One bot, one snapshot. Quaternion is sent whole; 4 floats beat unpack bugs. */
 export interface BotSnap {
@@ -34,14 +36,29 @@ export interface BotSnap {
   readonly qy: number;
   readonly qz: number;
   readonly qw: number;
-  /** weapon angle, rad */
-  readonly wa: number;
-  /** weapon angular speed, rad/s — the renderer needs it for blur and pitch */
-  readonly wo: number;
+  /** one entry per fitted weapon, in slot order */
+  readonly w: readonly WeaponSnap[];
   /** accumulated wheel rotation, rad */
   readonly wp: number;
   /** bit i set means BotSpec.parts[i] has fallen off */
   readonly detach: number;
+  /** seconds of fire damage still burning, for the flame VFX */
+  readonly burn: number;
+}
+
+/** Enough to draw a weapon and its readiness without re-deriving anything. */
+export interface WeaponSnap {
+  readonly idx: number;
+  readonly slot: WeaponSlot;
+  readonly on: boolean;
+  /** angle, rad, or extension in metres for a spear */
+  readonly a: number;
+  /** angular speed, rad/s — the renderer needs it for blur and audio pitch */
+  readonly o: number;
+  /** 0..1 cooldown meter */
+  readonly c: number;
+  /** 0..1 fuel */
+  readonly f: number;
 }
 
 export interface Snapshot {
@@ -68,6 +85,8 @@ export interface SeatInfo {
 
 export type ClientMessage =
   | { readonly t: "hello"; readonly v: number; readonly name: string }
+  /** host only; guests sending this are ignored */
+  | { readonly t: "settings"; readonly settings: RoomSettings }
   /** untrusted: the host re-validates every build against its own catalog */
   | { readonly t: "build"; readonly spec: BotSpec }
   | { readonly t: "ready"; readonly ready: boolean }
@@ -79,10 +98,23 @@ export type ClientMessage =
 /* ---------------------------------------------------------------- */
 
 export type HostMessage =
-  | { readonly t: "welcome"; readonly v: number; readonly seat: SeatIndex; readonly arena: ArenaDef }
-  | { readonly t: "lobby"; readonly seats: readonly SeatInfo[] }
+  | {
+      readonly t: "welcome";
+      readonly v: number;
+      readonly seat: SeatIndex;
+      readonly arena: ArenaDef;
+      readonly settings: RoomSettings;
+    }
+  /** the budget travels with every lobby update so the builder can re-validate */
+  | { readonly t: "lobby"; readonly seats: readonly SeatInfo[]; readonly settings: RoomSettings }
   /** authoritative build list; guests rebuild their meshes from exactly this */
-  | { readonly t: "start"; readonly specs: readonly (BotSpec | null)[]; readonly names: readonly string[]; readonly seed: number }
+  | {
+      readonly t: "start";
+      readonly specs: readonly (BotSpec | null)[];
+      readonly names: readonly string[];
+      readonly seed: number;
+      readonly settings: RoomSettings;
+    }
   | { readonly t: "snap"; readonly s: Snapshot }
   | {
       readonly t: "result";

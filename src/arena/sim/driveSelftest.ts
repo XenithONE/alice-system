@@ -6,13 +6,25 @@ import { buildCatalog, PRESETS } from "../parts/catalog";
 import { ARENAS } from "../parts/arenas";
 import { createArenaSim, initPhysics } from "./world";
 import { computeStats } from "./build";
-import type { MatchInput } from "./types";
+import { DEFAULT_ROOM_SETTINGS, type MatchInput } from "./types";
 
 // Node-only gate script (same shim as buildSelftest.ts).
 declare const process: { exitCode?: number };
 
-const FULL: MatchInput = { throttle: 1, steer: 0, weapon: false, selfRight: false };
-const IDLE: MatchInput = { throttle: 0, steer: 0, weapon: false, selfRight: false };
+const FULL: MatchInput = {
+  throttle: 1,
+  steer: 0,
+  primary: false,
+  secondary: false,
+  selfRight: false
+};
+const IDLE: MatchInput = {
+  throttle: 0,
+  steer: 0,
+  primary: false,
+  secondary: false,
+  selfRight: false
+};
 
 const main = async (): Promise<void> => {
   await initPhysics();
@@ -28,9 +40,10 @@ const main = async (): Promise<void> => {
       specs: [preset, PRESETS[2]!, null, null],
       names: [preset.name, "sparring", "", ""],
       catalog,
-      arena: ARENAS[0]!
+      arena: ARENAS[0]!,
+      settings: DEFAULT_ROOM_SETTINGS
     });
-    const promised = computeStats(preset, catalog).topSpeed;
+    const promised = computeStats(preset, catalog, DEFAULT_ROOM_SETTINGS).topSpeed;
     // burn the countdown
     for (let i = 0; i < 200; i += 1) sim.step([IDLE, IDLE, IDLE, IDLE]);
     // Peak speed during acceleration. Steady state is meaningless here: both

@@ -177,12 +177,13 @@ button:focus-visible, input:focus-visible, canvas:focus-visible {
 .sc-machine__body {
   position: absolute;
   inset: 27% 17% 21%;
-  border: 8px solid #191d1f;
-  border-radius: 18px 18px 8px 8px;
+  border: 8px solid #15191a;
+  border-radius: 3px;
   background:
-    radial-gradient(circle at 18px 18px, #f7c33f 0 7px, #a36d11 8px, transparent 9px) 0 0/58px 48px,
-    linear-gradient(145deg, #e5af2e, #8b5510);
-  box-shadow: inset 0 13px rgba(255,255,255,.2), inset 0 -20px rgba(0,0,0,.28), 0 0 0 7px #3d4445;
+    repeating-linear-gradient(173deg, transparent 0 17px, rgba(255,255,255,.08) 18px, transparent 19px 42px),
+    linear-gradient(145deg, #b68a27, #624615 72%, #292d2d);
+  clip-path: polygon(7% 0, 93% 0, 100% 17%, 98% 100%, 2% 100%, 0 17%);
+  box-shadow: inset 0 5px rgba(255,255,255,.12), inset 0 -24px rgba(0,0,0,.34), 0 0 0 7px #3d4445;
 }
 .sc-machine__body::after {
   content: "SC";
@@ -190,8 +191,8 @@ button:focus-visible, input:focus-visible, canvas:focus-visible {
   inset: 36% 22%;
   display: grid;
   place-items: center;
-  border: 5px solid #2a3032;
-  background: #c91a09;
+  border: 3px solid #1c2021;
+  background: linear-gradient(145deg,#833128,#3b1714);
   color: #eee8dc;
   font: 700 clamp(36px, 6vw, 80px)/1 "Oswald", sans-serif;
   text-shadow: 4px 4px #7b1006;
@@ -220,9 +221,12 @@ button:focus-visible, input:focus-visible, canvas:focus-visible {
   top: 22%;
   width: 31%;
   aspect-ratio: 1;
-  border: 20px dashed #c4c7c4;
+  border: 18px dashed #b7bcba;
   border-radius: 50%;
-  background: radial-gradient(circle, #111 0 16%, #777b7b 17% 23%, #292d2e 24% 55%, transparent 56%);
+  background:
+    conic-gradient(from 10deg, #a7acab, #414646 8%, #858a89 18%, #303434 29%, #a8acab 42%, #383d3d 55%, #999e9c 72%, #292e2e 87%, #a7acab),
+    radial-gradient(circle, #111 0 16%, #777b7b 17% 23%, #292d2e 24% 55%, transparent 56%);
+  mask: radial-gradient(circle, #000 0 55%, transparent 56%);
   filter: drop-shadow(0 10px 8px #000);
 }
 
@@ -259,6 +263,21 @@ button:focus-visible, input:focus-visible, canvas:focus-visible {
 }
 .sc-screen-head > div { text-align: center; }
 .sc-screen-head span { color: var(--sc-yellow); font: 700 11px "Space Mono", monospace; letter-spacing: .24em; }
+.sc-room-settings {
+  width: min(760px, 100%);
+  margin: -10px auto 26px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  padding: 1px;
+  background: #3b4447;
+  box-shadow: var(--sc-shadow);
+}
+.sc-room-settings > div { padding: 14px 16px; background: linear-gradient(145deg,#171d1f,#0e1213); }
+.sc-room-settings label { display: block; margin-bottom: 7px; color: var(--sc-yellow); font: 700 10px "Space Mono",monospace; letter-spacing: .13em; }
+.sc-room-settings select { width: 100%; min-height: 42px; padding: 0 10px; border: 1px solid #4a5558; color: #ece8df; background: #090c0d; font-weight: 700; }
+.sc-room-settings select:disabled { color: #c0c5c3; opacity: .75; }
+.sc-room-settings small { display: block; margin-top: 6px; color: var(--sc-muted); font-size: 10px; }
 .sc-screen-head h1 { margin: 5px 0 0; font: 700 clamp(32px,5vw,54px)/1 "Oswald", sans-serif; letter-spacing: .08em; }
 .sc-screen-head > .sc-text-button { justify-self: start; }
 .sc-room-code {
@@ -399,22 +418,25 @@ button:focus-visible, input:focus-visible, canvas:focus-visible {
   font-size: 11px;
   letter-spacing: .1em;
 }
-.sc-rpm {
+.sc-weapon-gauges {
   position: absolute;
   left: 50%;
   bottom: 22px;
-  width: min(410px, 48vw);
-  padding: 12px 18px;
-  border: 1px solid #4a5355;
-  background: rgba(7,9,10,.86);
+  width: min(650px, 58vw);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
   transform: translateX(-50%);
-  clip-path: polygon(15px 0, calc(100% - 15px) 0, 100% 50%, calc(100% - 15px) 100%, 15px 100%, 0 50%);
 }
-.sc-rpm > span { color: #c9cecd; font-size: 11px; letter-spacing: .12em; }
-.sc-rpm > div { height: 12px; margin: 5px 85px 0 0; overflow: hidden; background: #262c2e; transform: skewX(-15deg); }
-.sc-rpm > div i { display: block; height: 100%; background: linear-gradient(90deg, #6cb843, #e2ad28 65%, #d54136); }
-.sc-rpm > strong { position: absolute; right: 25px; bottom: 11px; font: 700 22px "Space Mono", monospace; }
-.sc-rpm > strong small { color: var(--sc-muted); font-size: 9px; }
+.sc-weapon-gauge { position: relative; min-height: 72px; padding: 9px 12px; border: 1px solid #4a5355; background: rgba(7,9,10,.9); clip-path: polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px); }
+.sc-weapon-gauge.is-live { border-color: #e7a832; box-shadow: inset 0 0 24px rgba(226,169,47,.14); }
+.sc-weapon-gauge > span { display: block; color: #d1a43c; font: 700 9px "Space Mono",monospace; letter-spacing: .1em; }
+.sc-weapon-gauge > strong { display: block; margin: 3px 0 5px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-weapon-gauge > div { height: 8px; margin-right: 72px; overflow: hidden; background: #262c2e; transform: skewX(-14deg); }
+.sc-weapon-gauge > div i { display: block; height: 100%; background: linear-gradient(90deg,#507d8a,#e2ad28 68%,#d54136); }
+.sc-weapon-gauge > small { position: absolute; right: 11px; bottom: 9px; color: #d3d7d5; font: 700 9px "Space Mono",monospace; }
+.sc-burning { position:absolute; left:20px; bottom:22px; padding:9px 12px; color:#ffb04b; border:1px solid #a83e28; background:rgba(32,8,4,.85); font:700 12px "Space Mono",monospace; animation:sc-burn-pulse .45s infinite alternate; }
+@keyframes sc-burn-pulse { to { filter:brightness(1.45); box-shadow:0 0 22px rgba(255,85,24,.34); } }
 .sc-controls {
   position: absolute;
   right: 20px;
@@ -499,7 +521,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible {
   .sc-seat { min-height: 300px; }
   .sc-lobby__foot { align-items: flex-start; }
   .sc-controls { display: none; }
-  .sc-rpm { width: min(500px, calc(100vw - 40px)); }
+  .sc-weapon-gauges { width: min(560px, calc(100vw - 40px)); }
 }
 
 @media (max-width: 600px) {
@@ -519,7 +541,10 @@ button:focus-visible, input:focus-visible, canvas:focus-visible {
   .sc-hp-card { padding-block: 6px; }
   .sc-hud__top { top: 175px; }
   .sc-pause { top: auto; right: 12px; bottom: 92px; }
-  .sc-rpm { bottom: 16px; }
+  .sc-weapon-gauges { bottom: 14px; grid-template-columns:1fr; width:calc(100vw - 24px); }
+  .sc-weapon-gauge { min-height:58px; }
+  .sc-weapon-gauge:nth-child(2) { display:none; }
+  .sc-room-settings { grid-template-columns:1fr; }
   .sc-scoreboard { overflow-x: auto; }
   .sc-scoreboard header, .sc-scoreboard > div { min-width: 590px; }
 }

@@ -6,8 +6,15 @@ import {
   STALEMATE_RANGE,
   STALEMATE_SEC
 } from "./balance";
-import type { ArenaSim, BotState, MatchInput, SeatIndex } from "./types";
-import { arenaForSim } from "./world";
+import type {
+  ArenaSim,
+  BotState,
+  MatchInput,
+  SeatIndex,
+  WeaponDef,
+  WeaponState
+} from "./types";
+import { arenaForSim, weaponsForSim } from "./world";
 
 interface AiMemory {
   x: number;
@@ -66,11 +73,31 @@ function steerToward(
   return Math.max(-1, Math.min(1, -Math.atan2(cross, dot)));
 }
 
+function wantsWeapon(
+  def: WeaponDef,
+  state: WeaponState | undefined,
+  distance: number,
+  facingDot: number
+): boolean {
+  if (def.action === "passive" || def.effect === "static") return false;
+  if (def.effect === "clamp" && state?.clamping !== null && state?.clamping !== undefined) {
+    return true;
+  }
+  if (def.effect === "flame") {
+    return distance <= (def.coneRange ?? def.reach) && facingDot >= Math.cos(def.coneAngle ?? 0);
+  }
+  if (def.effect === "grind") return distance <= Math.max(1.2, def.reach + 0.8);
+  if (def.effect === "impulse" || def.effect === "clamp") {
+    return distance <= Math.max(1.35, def.reach + 0.8) && (state?.charge ?? 1) >= 1;
+  }
+  return distance <= Math.max(1.5, def.reach + 0.9);
+}
+
 export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
   const state = sim.getState();
   const bot = state.bots.find((candidate) => candidate.seat === seat);
   if (!bot?.alive || state.phase !== "live") {
-    return { throttle: 0, steer: 0, weapon: false, selfRight: false };
+    return { throttle: 0, steer: 0, primary: false, secondary: false, selfRight: false };
   }
   let target: BotState | null = null;
   let targetDistance = Number.POSITIVE_INFINITY;
@@ -82,7 +109,9 @@ export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
       targetDistance = distance;
     }
   }
-  if (!target) return { throttle: 0, steer: 0, weapon: true, selfRight: bot.inverted };
+  if (!target) {
+    return { throttle: 0, steer: 0, primary: false, secondary: false, selfRight: bot.inverted };
+  }
 
   const ai = stateMemory(sim, seat, bot);
   const moved = Math.hypot(bot.pos[0] - ai.x, bot.pos[2] - ai.z);
@@ -150,6 +179,10 @@ export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
   }
 
   const [forwardX, forwardZ] = forward(bot);
+  const directX = target.pos[0] - bot.pos[0];
+  const directZ = target.pos[2] - bot.pos[2];
+  const directLength = Math.max(Math.hypot(directX, directZ), Number.EPSILON);
+  const facingDot = (forwardX * directX + forwardZ * directZ) / directLength;
   let steer = steerToward(forwardX, forwardZ, targetX, targetZ);
   let throttle = Math.abs(steer) > 0.8 ? 0.35 : 1;
   if (lowHp) throttle = 0.85;
@@ -160,10 +193,19 @@ export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
     throttle = -1;
     steer = -steer || (seat % 2 === 0 ? 1 : -1);
   }
+  let primary = false;
+  let secondary = false;
+  for (const def of weaponsForSim(sim, seat)) {
+    const weaponState = bot.weapons.find((weapon) => weapon.slot === def.slot);
+    const wants = wantsWeapon(def, weaponState, targetDistance, facingDot);
+    if (def.slot === "primary") primary ||= wants;
+    else secondary ||= wants;
+  }
   return {
     throttle,
     steer,
-    weapon: true,
+    primary,
+    secondary,
     selfRight: bot.inverted
   };
 }

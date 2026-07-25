@@ -2,7 +2,7 @@
 // sending an illegal robot, so it gets tested adversarially, not sampled.
 import { buildCatalog, PRESETS } from "../parts/catalog";
 import { validateBuild, computeStats } from "./build";
-import type { BotSpec, PlacedPart } from "./types";
+import { DEFAULT_ROOM_SETTINGS, type BotSpec, type PlacedPart } from "./types";
 
 // Node-only gate script; the app tsconfig has no node types (same shim as
 // src/quest/engine/selftest.ts).
@@ -16,7 +16,7 @@ const check = (label: string, spec: BotSpec, expectOk: boolean) => {
   let ok: boolean;
   let errors: readonly string[] = [];
   try {
-    const v = validateBuild(spec, cat);
+    const v = validateBuild(spec, cat, DEFAULT_ROOM_SETTINGS);
     ok = v.ok;
     errors = v.errors;
   } catch (e) {
@@ -33,11 +33,11 @@ for (const p of PRESETS) check(`preset:${p.name}`, p, true);
 const base = PRESETS[0]!;
 const partsOf = (extra: PlacedPart[]): PlacedPart[] => [...base.parts, ...extra];
 
-// 2. overweight: pile on the heaviest chassis-legal part until over 120kg
-const heavy = [...cat.parts].filter((p) => p.category !== "chassis").sort((a, b) => b.mass - a.mass)[0]!;
+// 2. over budget
+const costly = [...cat.parts].filter((p) => p.category !== "chassis").sort((a, b) => b.cost - a.cost)[0]!;
 check(
-  "overweight",
-  { ...base, parts: partsOf([{ partId: heavy.id, cell: [0, 0], rot: 0 }, { partId: heavy.id, cell: [1, 1], rot: 0 }, { partId: heavy.id, cell: [2, 2], rot: 0 }]) },
+  "overBudget",
+  { ...base, parts: partsOf([{ partId: costly.id, cell: [0, 0], rot: 0 }]) },
   false
 );
 
@@ -65,11 +65,11 @@ check("emptyBuild", { ...base, parts: [] }, false);
 
 // stats sanity on the presets
 const stats = PRESETS.map((p) => {
-  const s = computeStats(p, cat);
-  if (s.mass > s.massLimit) problems.push(`${p.name}: stats.mass ${s.mass} over limit`);
+  const s = computeStats(p, cat, DEFAULT_ROOM_SETTINGS);
+  if (s.cost > s.pointBudget) problems.push(`${p.name}: stats.cost ${s.cost} over budget`);
   if (!(s.topSpeed > 0)) problems.push(`${p.name}: topSpeed ${s.topSpeed}`);
   if (!(s.hp > 0)) problems.push(`${p.name}: hp ${s.hp}`);
-  return { name: p.name, mass: +s.mass.toFixed(1), hp: s.hp, topSpeed: +s.topSpeed.toFixed(2), torque: +s.torque.toFixed(0), hit: +s.hitPower.toFixed(1), drives: s.driveCount, weapon: s.weaponId };
+  return { name: p.name, cost: s.cost, mass: +s.mass.toFixed(1), hp: s.hp, topSpeed: +s.topSpeed.toFixed(2), torque: +s.torque.toFixed(0), hit: +s.hitPower.toFixed(1), drives: s.driveCount, primary: s.primaryId, secondary: s.secondaryId };
 });
 
 console.log(JSON.stringify({ cases: results, stats, problems }, null, 2));

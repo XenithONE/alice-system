@@ -1,9 +1,9 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import {
-  MIN_HIT_IMPULSE,
   DRIVE_ANGULAR_DAMPING,
   DRIVE_LINEAR_DAMPING,
-  FIXED_DT
+  FIXED_DT,
+  MIN_HIT_IMPULSE
 } from "./balance";
 import { partLocalPosition } from "./build";
 import {
@@ -41,10 +41,21 @@ export interface DriveRuntime extends RuntimePart {
 
 export interface WeaponRuntime extends RuntimePart {
   readonly def: WeaponDef;
-  readonly joint: RAPIER.RevoluteImpulseJoint | null;
+  readonly joint:
+    | RAPIER.RevoluteImpulseJoint
+    | RAPIER.PrismaticImpulseJoint
+    | null;
+  readonly spear: boolean;
+  active: boolean;
   cooldownLeft: number;
-  swinging: boolean;
-  swingTarget: number;
+  triggerGapLeft: number;
+  strokeLeft: number;
+  fuelLeft: number;
+  dryLockoutLeft: number;
+  wasPressed: boolean;
+  clamping: SeatIndex | null;
+  clampLeft: number;
+  readonly impulseVictims: Set<SeatIndex>;
 }
 
 export interface AssembledBot {
@@ -55,28 +66,17 @@ export interface AssembledBot {
   readonly chassisCollider: RAPIER.Collider;
   readonly parts: RuntimePart[];
   readonly drives: DriveRuntime[];
-  readonly weapon: WeaponRuntime | null;
+  readonly weapons: WeaponRuntime[];
   readonly colliderOwners: Map<number, ColliderOwner>;
   readonly powerMul: number;
+  readonly weaponPowerMul: number;
   readonly hasSelfRight: boolean;
+  readonly spinnerResist: number;
+  readonly flameResist: number;
   selfRightCooldown: number;
 }
 
 const qIdentity = { x: 0, y: 0, z: 0, w: 1 };
-
-/*
- * Collision groups. A robot must never collide with itself: wheels sit inside
- * the deck footprint and weapons swing across it, so with self-collision on,
- * a bot's own wheels jam against its weapon and against each other. Measured
- * before this was added: four wheels commanded to the same speed settled at
- * +3.4, -44.7, -51.3 rad/s, so the machine spun on the spot at 0.0 m/s
- * forward while the workshop promised 6.2 m/s.
- *
- * Rapier packs memberships in the high 16 bits and the filter in the low 16.
- * Two colliders interact only if each one's membership passes the other's
- * filter, so leaving our own bit out of our own filter disables self-contact
- * without touching anything else.
- */
 const ARENA_BIT = 1 << 4;
 const DEBRIS_BIT = 1 << 5;
 const ALL_BOTS = 0b1111;
@@ -88,10 +88,7 @@ const pack = (memberships: number, filter: number): number =>
 export const botCollisionGroups = (seat: number): number =>
   pack(1 << seat, (ALL_BOTS & ~(1 << seat)) | ARENA_BIT | DEBRIS_BIT);
 
-/** Floor, walls, hazards. */
 export const ARENA_COLLISION_GROUPS = pack(ARENA_BIT, ALL_BOTS | DEBRIS_BIT);
-
-/** Torn-off parts: they bounce around and can trip anyone, including the owner. */
 export const DEBRIS_COLLISION_GROUPS = pack(DEBRIS_BIT, ALL_BOTS | ARENA_BIT | DEBRIS_BIT);
 
 function enableContactEvents(collider: RAPIER.Collider, seat?: number): void {
@@ -124,13 +121,19 @@ function createBoxCollider(
   seat: number
 ): RAPIER.Collider {
   const [w, d] = rotatedSize(part, rot);
-  const desc = RAPIER.ColliderDesc.cuboid(w * CELL / 2, part.height / 2, d * CELL / 2)
-    .setTranslation(local[0], local[1], local[2])
-    .setRotation(quarterTurn(rot))
-    .setMass(part.mass);
-  const collider = world.createCollider(desc, body);
+  const collider = world.createCollider(
+    RAPIER.ColliderDesc.cuboid(w * CELL / 2, part.height / 2, d * CELL / 2)
+      .setTranslation(local[0], local[1], local[2])
+      .setRotation(quarterTurn(rot))
+      .setMass(part.mass),
+    body
+  );
   enableContactEvents(collider, seat);
   return collider;
+}
+
+function isSpear(def: WeaponDef): boolean {
+  return def.effect === "impulse" && def.mechanism === "prismatic";
 }
 
 export function assembleBot(
@@ -145,10 +148,16 @@ export function assembleBot(
   if (!chassisDef || chassisDef.category !== "chassis") {
     throw new Error(`Invalid chassis: ${spec.chassisId}`);
   }
+  const chassisRotation = {
+    x: 0,
+    y: Math.sin(facing / 2),
+    z: 0,
+    w: Math.cos(facing / 2)
+  };
   const chassis = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(origin[0], origin[1], origin[2])
-      .setRotation({ x: 0, y: Math.sin(facing / 2), z: 0, w: Math.cos(facing / 2) })
+      .setRotation(chassisRotation)
       .setLinearDamping(DRIVE_LINEAR_DAMPING)
       .setAngularDamping(DRIVE_ANGULAR_DAMPING)
       .setCcdEnabled(true)
@@ -170,9 +179,12 @@ export function assembleBot(
   ]);
   const parts: RuntimePart[] = [];
   const drives: DriveRuntime[] = [];
-  let weapon: WeaponRuntime | null = null;
+  const weapons: WeaponRuntime[] = [];
   let powerMul = 1;
+  let weaponPowerMul = 1;
   let hasSelfRight = false;
+  let spinnerResist = 1;
+  let flameResist = 1;
 
   for (const [idx, placed] of spec.parts.entries()) {
     const def = catalog.byId.get(placed.partId);
@@ -184,7 +196,7 @@ export function assembleBot(
     if (
       def.category === "armor" ||
       def.category === "utility" ||
-      (def.category === "weapon" && def.motion === "none")
+      (def.category === "weapon" && (def.effect === "flame" || def.effect === "static"))
     ) {
       const collider = createBoxCollider(world, chassis, def, local, placed.rot, seat);
       const runtime: RuntimePart = {
@@ -199,19 +211,30 @@ export function assembleBot(
       };
       parts.push(runtime);
       colliderOwners.set(collider.handle, { seat, partIdx: idx });
-      if (def.category === "utility") {
+      if (def.category === "armor") {
+        spinnerResist = Math.min(spinnerResist, def.spinnerResist ?? 1);
+        flameResist = Math.min(flameResist, def.flameResist ?? 1);
+      } else if (def.category === "utility") {
         powerMul *= def.powerMul ?? 1;
+        weaponPowerMul *= def.weaponPowerMul ?? 1;
         hasSelfRight ||= def.selfRight === true;
-      }
-      if (def.category === "weapon") {
-        weapon = {
+      } else {
+        weapons.push({
           ...runtime,
           def,
           joint: null,
+          spear: false,
+          active: false,
           cooldownLeft: 0,
-          swinging: false,
-          swingTarget: 0
-        };
+          triggerGapLeft: 0,
+          strokeLeft: 0,
+          fuelLeft: def.fuel ?? 0,
+          dryLockoutLeft: 0,
+          wasPressed: false,
+          clamping: null,
+          clampLeft: 0,
+          impulseVictims: new Set()
+        });
       }
       continue;
     }
@@ -221,12 +244,6 @@ export function assembleBot(
       const halfWidth = Math.max(def.height, CELL) / 2;
       const driveLocal: [number, number, number] = [localX, radius, localZ];
       const [worldX, worldZ] = worldOffset(localX, localZ, facing);
-      const chassisRotation = {
-        x: 0,
-        y: Math.sin(facing / 2),
-        z: 0,
-        w: Math.cos(facing / 2)
-      };
       const body = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(origin[0] + worldX, origin[1] + radius, origin[2] + worldZ)
@@ -270,16 +287,8 @@ export function assembleBot(
       continue;
     }
 
-    const spinHorizontal = def.id.includes("disc") || def.id.includes("saw");
-    const localRotation = spinHorizontal
-      ? qIdentity
-      : { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
-    const chassisRotation = {
-      x: 0,
-      y: Math.sin(facing / 2),
-      z: 0,
-      w: Math.cos(facing / 2)
-    };
+    const spear = isSpear(def);
+    const spinHorizontal = def.spinAxis !== "vertical";
     const [worldX, worldZ] = worldOffset(localX, localZ, facing);
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
@@ -288,12 +297,20 @@ export function assembleBot(
         .setCcdEnabled(true)
     );
     let collider: RAPIER.Collider;
-    if (def.motion === "spin") {
-      const radius = Math.max(def.cells[0], def.cells[1]) * CELL / 2 + def.reach;
-      const desc = RAPIER.ColliderDesc.cylinder(def.height / 2, radius)
-        .setRotation(localRotation)
-        .setMass(def.mass);
-      collider = world.createCollider(desc, body);
+    if (def.effect === "spin" || def.effect === "grind") {
+      const baseRadius = Math.max(def.cells[0], def.cells[1]) * CELL / 2 + def.reach;
+      const radius =
+        def.pairMount === true
+          ? Math.max(baseRadius, chassisDef.deck[0] * CELL / 2 + def.reach)
+          : baseRadius;
+      collider = world.createCollider(
+        RAPIER.ColliderDesc.cylinder(def.height / 2, radius)
+          .setRotation(
+            spinHorizontal ? qIdentity : { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }
+          )
+          .setMass(def.mass),
+        body
+      );
       if (def.inertia !== undefined) {
         const radial = Math.max(def.inertia / 2, Number.EPSILON);
         collider.setMassProperties(
@@ -308,29 +325,61 @@ export function assembleBot(
     } else {
       const [w, d] = rotatedSize(def, placed.rot);
       collider = world.createCollider(
-        RAPIER.ColliderDesc.cuboid(w * CELL / 2, def.height / 2, (d * CELL + def.reach) / 2)
-          .setMass(def.mass),
+        RAPIER.ColliderDesc.cuboid(
+          w * CELL / 2,
+          def.height / 2,
+          (d * CELL + def.reach) / 2
+        ).setMass(def.mass),
         body
       );
     }
     enableContactEvents(collider, seat);
-    const axis = spinHorizontal ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
-    const joint = world.createImpulseJoint(
-      RAPIER.JointData.revolute(
-        { x: local[0], y: local[1], z: local[2] },
-        { x: 0, y: 0, z: 0 },
-        axis
-      ),
-      chassis,
-      body,
-      true
-    ) as RAPIER.RevoluteImpulseJoint;
+    if (def.effect === "grind" || def.effect === "clamp") {
+      collider.setContactForceEventThreshold(0);
+    }
+
+    let joint: RAPIER.RevoluteImpulseJoint | RAPIER.PrismaticImpulseJoint;
+    if (spear) {
+      joint = world.createImpulseJoint(
+        RAPIER.JointData.prismatic(
+          { x: local[0], y: local[1], z: local[2] },
+          { x: 0, y: 0, z: 0 },
+          { x: 0, y: 0, z: -1 }
+        ),
+        chassis,
+        body,
+        true
+      ) as RAPIER.PrismaticImpulseJoint;
+      joint.setLimits(0, def.sweep ?? 0);
+    } else {
+      const axis =
+        def.effect === "spin" || def.effect === "grind"
+          ? spinHorizontal
+            ? { x: 0, y: 1, z: 0 }
+            : { x: 1, y: 0, z: 0 }
+          : { x: 1, y: 0, z: 0 };
+      joint = world.createImpulseJoint(
+        RAPIER.JointData.revolute(
+          { x: local[0], y: local[1], z: local[2] },
+          { x: 0, y: 0, z: 0 },
+          axis
+        ),
+        chassis,
+        body,
+        true
+      ) as RAPIER.RevoluteImpulseJoint;
+      if (def.effect === "impulse" || def.effect === "clamp") {
+        joint.setLimits(0, def.sweep ?? 0);
+      }
+    }
     joint.setContactsEnabled(false);
-    if (def.motion === "spin") {
+    if (def.effect === "spin" || def.effect === "grind") {
       joint.configureMotorVelocity(0, def.spinUpTorque ?? 0);
     } else {
-      joint.setLimits(0, def.sweep ?? 0);
-      joint.configureMotorPosition(0, def.impulse ?? 0, def.mass);
+      const stroke = Math.max(def.strokeSec ?? 0.25, FIXED_DT);
+      const stiffness = def.mass * 4 / (stroke * stroke);
+      const damping = 4 * def.mass / stroke;
+      joint.configureMotorPosition(0, stiffness, damping);
     }
     const runtime: WeaponRuntime = {
       idx,
@@ -341,12 +390,20 @@ export function assembleBot(
       joint,
       local,
       detached: false,
+      spear,
+      active: false,
       cooldownLeft: 0,
-      swinging: false,
-      swingTarget: 0
+      triggerGapLeft: 0,
+      strokeLeft: 0,
+      fuelLeft: def.fuel ?? 0,
+      dryLockoutLeft: 0,
+      wasPressed: false,
+      clamping: null,
+      clampLeft: 0,
+      impulseVictims: new Set()
     };
     parts.push(runtime);
-    weapon = runtime;
+    weapons.push(runtime);
     colliderOwners.set(collider.handle, { seat, partIdx: idx });
   }
 
@@ -358,10 +415,13 @@ export function assembleBot(
     chassisCollider,
     parts,
     drives,
-    weapon,
+    weapons,
     colliderOwners,
     powerMul,
+    weaponPowerMul,
     hasSelfRight,
+    spinnerResist,
+    flameResist,
     selfRightCooldown: 0
   };
 }
