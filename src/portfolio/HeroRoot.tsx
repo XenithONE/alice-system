@@ -13,6 +13,7 @@ export interface HeroRootProps {
   onHoverWork: (id: string | null) => void;
   onSelectWork: (id: string) => void;
   onEnterHouse?: (id: string) => void;
+  onEnterArena?: () => void;
   onState: (state: HarborSceneState) => void;
   onReady?: (scene: HarborScene | null) => void;
   onLiveChange?: (live: boolean) => void;
@@ -31,6 +32,7 @@ export function HeroRoot({
   onHoverWork,
   onSelectWork,
   onEnterHouse,
+  onEnterArena,
   onState,
   onReady,
   onLiveChange
@@ -38,8 +40,8 @@ export function HeroRoot({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [live, setLive] = useState(false);
   const [posterGone, setPosterGone] = useState(false);
-  const eventsRef = useRef({ onHoverWork, onSelectWork, onEnterHouse, onState, onReady, onLiveChange });
-  eventsRef.current = { onHoverWork, onSelectWork, onEnterHouse, onState, onReady, onLiveChange };
+  const eventsRef = useRef({ onHoverWork, onSelectWork, onEnterHouse, onEnterArena, onState, onReady, onLiveChange });
+  eventsRef.current = { onHoverWork, onSelectWork, onEnterHouse, onEnterArena, onState, onReady, onLiveChange };
   const worksRef = useRef(works);
 
   useEffect(() => {
@@ -95,6 +97,7 @@ export function HeroRoot({
           onHoverWork: (id) => eventsRef.current.onHoverWork(id),
           onSelectWork: (id) => eventsRef.current.onSelectWork(id),
           onEnterHouse: (id) => eventsRef.current.onEnterHouse?.(id),
+          onEnterArena: () => eventsRef.current.onEnterArena?.(),
           onState: (state) => eventsRef.current.onState(state)
         });
         if (disposed || version !== bootVersion) {

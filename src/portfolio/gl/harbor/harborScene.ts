@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { HeroQuality } from "../../quality";
 import { createHouses, type HouseSpec } from "./harborHouses";
+import { createTown } from "./harborTown";
 import {
   createBlockFigure,
   createCastleGate,
@@ -31,6 +32,7 @@ export type HarborLandmark = "works" | "ai-lab" | "prompts" | "studio";
 export interface HarborSceneState {
   mode: HarborMode;
   nearDock: boolean;
+  nearArena: boolean;
   activeWorkId: string | null;
   activeHouseId: string | null;
   activeHouseTitle: string | null;
@@ -45,6 +47,7 @@ export interface HarborSceneEvents {
   onHoverWork(id: string | null): void;
   onSelectWork(id: string): void;
   onEnterHouse?: (id: string) => void;
+  onEnterArena?: () => void;
 }
 
 export interface HarborScene {
@@ -61,7 +64,9 @@ export interface HarborScene {
     camYaw: number;
     camPitch: number;
     nearDock: boolean;
+    nearArena: boolean;
     activeWorkId: string | null;
+    townColliderCount: number;
     speed: number;
   };
   startVoyage(): void;
@@ -83,6 +88,7 @@ interface PortalRuntime {
 interface MutableState {
   mode: HarborMode;
   nearDock: boolean;
+  nearArena: boolean;
   activeWorkId: string | null;
   activeHouseId: string | null;
   activeHouseTitle: string | null;
@@ -660,6 +666,8 @@ function initHarbor(
     }
   );
   scene.add(houseCollection.group);
+  const town = createTown(materials, quality);
+  scene.add(town.group);
   const housePickMeshes: THREE.Mesh[] = [];
   houseCollection.group.traverse((object) => {
     const mesh = object as THREE.Mesh;
@@ -684,6 +692,7 @@ function initHarbor(
   // createPromenade/createMarket/createCastleGate.
   const colliders: CircleCollider[] = [
     ...houseCollection.houses.map((house) => house.collider),
+    ...town.colliders,
     ...portals.map((portal) => ({
       x: portal.model.root.position.x,
       z: portal.model.root.position.z,
@@ -776,6 +785,7 @@ function initHarbor(
   const mutable: MutableState = {
     mode: initialMode,
     nearDock: false,
+    nearArena: false,
     activeWorkId: null,
     activeHouseId: null,
     activeHouseTitle: null,
@@ -817,6 +827,7 @@ function initHarbor(
     const publicState: HarborSceneState = {
       mode: mutable.mode,
       nearDock: mutable.nearDock,
+      nearArena: mutable.nearArena,
       activeWorkId: mutable.activeWorkId,
       activeHouseId: mutable.activeHouseId,
       activeHouseTitle: mutable.activeHouseTitle,
@@ -1024,8 +1035,31 @@ function initHarbor(
   };
 
   const walkablePosition = (candidate: THREE.Vector3): THREE.Vector3 => {
-    candidate.x = THREE.MathUtils.clamp(candidate.x, -14.15, -7.65);
-    candidate.z = THREE.MathUtils.clamp(candidate.z, -36.4, 1.6);
+    const boxes = [
+      { minX: -14.15, maxX: -7.65, minZ: -36.4, maxZ: 1.6 },
+      { minX: -32.0, maxX: -7.65, minZ: -52.0, maxZ: -36.4 }
+    ] as const;
+    const inside = boxes.some((box) =>
+      candidate.x >= box.minX && candidate.x <= box.maxX &&
+      candidate.z >= box.minZ && candidate.z <= box.maxZ
+    );
+    if (!inside) {
+      let nearestX = candidate.x;
+      let nearestZ = candidate.z;
+      let nearestDistanceSq = Number.POSITIVE_INFINITY;
+      for (const box of boxes) {
+        const x = THREE.MathUtils.clamp(candidate.x, box.minX, box.maxX);
+        const z = THREE.MathUtils.clamp(candidate.z, box.minZ, box.maxZ);
+        const distanceSq = (candidate.x - x) ** 2 + (candidate.z - z) ** 2;
+        if (distanceSq < nearestDistanceSq) {
+          nearestDistanceSq = distanceSq;
+          nearestX = x;
+          nearestZ = z;
+        }
+      }
+      candidate.x = nearestX;
+      candidate.z = nearestZ;
+    }
     candidate.y = 0.72;
     return candidate;
   };
@@ -1091,6 +1125,12 @@ function initHarbor(
     }
     // Doors sit ~3.35 apart, so a 2.6 radius overlapped two houses at once.
     setActiveHouse(nearestHouseDistance < 1.9 ? nearestHouseId : null);
+    mutable.nearArena = figure.root.position.distanceTo(town.arenaDoor) < 2.2;
+    town.setArenaHighlight(mutable.nearArena);
+    if (mutable.nearArena) {
+      setActiveHouse(null);
+      mutable.activeWorkId = null;
+    }
     mutable.nearDock = figure.root.position.distanceTo(WALK_SPAWN) < 2.15;
     mutable.speed = moving ? moveSpeed : 0;
 
@@ -1174,6 +1214,10 @@ function initHarbor(
       return;
     }
     if (mutable.mode !== "walking" && mutable.activeHouseId) setActiveHouse(null);
+    if (mutable.mode !== "walking" && mutable.nearArena) {
+      mutable.nearArena = false;
+      town.setArenaHighlight(false);
+    }
     updateWater(ambientTime);
     if (mutable.mode === "intro") updateIntro(delta, ambientTime);
     if (mutable.mode === "sailing") updateSailing(delta, ambientTime, operationTime);
@@ -1322,6 +1366,8 @@ function initHarbor(
     mutable.nearDock = true;
     mutable.activeWorkId = null;
     setActiveHouse(null);
+    mutable.nearArena = false;
+    town.setArenaHighlight(false);
     emitState();
   };
 
@@ -1335,6 +1381,8 @@ function initHarbor(
     if (skipper) skipper.visible = true;
     mutable.activeWorkId = null;
     setActiveHouse(null);
+    mutable.nearArena = false;
+    town.setArenaHighlight(false);
     mutable.nearDock = true;
     emitState();
   };
@@ -1346,6 +1394,10 @@ function initHarbor(
     }
     if (mutable.mode === "sailing" && mutable.nearDock) {
       dock();
+      return;
+    }
+    if (mutable.mode === "walking" && mutable.nearArena) {
+      events.onEnterArena?.();
       return;
     }
     if (mutable.mode === "walking" && mutable.activeHouseId) {
@@ -1445,7 +1497,9 @@ function initHarbor(
         camYaw,
         camPitch,
         nearDock: mutable.nearDock,
+        nearArena: mutable.nearArena,
         activeWorkId: mutable.activeWorkId,
+        townColliderCount: town.colliders.length,
         speed: mutable.speed
       };
     },
@@ -1465,6 +1519,8 @@ function initHarbor(
       setHoveredWork(null);
       scene.remove(houseCollection.group);
       houseCollection.dispose();
+      scene.remove(town.group);
+      town.dispose();
 
       const geometries = new Set<THREE.BufferGeometry>();
       const sceneMaterials = new Set<THREE.Material>();

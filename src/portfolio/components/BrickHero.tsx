@@ -15,6 +15,7 @@ const BASE = import.meta.env.BASE_URL;
 const DEFAULT_STATE: HarborSceneState = {
   mode: "intro",
   nearDock: false,
+  nearArena: false,
   activeWorkId: null,
   activeHouseId: null,
   activeHouseTitle: null,
@@ -218,7 +219,32 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
     if (!work) return;
     sceneRef.current?.pause();
     setMapOpen(false);
-    setArcadeHouse(work);
+    // Keep the pre-existing SCRAP CROWN house and its door, but reserve the
+    // playable iframe for the hidden arena entrance.
+    setArcadeHouse(work.id === "scrap-crown" ? { ...work, status: "in-dev" } : work);
+  }, []);
+
+  // The arena is a secret: it is deliberately absent from the works gallery, so
+  // it cannot look itself up there. Everything it needs is stated here.
+  const enterArena = useCallback((): void => {
+    sceneRef.current?.pause();
+    setMapOpen(false);
+    setArcadeHouse({
+      id: "scrap-crown",
+      title: "SCRAP CROWN",
+      titleJa: "闘技場",
+      href: "scrap-crown.html",
+      cover: "assets/scrap-crown-cover.webp",
+      status: "playable",
+      description:
+        "鋼板とチタンで競技ロボットを組み、ポイント予算の中で武装を選んで戦わせる。2〜4人対戦。この闘技場からしか入れない。",
+      year: "2026",
+      kind: "game",
+      engine: "Three.js + Rapier",
+      platform: ["web"],
+      tags: ["2–4P Multi", "Physics", "Robot Combat"],
+      aiTools: ["Claude", "ChatGPT", "Grok"]
+    });
   }, []);
 
   const closeArcade = useCallback((): void => {
@@ -254,6 +280,8 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
         ? state.activeWorkId
           ? `${state.activeHouseTitle ?? "作品"}のゲームハウスに入れます。${focusedWork?.title ?? "作品"}の作品情報も確認できます。`
           : `${state.activeHouseTitle ?? "作品"}のゲームハウスに入れます。`
+        : state.nearArena
+          ? "闘技場に入れます。"
         : state.activeWorkId
           ? `${focusedWork?.title ?? "作品"}を調べられます。`
         : state.nearDock
@@ -280,6 +308,7 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
           onHoverWork={setHoveredId}
           onSelectWork={selectWork}
           onEnterHouse={enterHouse}
+          onEnterArena={enterArena}
           onState={setState}
           onReady={(scene) => {
             sceneRef.current = scene;
@@ -346,10 +375,12 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
             <span><kbd>SHIFT</kbd> 走る</span>
             <span><kbd>E</kbd> 調べる</span>
           </div>
-          {(state.activeHouseId || state.activeWorkId || state.nearDock) && (
+          {(state.nearArena || state.activeHouseId || state.activeWorkId || state.nearDock) && (
             <div className="harbor-interact-group">
               <button className="harbor-interact is-ready" type="button" onClick={() => sceneRef.current?.interact()}>
-                {state.activeHouseId
+                {state.nearArena
+                  ? "E　闘技場に入る"
+                  : state.activeHouseId
                   ? `E　${state.activeHouseTitle ?? "作品"} に入る`
                   : state.activeWorkId
                     ? `E　${focusedWork?.title ?? "作品"}を調べる`

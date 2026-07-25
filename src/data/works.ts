@@ -114,23 +114,6 @@ export const WORKS: Work[] = [
 
   // ── NOW PLAYING — browser titles (play now) ─────────────────────────────────
   {
-    id: "scrap-crown",
-    title: "SCRAP CROWN",
-    titleJa: "物理演算ロボットバトル（2〜4人）",
-    description:
-      "溶接鋼板とチタンでオリジナルの競技ロボットを設計し、金網アリーナで殴り合う物理演算バトル。部屋ごとのポイント予算で武装を購入し、回転ディスク・火炎放射・飛び出すスピア・空圧フリッパー・クラッシャー顎から2基を選ぶ。KOか、時間切れならジャッジ判定。ルームコードで2〜4人、空席はAIが参戦。",
-    href: "scrap-crown.html",
-    cover: "assets/scrap-crown-cover.webp",
-    year: "2026",
-    kind: "game",
-    engine: "Three.js + Rapier",
-    platform: ["web"],
-    status: "playable",
-    tags: ["2–4P Multi", "Physics", "Robot Combat", "Builder"],
-    aiTools: ["Claude", "ChatGPT", "Grok"],
-    featured: true
-  },
-  {
     id: "relic-road",
     title: "RELIC ROAD",
     titleJa: "カード×ボードRPG（2〜4人）",
