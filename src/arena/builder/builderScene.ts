@@ -45,10 +45,10 @@ const cloneSpec = (spec: BotSpec): BotSpec => ({
   parts: spec.parts.map((part) => ({ ...part, cell: [...part.cell] as [number, number] }))
 });
 
-function disposeTree(root: THREE.Object3D): void {
+export function disposeTree(root: THREE.Object3D): void {
   root.traverse((object) => {
     const item = object as DisposableObject;
-    item.geometry?.dispose();
+    if (item.geometry?.userData.scShared !== true) item.geometry?.dispose();
     if (Array.isArray(item.material)) item.material.forEach((material) => material.dispose());
     else item.material?.dispose();
   });

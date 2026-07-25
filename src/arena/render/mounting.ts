@@ -15,6 +15,26 @@ export function footprint(part: PartDef, rot: number): readonly [number, number]
 /** 物理の車軸はどの取り付け面でもシャーシローカルX（assemble.ts の revolute axis）。 */
 export const DRIVE_AXLE_AXIS = Object.freeze(new THREE.Vector3(1, 0, 0));
 
+export function mountFaceQuaternion(face: MountFace): THREE.Quaternion {
+  const rotation = new THREE.Quaternion();
+  if (face === "underside") {
+    rotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
+  } else if (face === "left") {
+    rotation.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, -1, 0)
+    ));
+  } else if (face === "right") {
+    rotation.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)
+    ));
+  } else if (face === "front") {
+    rotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+  } else if (face === "rear") {
+    rotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+  }
+  return rotation;
+}
+
 export function mountPartObject(
   object: THREE.Object3D,
   chassis: ChassisDef,
@@ -40,21 +60,6 @@ export function mountPartObject(
   object.position.set(x, y, z).addScaledVector(normal, -part.height / 2 + lift);
 
   const partRotation = object.quaternion.clone();
-  const mountRotation = new THREE.Quaternion();
-  if (placed.face === "underside") {
-    mountRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI);
-  } else if (placed.face === "left") {
-    mountRotation.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
-      new THREE.Vector3(0, 0, 1), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, -1, 0)
-    ));
-  } else if (placed.face === "right") {
-    mountRotation.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
-      new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)
-    ));
-  } else if (placed.face === "front") {
-    mountRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-  } else if (placed.face === "rear") {
-    mountRotation.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
-  }
+  const mountRotation = mountFaceQuaternion(placed.face);
   object.quaternion.copy(mountRotation).multiply(partRotation);
 }

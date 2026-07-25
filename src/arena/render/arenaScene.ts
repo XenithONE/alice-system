@@ -10,6 +10,7 @@ import {
   type WeaponRig
 } from "./industrialKit";
 import { mountPartObject } from "./mounting";
+import type { ProceduralDrive } from "./procedural/types";
 import { configureRenderer, installStudioEnvironment } from "./renderEnv";
 
 const MAX_SNAPSHOTS = 48;
@@ -76,7 +77,7 @@ interface BotVisual {
   readonly seat: SeatIndex;
   readonly root: THREE.Group;
   readonly parts: PartVisual[];
-  readonly wheelRoots: THREE.Object3D[];
+  readonly wheelRoots: ProceduralDrive[];
   readonly wheelRadii: number[];
   readonly nameSprite: THREE.Sprite;
   hp: number;
@@ -112,10 +113,15 @@ function autoQuality(overrides: ArenaQuality): Required<Omit<ArenaQuality, "rend
     antialias: overrides.antialias ?? !low
   };
 }
-function disposeObject(root: THREE.Object3D): void {
+export function disposeObject(root: THREE.Object3D): void {
   root.traverse((object) => {
     if (!(object instanceof THREE.Mesh || object instanceof THREE.LineSegments || object instanceof THREE.Sprite)) return;
-    if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) object.geometry.dispose();
+    if (
+      (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) &&
+      object.geometry.userData.scShared !== true
+    ) {
+      object.geometry.dispose();
+    }
     const materials = Array.isArray(object.material) ? object.material : [object.material];
     materials.forEach((material) => {
       if (material instanceof THREE.SpriteMaterial && material.map) material.map.dispose();
@@ -182,7 +188,7 @@ function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalo
   const root = new THREE.Group();
   addChassisDetails(root, chassis, spec.paint, seat);
   const parts: PartVisual[] = [];
-  const wheelRoots: THREE.Object3D[] = [];
+  const wheelRoots: ProceduralDrive[] = [];
   const wheelRadii: number[] = [];
   spec.parts.forEach((placed, index) => {
     const part = catalog.byId.get(placed.partId);
@@ -209,8 +215,8 @@ function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalo
       basePosition: created.root.position.clone(), baseScale: created.root.scale.clone(),
       finishes, detached: false, condition: 1, lastConditionByte: -1
     });
-    if (created.wheel && drive) {
-      wheelRoots.push(created.wheel);
+    if (created.drive && drive) {
+      wheelRoots.push(created.drive);
       wheelRadii.push(drive.radius);
     }
   });
@@ -598,7 +604,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       const forwardDistance = dx * forward.x + dz * forward.z;
       if (snap.wp !== 0) visual.wheelPhase = snap.wp;
       else if (dt > 0) visual.wheelPhase += forwardDistance / Math.max(visual.wheelRadii[0] ?? 0.12, 0.03);
-      visual.wheelRoots.forEach((wheel) => { wheel.rotation.x = visual.wheelPhase; });
+      visual.wheelRoots.forEach((drive) => drive.applyPhase(visual.wheelPhase));
       for (const part of visual.parts) {
         const state = part.weapon ? snap.w.find((weapon) => weapon.idx === part.index) : null;
         if (part.weapon && state) {
