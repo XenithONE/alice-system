@@ -10,6 +10,7 @@ import {
   type WeaponRig
 } from "./industrialKit";
 import { mountPartObject } from "./mounting";
+import { configureRenderer, installStudioEnvironment } from "./renderEnv";
 
 const MAX_SNAPSHOTS = 48;
 const MAX_SPARKS = 96;
@@ -38,8 +39,14 @@ export interface ArenaScene {
     bots: { seat: number; x: number; y: number; z: number; hp: number; detached: number }[];
     camPos: [number, number, number];
     lastSnapshotTick: number;
+    render: { calls: number; triangles: number };
+    memory: { geometries: number; textures: number };
+    env: boolean;
+    toneMapping: number;
+    shadowCasters: number;
   };
   captureFrame(): string;
+  setEnvironmentEnabled(enabled: boolean): void;
   setPaused(p: boolean): void;
   dispose(): void;
 }
@@ -55,9 +62,15 @@ interface PartVisual {
   readonly weapon: WeaponRig | null;
   readonly basePosition: THREE.Vector3;
   readonly baseScale: THREE.Vector3;
-  readonly finishes: { material: THREE.MeshStandardMaterial; color: THREE.Color }[];
+  readonly finishes: {
+    material: THREE.MeshStandardMaterial;
+    color: THREE.Color;
+    baseRoughness: number;
+    baseMetalness: number;
+  }[];
   detached: boolean;
   condition: number;
+  lastConditionByte: number;
 }
 interface BotVisual {
   readonly seat: SeatIndex;
@@ -178,18 +191,23 @@ function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalo
     mountPartObject(created.root, chassis, part, placed);
     root.add(created.root);
     const drive = part.category === "drive" ? part : null;
-    const finishes: { material: THREE.MeshStandardMaterial; color: THREE.Color }[] = [];
+    const finishes: PartVisual["finishes"] = [];
     created.root.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       for (const material of materials) {
-        if (material instanceof THREE.MeshStandardMaterial) finishes.push({ material, color: material.color.clone() });
+        if (material instanceof THREE.MeshStandardMaterial) finishes.push({
+          material,
+          color: material.color.clone(),
+          baseRoughness: material.roughness,
+          baseMetalness: material.metalness
+        });
       }
     });
     parts.push({
       index, root: created.root, drive, weapon: created.weapon,
       basePosition: created.root.position.clone(), baseScale: created.root.scale.clone(),
-      finishes, detached: false, condition: 1
+      finishes, detached: false, condition: 1, lastConditionByte: -1
     });
     if (created.wheel && drive) {
       wheelRoots.push(created.wheel);
@@ -241,15 +259,12 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     preserveDrawingBuffer: true, powerPreference: "high-performance"
   };
   const renderer = quality.rendererFactory?.(canvas, parameters) ?? new THREE.WebGLRenderer(parameters);
-  renderer.setPixelRatio(settings.pixelRatio);
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.03;
-  renderer.shadowMap.enabled = settings.shadows;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  configureRenderer(renderer, { shadows: settings.shadows, pixelRatio: settings.pixelRatio, exposure: 1.03 });
   renderer.setClearColor(0x030506);
 
   const scene = new THREE.Scene();
+  const environment = installStudioEnvironment(renderer, scene);
+  const studioEnvironment = scene.environment;
   scene.background = new THREE.Color(0x030506);
   scene.fog = new THREE.FogExp2(0x050708, 0.034);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.06, 120);
@@ -263,6 +278,16 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
   scene.add(rim);
   const key = new THREE.DirectionalLight(0xffc982, 1.25);
   key.position.set(5, 8, -4);
+  key.castShadow = settings.shadows;
+  key.shadow.camera.left = -9;
+  key.shadow.camera.right = 9;
+  key.shadow.camera.top = 9;
+  key.shadow.camera.bottom = -9;
+  key.shadow.camera.near = 0.5;
+  key.shadow.camera.far = 30;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.bias = -0.0006;
+  key.shadow.normalBias = 0.02;
   scene.add(key);
 
   const spotPositions: [number, number, number][] = [[-6, 11, -5], [6, 11, -5], [-6, 11, 5], [6, 11, 5], [0, 12, 0]];
@@ -270,8 +295,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     const spot = new THREE.SpotLight(z === 0 ? 0xc8e8ff : 0xffe0b0, 235, 30, Math.PI / 6, 0.48, 1.45);
     spot.position.set(x, y, z);
     spot.target.position.set(0, 0, 0);
-    spot.castShadow = settings.shadows;
-    if (settings.shadows) spot.shadow.mapSize.set(1024, 1024);
+    spot.castShadow = false;
     scene.add(spot, spot.target);
     const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 0.42, 12), industrialMaterial("steel", 0x222729));
     housing.position.set(x, y, z);
@@ -588,7 +612,8 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
           }
         }
         const detached = (snap.detach & 2 ** part.index) !== 0;
-        const condition = THREE.MathUtils.clamp((snap.pc[part.index] ?? 255) / 255, 0, 1);
+        const conditionByte = THREE.MathUtils.clamp(snap.pc[part.index] ?? 255, 0, 255);
+        const condition = conditionByte / 255;
         part.condition = condition;
         part.root.position.copy(part.basePosition);
         part.root.scale.copy(part.baseScale);
@@ -598,12 +623,16 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
           part.root.position.x += Math.sin(clock * 73 + part.index * 4.1) * vibration;
           part.root.position.z += Math.cos(clock * 67 + part.index * 2.7) * vibration;
         }
-        for (const finish of part.finishes) {
-          const damage = 1 - condition;
-          finish.material.color.copy(finish.color).lerp(new THREE.Color(condition < 0.5 ? 0x171414 : 0x3c3934), damage * 0.72);
-          finish.material.roughness = THREE.MathUtils.clamp(0.58 + damage * 0.38, 0, 1);
-          finish.material.emissive.setHex(condition < 0.25 ? 0x8f2109 : 0x000000);
-          finish.material.emissiveIntensity = condition < 0.25 ? (0.25 - condition) * 5 : 0;
+        if (conditionByte !== part.lastConditionByte) {
+          for (const finish of part.finishes) {
+            const damage = 1 - condition;
+            finish.material.color.copy(finish.color).lerp(new THREE.Color(condition < 0.5 ? 0x171414 : 0x3c3934), damage * 0.72);
+            finish.material.roughness = Math.min(1, finish.baseRoughness + damage * 0.34);
+            finish.material.metalness = finish.baseMetalness * (1 - damage * 0.25);
+            finish.material.emissive.setHex(condition < 0.25 ? 0x8f2109 : 0x000000);
+            finish.material.emissiveIntensity = condition < 0.25 ? (0.25 - condition) * 5 : 0;
+          }
+          part.lastConditionByte = conditionByte;
         }
         const smokeBucket = Math.floor(clock * 7 + part.index + snap.seat);
         const previousSmokeBucket = Math.floor((clock - dt) * 7 + part.index + snap.seat);
@@ -779,12 +808,26 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
           hp: bot.hp, detached: bot.detach
         })),
         camPos: [camera.position.x, camera.position.y, camera.position.z],
-        lastSnapshotTick
+        lastSnapshotTick,
+        render: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
+        memory: { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures },
+        env: scene.environment !== null,
+        toneMapping: renderer.toneMapping,
+        shadowCasters: (() => {
+          let count = 0;
+          scene.traverse((object) => {
+            if (object instanceof THREE.Light && object.castShadow) count += 1;
+          });
+          return count;
+        })()
       };
     },
     captureFrame() {
       renderer.render(scene, camera);
       return canvas.toDataURL("image/png");
+    },
+    setEnvironmentEnabled(enabled) {
+      scene.environment = enabled ? studioEnvironment : null;
     },
     setPaused(nextPaused) {
       paused = nextPaused;
@@ -799,6 +842,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       disposeObject(arenaRoot);
       disposeObject(botRoot);
       disposeObject(vfxRoot);
+      environment.dispose();
       renderer.dispose();
       canvas.parentElement?.style.removeProperty("--sc-speed");
       canvas.parentElement?.style.removeProperty("--sc-impact");

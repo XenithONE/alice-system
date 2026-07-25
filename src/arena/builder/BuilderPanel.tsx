@@ -94,7 +94,19 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
     scene.setSpec(spec);
     scene.onChange(setSpec);
     sceneRef.current = scene;
+    const attachDebugSeam = (): void => {
+      if (sceneRef.current !== scene || !window.__sc) return;
+      window.__sc.builder = {
+        debugTick: (dt) => scene.debugTick(dt),
+        getDebugState: () => scene.getDebugState(),
+        captureFrame: () => scene.captureFrame(),
+        setEnvironmentEnabled: (enabled) => scene.setEnvironmentEnabled(enabled)
+      };
+    };
+    attachDebugSeam();
+    queueMicrotask(attachDebugSeam);
     return () => {
+      if (window.__sc?.builder) delete window.__sc.builder;
       scene.dispose();
       sceneRef.current = null;
     };

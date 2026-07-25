@@ -20,7 +20,13 @@ export const MATERIAL_FINISH: Record<SurfaceMaterial, { metalness: number; rough
   brass: { metalness: 0.8, roughness: 0.3 }
 };
 
-const textureCache = new Map<string, { color: THREE.CanvasTexture; roughness: THREE.CanvasTexture }>();
+const TEXTURE_SIZE = 256;
+type TextureSet = {
+  color: THREE.CanvasTexture;
+  roughness: THREE.CanvasTexture;
+  normal: THREE.CanvasTexture;
+};
+const textureCache = new Map<string, TextureSet>();
 
 function seeded(seed: number): () => number {
   let state = seed >>> 0;
@@ -30,26 +36,28 @@ function seeded(seed: number): () => number {
   };
 }
 
-function textureSet(color: number, surface: SurfaceMaterial): { color: THREE.CanvasTexture; roughness: THREE.CanvasTexture } {
-  const key = `${surface}-${color}`;
+function textureSet(color: number, surface: SurfaceMaterial): TextureSet {
+  const key = `${TEXTURE_SIZE}-${surface}-${color}`;
   const cached = textureCache.get(key);
   if (cached) return cached;
   const colorCanvas = document.createElement("canvas");
   const roughCanvas = document.createElement("canvas");
-  colorCanvas.width = roughCanvas.width = 128;
-  colorCanvas.height = roughCanvas.height = 128;
+  const normalCanvas = document.createElement("canvas");
+  colorCanvas.width = roughCanvas.width = normalCanvas.width = TEXTURE_SIZE;
+  colorCanvas.height = roughCanvas.height = normalCanvas.height = TEXTURE_SIZE;
   const colorContext = colorCanvas.getContext("2d")!;
   const roughContext = roughCanvas.getContext("2d")!;
+  const normalContext = normalCanvas.getContext("2d")!;
   const random = seeded(color ^ surface.length * 0x9e3779b9);
   const base = new THREE.Color(color);
   colorContext.fillStyle = `#${base.getHexString()}`;
-  colorContext.fillRect(0, 0, 128, 128);
+  colorContext.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
   roughContext.fillStyle = "#909090";
-  roughContext.fillRect(0, 0, 128, 128);
+  roughContext.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
 
-  for (let index = 0; index < 620; index += 1) {
-    const x = random() * 128;
-    const y = random() * 128;
+  for (let index = 0; index < 2480; index += 1) {
+    const x = random() * TEXTURE_SIZE;
+    const y = random() * TEXTURE_SIZE;
     const alpha = 0.025 + random() * 0.11;
     const light = random() > 0.68;
     colorContext.fillStyle = light ? `rgba(238,241,236,${alpha})` : `rgba(16,18,18,${alpha})`;
@@ -60,10 +68,10 @@ function textureSet(color: number, surface: SurfaceMaterial): { color: THREE.Can
   }
 
   colorContext.lineCap = roughContext.lineCap = "round";
-  for (let index = 0; index < 34; index += 1) {
-    const x = random() * 110;
-    const y = random() * 128;
-    const length = 8 + random() * 42;
+  for (let index = 0; index < 68; index += 1) {
+    const x = random() * (TEXTURE_SIZE - 36);
+    const y = random() * TEXTURE_SIZE;
+    const length = 16 + random() * 84;
     colorContext.strokeStyle = `rgba(${random() > 0.5 ? "225,225,215" : "20,16,13"},${0.1 + random() * 0.24})`;
     colorContext.lineWidth = 0.35 + random() * 0.9;
     colorContext.beginPath();
@@ -78,22 +86,49 @@ function textureSet(color: number, surface: SurfaceMaterial): { color: THREE.Can
     roughContext.stroke();
   }
   for (const context of [colorContext, roughContext]) {
-    const burn = context.createRadialGradient(108, 20, 0, 108, 20, 30);
+    const burn = context.createRadialGradient(216, 40, 0, 216, 40, 60);
     burn.addColorStop(0, "rgba(8,7,6,.48)");
     burn.addColorStop(1, "rgba(8,7,6,0)");
     context.fillStyle = burn;
-    context.fillRect(76, 0, 52, 52);
+    context.fillRect(152, 0, 104, 104);
   }
+
+  const roughPixels = roughContext.getImageData(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+  const normalPixels = normalContext.createImageData(TEXTURE_SIZE, TEXTURE_SIZE);
+  const sample = (x: number, y: number): number => {
+    const wrappedX = (x + TEXTURE_SIZE) % TEXTURE_SIZE;
+    const wrappedY = (y + TEXTURE_SIZE) % TEXTURE_SIZE;
+    return roughPixels.data[(wrappedY * TEXTURE_SIZE + wrappedX) * 4] ?? 128;
+  };
+  for (let y = 0; y < TEXTURE_SIZE; y += 1) {
+    for (let x = 0; x < TEXTURE_SIZE; x += 1) {
+      const gx =
+        -sample(x - 1, y - 1) + sample(x + 1, y - 1) -
+        2 * sample(x - 1, y) + 2 * sample(x + 1, y) -
+        sample(x - 1, y + 1) + sample(x + 1, y + 1);
+      const gy =
+        -sample(x - 1, y - 1) - 2 * sample(x, y - 1) - sample(x + 1, y - 1) +
+        sample(x - 1, y + 1) + 2 * sample(x, y + 1) + sample(x + 1, y + 1);
+      const nx = -gx / 255;
+      const ny = -gy / 255;
+      const inverseLength = 1 / Math.hypot(nx, ny, 1);
+      const offset = (y * TEXTURE_SIZE + x) * 4;
+      normalPixels.data[offset] = Math.round((nx * inverseLength * 0.5 + 0.5) * 255);
+      normalPixels.data[offset + 1] = Math.round((ny * inverseLength * 0.5 + 0.5) * 255);
+      normalPixels.data[offset + 2] = Math.round((inverseLength * 0.5 + 0.5) * 255);
+      normalPixels.data[offset + 3] = 255;
+    }
+  }
+  normalContext.putImageData(normalPixels, 0, 0);
 
   const colorTexture = new THREE.CanvasTexture(colorCanvas);
   colorTexture.colorSpace = THREE.SRGBColorSpace;
   const roughTexture = new THREE.CanvasTexture(roughCanvas);
-  for (const texture of [colorTexture, roughTexture]) {
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(1.7, 1.7);
+  const normalTexture = new THREE.CanvasTexture(normalCanvas);
+  for (const texture of [colorTexture, roughTexture, normalTexture]) {
     texture.anisotropy = 4;
   }
-  const result = { color: colorTexture, roughness: roughTexture };
+  const result = { color: colorTexture, roughness: roughTexture, normal: normalTexture };
   textureCache.set(key, result);
   return result;
 }
@@ -109,6 +144,8 @@ export function industrialMaterial(
     color: maps ? 0xffffff : color,
     map: maps?.color ?? null,
     roughnessMap: maps?.roughness ?? null,
+    normalMap: maps?.normal ?? null,
+    normalScale: new THREE.Vector2(0.35, 0.35),
     metalness: finish.metalness,
     roughness: finish.roughness,
     transparent: options.transparent ?? false,
@@ -118,27 +155,49 @@ export function industrialMaterial(
 }
 
 function box(w: number, h: number, d: number, radius: number, material: THREE.Material): THREE.Mesh {
-  const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, Math.min(radius, h * 0.22)), material);
+  const mesh = new THREE.Mesh(new RoundedBoxGeometry(w, h, d, 2, Math.min(radius, 0.0025)), material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
 }
 
-function bolt(material: THREE.Material): THREE.Mesh {
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.012, 6), material);
+function countersunkFastener(material: THREE.Material): THREE.Mesh {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.009, 0.004, 10), material);
   mesh.castShadow = true;
   return mesh;
 }
 
-function addBoltRows(group: THREE.Group, w: number, d: number, y: number, material: THREE.Material): void {
-  const countX = Math.max(2, Math.min(6, Math.round(w / 0.16)));
-  for (let index = 0; index < countX; index += 1) {
-    const x = countX === 1 ? 0 : THREE.MathUtils.lerp(-w * 0.39, w * 0.39, index / (countX - 1));
-    for (const z of [-d * 0.38, d * 0.38]) {
-      const fastener = bolt(material);
-      fastener.position.set(x, y, z);
-      group.add(fastener);
-    }
+function addCountersunkDetails(group: THREE.Group, w: number, d: number, y: number, seed: number): void {
+  const random = seeded(seed ^ Math.round(w * 10000) ^ Math.round(d * 100000));
+  const fastenerMaterial = industrialMaterial("steel", 0x555b5c, { wear: false });
+  const count = THREE.MathUtils.clamp(Math.round(4 + w * d * 28), 4, 10);
+  for (let index = 0; index < count; index += 1) {
+    const alongX = random() > 0.5;
+    const side = random() > 0.5 ? 1 : -1;
+    const x = alongX ? (random() - 0.5) * w * 0.72 : side * w * (0.34 + random() * 0.07);
+    const z = alongX ? side * d * (0.34 + random() * 0.07) : (random() - 0.5) * d * 0.72;
+    const fastener = countersunkFastener(fastenerMaterial);
+    fastener.position.set(x, y - 0.004, z);
+    fastener.rotation.y = random() * Math.PI;
+    group.add(fastener);
+  }
+
+  const weldMaterial = industrialMaterial("steel", 0x3f4546, { wear: false });
+  weldMaterial.roughness = 0.75;
+  const beadCount = random() > 0.55 ? 2 : 1;
+  for (let index = 0; index < beadCount; index += 1) {
+    const z = (index === 0 ? -1 : 1) * d * (0.43 + random() * 0.025);
+    const points = Array.from({ length: 6 }, (_, pointIndex) => new THREE.Vector3(
+      THREE.MathUtils.lerp(-w * 0.42, w * 0.42, pointIndex / 5),
+      y - 0.001 + Math.sin(pointIndex * 2.3 + random()) * 0.0015,
+      z + (random() - 0.5) * 0.004
+    ));
+    const weld = new THREE.Mesh(
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 20, 0.004, 5, false),
+      weldMaterial
+    );
+    weld.castShadow = true;
+    group.add(weld);
   }
 }
 
@@ -235,7 +294,7 @@ export function createIndustrialPart(
       body.position.y = h * 0.5;
     }
     root.add(body);
-    addBoltRows(root, w, d, h + 0.007, brightSteel);
+    addCountersunkDetails(root, w, d, h, part.id.length * 0x45d9f3b);
   }
 
   let wheel: THREE.Object3D | null = null;

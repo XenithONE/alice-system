@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BuilderPanel } from "./builder/BuilderPanel";
+import type { BuilderScene } from "./builder/builderScene";
 import { computeStats, validateBuild } from "./sim/build";
 import { buildCatalog } from "./parts/catalog";
 import { ARENAS } from "./parts/arenas";
@@ -40,6 +41,8 @@ declare global {
       debugTick(dt: number): void;
       getDebugState(): ReturnType<ArenaScene["getDebugState"]> | null;
       captureFrame(): string | null;
+      setEnvironmentEnabled(enabled: boolean): void;
+      builder?: Pick<BuilderScene, "debugTick" | "getDebugState" | "captureFrame" | "setEnvironmentEnabled">;
     };
   }
 }
@@ -314,10 +317,12 @@ export function App() {
 
   useEffect(() => {
     window.__sc = {
+      ...window.__sc,
       screen: () => currentScreenRef.current,
       debugTick: (dt) => sceneRef.current?.debugTick(dt),
       getDebugState: () => sceneRef.current?.getDebugState() ?? null,
-      captureFrame: () => sceneRef.current?.captureFrame() ?? null
+      captureFrame: () => sceneRef.current?.captureFrame() ?? null,
+      setEnvironmentEnabled: (enabled) => sceneRef.current?.setEnvironmentEnabled(enabled)
     };
     return () => {
       delete window.__sc;

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createIndustrialPart, industrialMaterial } from "../render/industrialKit";
 import { faceGridSize, mountPartObject } from "../render/mounting";
+import { configureRenderer, installStudioEnvironment } from "../render/renderEnv";
 import { occupiedCells, validateBuild } from "../sim/build";
 import {
   CELL,
@@ -26,8 +27,14 @@ export interface BuilderScene {
     camYaw: number;
     hoverCell: [number, number] | null;
     valid: boolean;
+    render: { calls: number; triangles: number };
+    memory: { geometries: number; textures: number };
+    env: boolean;
+    toneMapping: number;
+    shadowCasters: number;
   };
   captureFrame(): string;
+  setEnvironmentEnabled(enabled: boolean): void;
   dispose(): void;
 }
 
@@ -60,13 +67,13 @@ function createPartObject(
 
 export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, settings: RoomSettings): BuilderScene {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  configureRenderer(renderer, { shadows: true, pixelRatio: Math.min(devicePixelRatio, 2), exposure: 1.03 });
+  renderer.shadowMap.autoUpdate = false;
   renderer.setClearColor(0x101416, 1);
 
   const scene = new THREE.Scene();
+  const environment = installStudioEnvironment(renderer, scene);
+  const studioEnvironment = scene.environment;
   scene.fog = new THREE.Fog(0x101416, 2.6, 5.5);
   const camera = new THREE.PerspectiveCamera(36, 1, 0.02, 20);
   const buildRoot = new THREE.Group();
@@ -86,13 +93,13 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
   grid.position.y = -0.03;
   floorRoot.add(grid);
 
-  scene.add(new THREE.HemisphereLight(0xaac7d2, 0x281e18, 1.25));
-  const key = new THREE.DirectionalLight(0xffe1bd, 3.2);
+  scene.add(new THREE.HemisphereLight(0xaac7d2, 0x281e18, 0.45));
+  const key = new THREE.DirectionalLight(0xffe1bd, 1.6);
   key.position.set(-2.4, 3.6, 2.2);
   key.castShadow = true;
   key.shadow.mapSize.set(1024, 1024);
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0x4f9db6, 2.1);
+  const rim = new THREE.DirectionalLight(0x4f9db6, 1.2);
   rim.position.set(2.2, 1.8, -2.6);
   scene.add(rim);
 
@@ -188,6 +195,7 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
       buildRoot.add(object);
     }
     rebuildGhost();
+    renderer.shadowMap.needsUpdate = true;
   }
 
   function candidateSpec(part: PartDef, cell: [number, number]): BotSpec {
@@ -426,12 +434,26 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
         partCount: spec.parts.length,
         camYaw,
         hoverCell: hoverCell ? [...hoverCell] as [number, number] : null,
-        valid: validateBuild(spec, catalog, settings).ok
+        valid: validateBuild(spec, catalog, settings).ok,
+        render: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
+        memory: { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures },
+        env: scene.environment !== null,
+        toneMapping: renderer.toneMapping,
+        shadowCasters: (() => {
+          let count = 0;
+          scene.traverse((object) => {
+            if (object instanceof THREE.Light && object.castShadow) count += 1;
+          });
+          return count;
+        })()
       };
     },
     captureFrame() {
       render(0);
       return canvas.toDataURL("image/png");
+    },
+    setEnvironmentEnabled(enabled) {
+      scene.environment = enabled ? studioEnvironment : null;
     },
     dispose() {
       disposed = true;
@@ -447,6 +469,7 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
       disposeTree(buildRoot);
       disposeTree(ghostRoot);
       disposeTree(floorRoot);
+      environment.dispose();
       renderer.dispose();
       scene.clear();
     }
