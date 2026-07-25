@@ -100,6 +100,11 @@ const PLAYER_R = 0.42;
 // z band where the castle's west tower projects into the promenade.
 const CASTLE_BAND: readonly [number, number] = [-30.0, -25.0];
 const SKIFF_R = 0.9;
+// navigable water box (the promenade/land is west of WATER_MIN_X)
+const WATER_MIN_X = -4.8;
+const WATER_MAX_X = 12.8;
+const WATER_MIN_Z = -8.5;
+const WATER_MAX_Z = 23;
 const DOCK_COLLIDER = { x: -2.94, z: 1.05, r: 4.0 } as const;
 const MOORING_MARGIN = 0.2;
 const MOORED_SKIFF_POINT = (() => {
@@ -720,6 +725,8 @@ function initHarbor(
   let cinematicTarget: number = CINEMATIC_STOPS[0];
   let boatYaw = 0;
   let boatSpeed = 0;
+  // seconds the hull has been pinned with the throttle open
+  let boatStuckTime = 0;
   let camYaw = figure.root.rotation.y;
   let camPitch = 0;
   let boatCamYawOffset = Math.PI;
@@ -827,6 +834,10 @@ function initHarbor(
     boatYaw += steering * delta * (0.65 + Math.min(1, Math.abs(boatSpeed) / 4) * 0.75);
     const forward = new THREE.Vector3(Math.sin(boatYaw), 0, -Math.cos(boatYaw));
     const travel = boatSpeed * delta;
+    const fromX = skiff.position.x;
+    const fromZ = skiff.position.z;
+    const intendedX = fromX + forward.x * travel;
+    const intendedZ = fromZ + forward.z * travel;
     const collided = moveWithCircleCollisions(
       skiff.position,
       forward.x * travel,
@@ -834,9 +845,47 @@ function initHarbor(
       SKIFF_R,
       sailingColliders
     );
-    if (collided) boatSpeed *= 0.35;
-    skiff.position.x = THREE.MathUtils.clamp(skiff.position.x, -4.8, 12.8);
-    skiff.position.z = THREE.MathUtils.clamp(skiff.position.z, -8.5, 23);
+    if (collided) {
+      // Killing 65% of the way on every touch left the hull parked against the
+      // dock ring with the throttle open and the rudder doing nothing. Bleed a
+      // little instead and let the bow glance along the obstacle.
+      boatSpeed *= 0.86;
+      const corrX = skiff.position.x - intendedX;
+      const corrZ = skiff.position.z - intendedZ;
+      const corrLen = Math.hypot(corrX, corrZ);
+      if (corrLen > 1e-4) {
+        const nx = corrX / corrLen;
+        const nz = corrZ / corrLen;
+        // two tangents along the obstacle; take the one the bow already favours
+        const ahead = forward.x * -nz + forward.z * nx;
+        const tx = ahead >= 0 ? -nz : nz;
+        const tz = ahead >= 0 ? nx : -nx;
+        const targetYaw = Math.atan2(tx, -tz);
+        let diff = targetYaw - boatYaw;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        boatYaw += diff * Math.min(1, delta * 3);
+      }
+    }
+    // The water used to be a hard clamp: aim into a corner and the skiff parked
+    // there at full throttle with no motion and no feedback, which read as "the
+    // ship won't steer". Now the harbour edge bleeds speed and eases the bow
+    // back toward open water, so the controls always do something visible.
+    const preX = skiff.position.x;
+    const preZ = skiff.position.z;
+    skiff.position.x = THREE.MathUtils.clamp(preX, WATER_MIN_X, WATER_MAX_X);
+    skiff.position.z = THREE.MathUtils.clamp(preZ, WATER_MIN_Z, WATER_MAX_Z);
+    const blockedX = skiff.position.x !== preX;
+    const blockedZ = skiff.position.z !== preZ;
+    if (blockedX || blockedZ) {
+      boatSpeed *= 0.6;
+      const inwardX = blockedX ? (skiff.position.x <= WATER_MIN_X + 1e-3 ? 1 : -1) : 0;
+      const inwardZ = blockedZ ? (skiff.position.z <= WATER_MIN_Z + 1e-3 ? 1 : -1) : 0;
+      // heading whose forward (sin y, -cos y) points inward
+      const targetYaw = Math.atan2(inwardX, -inwardZ);
+      let diff = targetYaw - boatYaw;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff)); // shortest arc
+      boatYaw += diff * Math.min(1, delta * 2.4);
+    }
     skiff.rotation.y = boatYaw;
     updateBoatBob(ambientTime, Math.min(1, 0.35 + Math.abs(boatSpeed) * 0.12));
     const rudder = skiffModel.runtime.nodes.rudder;
@@ -855,9 +904,31 @@ function initHarbor(
     const wakeMaterial = wakeMesh?.material as THREE.MeshBasicMaterial | undefined;
     if (wakeMaterial) wakeMaterial.opacity = 0.2 + Math.abs(boatSpeed) * 0.045;
 
+    // Escape assist: colliders and the harbour edge could wedge the skiff with
+    // the engine running and the rudder doing nothing — the "船が操縦できない"
+    // report. If nothing moves while the throttle is open, swing the bow toward
+    // open water and give it steerage way back.
+    const advanced = Math.hypot(skiff.position.x - fromX, skiff.position.z - fromZ);
+    if (throttle !== 0 && advanced < 0.004) boatStuckTime += delta;
+    else boatStuckTime = 0;
+    if (boatStuckTime > 0.3) {
+      const openX = (WATER_MIN_X + WATER_MAX_X) / 2;
+      const openZ = (WATER_MIN_Z + WATER_MAX_Z) / 2;
+      const towardOpenYaw = Math.atan2(openX - skiff.position.x, -(openZ - skiff.position.z));
+      let diff = towardOpenYaw - boatYaw;
+      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+      boatYaw += diff * Math.min(1, delta * 4);
+      boatSpeed = Math.max(boatSpeed, 1.8);
+    }
+
     const distanceToDock = skiff.position.distanceTo(DOCK_POINT);
     mutable.nearDock = distanceToDock < 4.25 && Math.abs(boatSpeed) < 2.35;
-    mutable.speed = Math.round(Math.abs(boatSpeed) * 10) / 10;
+    // Report the distance actually covered this frame, not the throttle: the
+    // old value still read 6.2 while the hull was pinned against the edge.
+    const groundSpeed = delta > 1e-6
+      ? Math.hypot(skiff.position.x - fromX, skiff.position.z - fromZ) / delta
+      : 0;
+    mutable.speed = Math.round(Math.min(Math.abs(boatSpeed), groundSpeed) * 10) / 10;
 
     camYaw = boatYaw + boatCamYawOffset;
     const back = new THREE.Vector3(-Math.sin(camYaw), 0, -Math.cos(camYaw));
