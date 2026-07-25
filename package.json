@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@sparkjsdev/spark": "2.1.0",
     "peerjs": "^1.5.5",
     "react": "19.2.7",

@@ -35,7 +35,13 @@ export type Platform = "web" | "steam" | "itch" | "windows" | "mac" | "download"
 export type WorkStatus = "playable" | "released" | "coming-soon" | "in-dev";
 
 /** Build tech — shown as a small engine chip. */
-export type Engine = "Three.js" | "Unity" | "Canvas 2D" | "Web Audio" | "WebGL";
+export type Engine =
+  | "Three.js"
+  | "Three.js + Rapier"
+  | "Unity"
+  | "Canvas 2D"
+  | "Web Audio"
+  | "WebGL";
 
 export interface StoreLinks {
   steam?: string;
@@ -107,6 +113,23 @@ export const WORKS: Work[] = [
   },
 
   // ── NOW PLAYING — browser titles (play now) ─────────────────────────────────
+  {
+    id: "scrap-crown",
+    title: "SCRAP CROWN",
+    titleJa: "物理演算ロボットバトル（2〜4人）",
+    description:
+      "シャーシに車輪と武器を組んで自機を製作し、金網アリーナで殴り合う物理演算ロボットバトル。スピナー・フリッパー・ウェッジで戦い方が変わる。KOか、時間切れならジャッジ判定で決着。ルームコードで2〜4人、空席はAIが参戦。",
+    href: "scrap-crown.html",
+    cover: "assets/scrap-crown-brick.webp",
+    year: "2026",
+    kind: "game",
+    engine: "Three.js + Rapier",
+    platform: ["web"],
+    status: "playable",
+    tags: ["2–4P Multi", "Physics", "Robot Combat"],
+    aiTools: ["Claude", "ChatGPT", "Grok"],
+    featured: true
+  },
   {
     id: "relic-road",
     title: "RELIC ROAD",
