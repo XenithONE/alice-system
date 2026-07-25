@@ -731,7 +731,7 @@ function initHarbor(
   let boatYaw = 0;
   let boatSpeed = 0;
   // seconds the hull has been pinned with the throttle open
-  let boatStuckTime = 0;
+  let boatWedged = false;
   let autoDocking = false;
   // sampled every 0.5s to detect a wedged hull that still jitters in place
   let boatProgressAnchor = new THREE.Vector3();
@@ -871,31 +871,13 @@ function initHarbor(
       sailingColliders
     );
     if (collided) {
-      // Killing 65% of the way on every touch left the hull parked against the
-      // dock ring with the throttle open and the rudder doing nothing. Bleed a
-      // little instead and let the bow glance along the obstacle.
+      // Bleed a little way so a scrape feels like a scrape. The heading is NOT
+      // touched: auto-steering only ran when the player was not steering, i.e.
+      // exactly when they were holding W alone, so the boat wandered off course
+      // on its own. Sliding is handled positionally by the collision resolver.
       boatSpeed *= 0.86;
-      const corrX = skiff.position.x - intendedX;
-      const corrZ = skiff.position.z - intendedZ;
-      const corrLen = Math.hypot(corrX, corrZ);
-      if (corrLen > 1e-4) {
-        const nx = corrX / corrLen;
-        const nz = corrZ / corrLen;
-        // two tangents along the obstacle; take the one the bow already favours
-        const ahead = forward.x * -nz + forward.z * nx;
-        const tx = ahead >= 0 ? -nz : nz;
-        const tz = ahead >= 0 ? nx : -nx;
-        const targetYaw = Math.atan2(tx, -tz);
-        let diff = targetYaw - boatYaw;
-        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-        // never fight the helm: only nudge when the player is not steering
-        if (steering === 0) boatYaw += diff * Math.min(1, delta * 1.1);
-      }
     }
-    // The water used to be a hard clamp: aim into a corner and the skiff parked
-    // there at full throttle with no motion and no feedback, which read as "the
-    // ship won't steer". Now the harbour edge bleeds speed and eases the bow
-    // back toward open water, so the controls always do something visible.
+
     const preX = skiff.position.x;
     const preZ = skiff.position.z;
     skiff.position.x = THREE.MathUtils.clamp(preX, WATER_MIN_X, WATER_MAX_X);
@@ -903,15 +885,10 @@ function initHarbor(
     const blockedX = skiff.position.x !== preX;
     const blockedZ = skiff.position.z !== preZ;
     if (blockedX || blockedZ) {
+      // Slow at the harbour edge, but never turn the wheel for the player.
       boatSpeed *= 0.6;
-      const inwardX = blockedX ? (skiff.position.x <= WATER_MIN_X + 1e-3 ? 1 : -1) : 0;
-      const inwardZ = blockedZ ? (skiff.position.z <= WATER_MIN_Z + 1e-3 ? 1 : -1) : 0;
-      // heading whose forward (sin y, -cos y) points inward
-      const targetYaw = Math.atan2(inwardX, -inwardZ);
-      let diff = targetYaw - boatYaw;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff)); // shortest arc
-      if (steering === 0) boatYaw += diff * Math.min(1, delta * 2.4);
     }
+
     skiff.rotation.y = boatYaw;
     updateBoatBob(ambientTime, Math.min(1, 0.35 + Math.abs(boatSpeed) * 0.12));
     const rudder = skiffModel.runtime.nodes.rudder;
@@ -937,28 +914,24 @@ function initHarbor(
     // Per-frame distance is a bad stuck test: a hull wedged between a collider
     // and the water edge oscillates by ~0.02 every frame and looks like motion.
     // Measure real progress over a window instead.
+    // Wedge release. A hull can still be pinned between a collider and the water
+    // edge, where the two constraints cancel. This frees it WITHOUT rotating the
+    // bow — the helm belongs to the player. The window is deliberately strict
+    // (a full second of near-zero progress while under power) so it can never
+    // fire during ordinary sailing, including the initial acceleration.
     boatProgressTimer += delta;
-    if (boatProgressTimer >= 0.5) {
+    if (boatProgressTimer >= 1) {
       const progressed = Math.hypot(
         skiff.position.x - boatProgressAnchor.x,
         skiff.position.z - boatProgressAnchor.z
       );
-      boatStuckTime = throttle !== 0 && progressed < 0.5 ? boatStuckTime + boatProgressTimer : 0;
+      boatWedged = throttle !== 0 && Math.abs(boatSpeed) > 0.8 && progressed < 0.1;
       boatProgressAnchor.copy(skiff.position);
       boatProgressTimer = 0;
     }
-    if (boatStuckTime > 0.3) {
+    if (boatWedged) {
       const openX = (WATER_MIN_X + WATER_MAX_X) / 2;
       const openZ = (WATER_MIN_Z + WATER_MAX_Z) / 2;
-      const towardOpenYaw = Math.atan2(openX - skiff.position.x, -(openZ - skiff.position.z));
-      let diff = towardOpenYaw - boatYaw;
-      diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-      boatYaw += diff * Math.min(1, delta * 4);
-      boatSpeed = Math.max(boatSpeed, 1.8);
-      // Turning the bow is not enough when the hull is wedged: the pier's disc
-      // reaches past the west water edge, so the collider pushes west while the
-      // clamp pushes east and the two cancel at every heading. Walk the hull out
-      // of the wedge directly (only ever runs after 0.3s of being stuck).
       const openLen = Math.hypot(openX - skiff.position.x, openZ - skiff.position.z) || 1;
       skiff.position.x = THREE.MathUtils.clamp(
         skiff.position.x + ((openX - skiff.position.x) / openLen) * delta * 2.5,
