@@ -733,6 +733,9 @@ function initHarbor(
   // seconds the hull has been pinned with the throttle open
   let boatStuckTime = 0;
   let autoDocking = false;
+  // sampled every 0.5s to detect a wedged hull that still jitters in place
+  let boatProgressAnchor = new THREE.Vector3();
+  let boatProgressTimer = 0;
   let camYaw = figure.root.rotation.y;
   let camPitch = 0;
   let boatCamYawOffset = Math.PI;
@@ -931,9 +934,19 @@ function initHarbor(
     // the engine running and the rudder doing nothing — the "船が操縦できない"
     // report. If nothing moves while the throttle is open, swing the bow toward
     // open water and give it steerage way back.
-    const advanced = Math.hypot(skiff.position.x - fromX, skiff.position.z - fromZ);
-    if (throttle !== 0 && advanced < 0.004) boatStuckTime += delta;
-    else boatStuckTime = 0;
+    // Per-frame distance is a bad stuck test: a hull wedged between a collider
+    // and the water edge oscillates by ~0.02 every frame and looks like motion.
+    // Measure real progress over a window instead.
+    boatProgressTimer += delta;
+    if (boatProgressTimer >= 0.5) {
+      const progressed = Math.hypot(
+        skiff.position.x - boatProgressAnchor.x,
+        skiff.position.z - boatProgressAnchor.z
+      );
+      boatStuckTime = throttle !== 0 && progressed < 0.5 ? boatStuckTime + boatProgressTimer : 0;
+      boatProgressAnchor.copy(skiff.position);
+      boatProgressTimer = 0;
+    }
     if (boatStuckTime > 0.3) {
       const openX = (WATER_MIN_X + WATER_MAX_X) / 2;
       const openZ = (WATER_MIN_Z + WATER_MAX_Z) / 2;
@@ -942,6 +955,21 @@ function initHarbor(
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       boatYaw += diff * Math.min(1, delta * 4);
       boatSpeed = Math.max(boatSpeed, 1.8);
+      // Turning the bow is not enough when the hull is wedged: the pier's disc
+      // reaches past the west water edge, so the collider pushes west while the
+      // clamp pushes east and the two cancel at every heading. Walk the hull out
+      // of the wedge directly (only ever runs after 0.3s of being stuck).
+      const openLen = Math.hypot(openX - skiff.position.x, openZ - skiff.position.z) || 1;
+      skiff.position.x = THREE.MathUtils.clamp(
+        skiff.position.x + ((openX - skiff.position.x) / openLen) * delta * 2.5,
+        WATER_MIN_X,
+        WATER_MAX_X
+      );
+      skiff.position.z = THREE.MathUtils.clamp(
+        skiff.position.z + ((openZ - skiff.position.z) / openLen) * delta * 2.5,
+        WATER_MIN_Z,
+        WATER_MAX_Z
+      );
     }
 
     const distanceToDock = skiff.position.distanceTo(DOCK_POINT);
