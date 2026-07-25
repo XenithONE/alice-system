@@ -6,7 +6,14 @@ import { buildCatalog, PRESETS } from "../parts/catalog";
 import { ARENAS } from "../parts/arenas";
 import { createArenaSim, initPhysics } from "./world";
 import { computeStats } from "./build";
-import { DEFAULT_ROOM_SETTINGS, type MatchInput } from "./types";
+import {
+  DEFAULT_ROOM_SETTINGS,
+  type BotSpec,
+  type ChassisDef,
+  type DriveDef,
+  type MatchInput,
+  type Rot4
+} from "./types";
 
 // Node-only gate script (same shim as buildSelftest.ts).
 declare const process: { exitCode?: number };
@@ -16,6 +23,7 @@ const FULL: MatchInput = {
   steer: 0,
   primary: false,
   secondary: false,
+  tertiary: false,
   selfRight: false
 };
 const IDLE: MatchInput = {
@@ -23,7 +31,78 @@ const IDLE: MatchInput = {
   steer: 0,
   primary: false,
   secondary: false,
+  tertiary: false,
   selfRight: false
+};
+
+const faceSpec = (
+  name: string,
+  chassis: ChassisDef,
+  drive: DriveDef,
+  mode: "underside" | "side"
+): BotSpec => {
+  if (mode === "underside") {
+    const rot: Rot4 = drive.cells[0] <= chassis.deck[0] &&
+      drive.cells[1] <= chassis.deck[1] ? 0 : 1;
+    const width = rot % 2 === 0 ? drive.cells[0] : drive.cells[1];
+    const depth = rot % 2 === 0 ? drive.cells[1] : drive.cells[0];
+    const z = Math.max(0, Math.floor((chassis.deck[1] - depth) / 2));
+    return {
+      v: 3,
+      name,
+      chassisId: chassis.id,
+      paint: 0x777777,
+      parts: [
+        { partId: drive.id, face: "underside", cell: [0, z], rot },
+        { partId: drive.id, face: "underside", cell: [chassis.deck[0] - width, z], rot }
+      ]
+    };
+  }
+  const rot: Rot4 =
+    drive.cells[1] <= chassis.heightCells && drive.cells[0] <= chassis.deck[1] ? 0 : 1;
+  return {
+    v: 3,
+    name,
+    chassisId: chassis.id,
+    paint: 0x777777,
+    parts: [
+      { partId: drive.id, face: "left", cell: [0, 0], rot },
+      { partId: drive.id, face: "right", cell: [0, 0], rot }
+    ]
+  };
+};
+
+const measure = (
+  spec: BotSpec,
+  promised: number,
+  catalog: ReturnType<typeof buildCatalog>
+) => {
+  const sim = createArenaSim({
+    seed: 7,
+    specs: [spec, spec, null, null],
+    names: [spec.name, "sparring", "", ""],
+    catalog,
+    arena: ARENAS[0]!,
+    settings: DEFAULT_ROOM_SETTINGS
+  });
+  for (let i = 0; i < 200; i += 1) sim.step([IDLE, IDLE, IDLE, IDLE]);
+  const y0 = sim.getState().bots[0]!.pos[1];
+  let measured = 0;
+  for (let i = 0; i < 240; i += 1) {
+    sim.step([FULL, FULL, IDLE, IDLE]);
+    const state = sim.getState().bots[0]!;
+    measured = Math.max(measured, Math.hypot(state.vel[0], state.vel[2]));
+  }
+  const row = {
+    bot: spec.name,
+    promisedTopSpeed: +promised.toFixed(2),
+    measuredSpeed: +measured.toFixed(2),
+    ratio: +(measured / promised).toFixed(2),
+    chassisY: +y0.toFixed(3),
+    phase: sim.phase
+  };
+  sim.dispose();
+  return row;
 };
 
 const main = async (): Promise<void> => {
@@ -67,11 +146,48 @@ const main = async (): Promise<void> => {
     });
     sim.dispose();
   }
+  const chassis = catalog.parts.find(
+    (part): part is ChassisDef => part.category === "chassis"
+  );
+  const undersideWheel = catalog.parts.find(
+    (part): part is DriveDef =>
+      part.category === "drive" &&
+      part.kind === "wheel" &&
+      part.faces.includes("underside")
+  );
+  const sideWheel = catalog.parts.find(
+    (part): part is DriveDef =>
+      part.category === "drive" &&
+      part.kind === "wheel" &&
+      part.faces.includes("left") &&
+      part.faces.includes("right")
+  );
+  const sideTrack = catalog.parts.find(
+    (part): part is DriveDef =>
+      part.category === "drive" &&
+      part.kind === "track" &&
+      part.faces.includes("left") &&
+      part.faces.includes("right")
+  );
+  if (!chassis || !undersideWheel || !sideWheel || !sideTrack) {
+    throw new Error("面別走行テストに必要なシャーシ／ホイール／履帯がカタログにありません。");
+  }
+  const mountSpecs = [
+    faceSpec("mount-underside-wheel", chassis, undersideWheel, "underside"),
+    faceSpec("mount-side-wheel", chassis, sideWheel, "side"),
+    faceSpec("mount-side-track", chassis, sideTrack, "side")
+  ];
+  const mountRows = mountSpecs.map((spec) =>
+    measure(spec, computeStats(spec, catalog, DEFAULT_ROOM_SETTINGS).topSpeed, catalog)
+  );
   // A robot that cannot reach the speed the workshop advertises makes the
   // whole builder a lie, and it is invisible in a match-outcome gate: bots that
   // barely move still finish matches, just on the judges' cards.
-  const failures = rows.filter((r) => r.ratio < 0.7).map((r) => `${r.bot} ${r.ratio}`);
-  console.log(JSON.stringify({ rows, failures }, null, 2));
+  const failures = [
+    ...rows.filter((r) => r.ratio < 0.7).map((r) => `${r.bot} ${r.ratio}`),
+    ...mountRows.filter((r) => r.ratio < 0.5).map((r) => `${r.bot} ${r.ratio}`)
+  ];
+  console.log(JSON.stringify({ rows, mountRows, failures }, null, 2));
   console.log(failures.length ? "DRIVE SELFTEST FAIL" : "DRIVE SELFTEST PASS");
   if (failures.length) process.exitCode = 1;
 };

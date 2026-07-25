@@ -9,6 +9,7 @@ import {
   industrialMaterial,
   type WeaponRig
 } from "./industrialKit";
+import { mountPartObject } from "./mounting";
 
 const MAX_SNAPSHOTS = 48;
 const MAX_SPARKS = 96;
@@ -52,7 +53,11 @@ interface PartVisual {
   readonly root: THREE.Object3D;
   readonly drive: DriveDef | null;
   readonly weapon: WeaponRig | null;
+  readonly basePosition: THREE.Vector3;
+  readonly baseScale: THREE.Vector3;
+  readonly finishes: { material: THREE.MeshStandardMaterial; color: THREE.Color }[];
   detached: boolean;
+  condition: number;
 }
 interface BotVisual {
   readonly seat: SeatIndex;
@@ -67,6 +72,7 @@ interface BotVisual {
   lastX: number;
   lastZ: number;
   wheelPhase: number;
+  initialized: boolean;
 }
 interface Particle {
   readonly mesh: THREE.Mesh;
@@ -92,13 +98,6 @@ function autoQuality(overrides: ArenaQuality): Required<Omit<ArenaQuality, "rend
     particles: Math.max(0, Math.min(MAX_SPARKS, overrides.particles ?? (low ? 36 : MAX_SPARKS))),
     antialias: overrides.antialias ?? !low
   };
-}
-function dimensions(part: { cells: readonly [number, number] }, rot: number): [number, number] {
-  return rot % 2 === 1 ? [part.cells[1], part.cells[0]] : [part.cells[0], part.cells[1]];
-}
-function localPartPosition(chassis: ChassisDef, part: { cells: readonly [number, number] }, cell: readonly [number, number], rot: number): [number, number] {
-  const [w, d] = dimensions(part, rot);
-  return [(cell[0] + w / 2 - chassis.deck[0] / 2) * CELL, (cell[1] + d / 2 - chassis.deck[1] / 2) * CELL];
 }
 function disposeObject(root: THREE.Object3D): void {
   root.traverse((object) => {
@@ -142,26 +141,26 @@ function addChassisDetails(root: THREE.Group, chassis: ChassisDef, paint: number
     new RoundedBoxGeometry(w, chassis.height, d, 2, 0.009),
     industrialMaterial(chassis.material, paint)
   );
-  plate.position.y = chassis.height * 0.5;
+  plate.position.y = chassis.groundClearance + chassis.height * 0.5;
   plate.castShadow = plate.receiveShadow = true;
   root.add(plate);
   const railMaterial = industrialMaterial("steel", BOT_COLORS[seat]);
   const steel = industrialMaterial("steel", 0x9ba09f);
   for (const x of [-w * 0.43, w * 0.43]) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.045, d * 0.88), railMaterial);
-    rail.position.set(x, chassis.height + 0.017, 0);
+    rail.position.set(x, chassis.groundClearance + chassis.height + 0.017, 0);
     rail.castShadow = true;
     root.add(rail);
   }
   for (let index = 0; index < 5; index += 1) {
     for (const x of [-w * 0.42, w * 0.42]) {
       const rivet = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.012, 6), steel);
-      rivet.position.set(x, chassis.height + 0.01, THREE.MathUtils.lerp(-d * 0.38, d * 0.38, index / 4));
+      rivet.position.set(x, chassis.groundClearance + chassis.height + 0.01, THREE.MathUtils.lerp(-d * 0.38, d * 0.38, index / 4));
       root.add(rivet);
     }
   }
   const access = new THREE.Mesh(new RoundedBoxGeometry(w * 0.34, 0.012, d * 0.28, 1, 0.004), industrialMaterial("steel", 0x4b5051));
-  access.position.set(0, chassis.height + 0.007, d * 0.08);
+  access.position.set(0, chassis.groundClearance + chassis.height + 0.007, d * 0.08);
   root.add(access);
 }
 function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalog): BotVisual | null {
@@ -175,12 +174,23 @@ function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalo
   spec.parts.forEach((placed, index) => {
     const part = catalog.byId.get(placed.partId);
     if (!part || part.category === "chassis") return;
-    const created = createIndustrialPart(part, placed.rot, spec.paint);
-    const [x, z] = localPartPosition(chassis, part, placed.cell, placed.rot);
-    created.root.position.set(x, chassis.height, z);
+    const created = createIndustrialPart(part, placed.rot, spec.paint, false, placed.face);
+    mountPartObject(created.root, chassis, part, placed);
     root.add(created.root);
     const drive = part.category === "drive" ? part : null;
-    parts.push({ index, root: created.root, drive, weapon: created.weapon, detached: false });
+    const finishes: { material: THREE.MeshStandardMaterial; color: THREE.Color }[] = [];
+    created.root.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if (material instanceof THREE.MeshStandardMaterial) finishes.push({ material, color: material.color.clone() });
+      }
+    });
+    parts.push({
+      index, root: created.root, drive, weapon: created.weapon,
+      basePosition: created.root.position.clone(), baseScale: created.root.scale.clone(),
+      finishes, detached: false, condition: 1
+    });
     if (created.wheel && drive) {
       wheelRoots.push(created.wheel);
       wheelRadii.push(drive.radius);
@@ -190,7 +200,7 @@ function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalo
   root.add(nameSprite);
   return {
     seat, root, parts, wheelRoots, wheelRadii, nameSprite,
-    hp: 0, burn: 0, detach: 0, lastX: 0, lastZ: 0, wheelPhase: 0
+    hp: 0, burn: 0, detach: 0, lastX: 0, lastZ: 0, wheelPhase: 0, initialized: false
   };
 }
 
@@ -219,7 +229,8 @@ function lerpBot(a: BotSnap, b: BotSnap, alpha: number): BotSnap {
     w: lerpWeapons(a.w, b.w, alpha),
     wp: a.wp !== 0 || b.wp !== 0 ? THREE.MathUtils.lerp(a.wp, b.wp, alpha) : 0,
     burn: THREE.MathUtils.lerp(a.burn, b.burn, alpha),
-    detach: alpha < 0.5 ? a.detach : b.detach
+    detach: alpha < 0.5 ? a.detach : b.detach,
+    pc: b.pc.map((value, index) => Math.round(THREE.MathUtils.lerp(a.pc[index] ?? value, value, alpha)))
   };
 }
 
@@ -307,6 +318,10 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
   let disposed = false;
   let ready = false;
   let cameraShake = 0;
+  let impactFlash = 0;
+  let hitStopRemaining = 0;
+  let impactPull = 0;
+  let focusSpeed = 0;
   let koFocus: number | null = null;
   let lastSnapshotTick = -1;
   let vfxCursor = 0;
@@ -487,7 +502,19 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     for (const event of snapshot.events) {
       if (event.t === "hit") {
         spark(event.x, event.y, event.z, event.power);
-        cameraShake = Math.min(0.22, cameraShake + event.power * 0.0008);
+        const distance = camera.position.distanceTo(new THREE.Vector3(event.x, event.y, event.z));
+        const proximity = THREE.MathUtils.clamp(1 - distance / 18, 0.18, 1);
+        const force = THREE.MathUtils.clamp(event.power / 180, 0.08, 1);
+        cameraShake = Math.min(0.34, cameraShake + force * proximity * 0.24);
+        impactFlash = Math.max(impactFlash, force * proximity);
+        impactPull = Math.max(impactPull, force * 0.7);
+        if (!reducedMotion && force > 0.66) hitStopRemaining = Math.max(hitStopRemaining, 0.08 + force * 0.04);
+        const fragments = Math.min(5, Math.max(1, Math.floor(event.power / 55)));
+        for (let index = 0; index < fragments; index += 1) throwDebris(event.x, event.y, event.z);
+        if (event.effect === "spin" || event.effect === "grind") {
+          spark(event.x, event.y, event.z, event.power * 1.35);
+          spark(event.x + 0.08, event.y, event.z - 0.08, event.power);
+        }
       } else if (event.t === "detach") {
         spark(event.x, event.y, event.z, 120);
         throwDebris(event.x, event.y, event.z, BOT_COLORS[event.seat]);
@@ -531,9 +558,12 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     for (const snap of nextBots) {
       const visual = bots.get(snap.seat);
       if (!visual) continue;
-      const dx = snap.x - visual.lastX;
-      const dz = snap.z - visual.lastZ;
-      visual.root.position.set(snap.x, snap.y, snap.z);
+      const dx = visual.initialized ? snap.x - visual.lastX : 0;
+      const dz = visual.initialized ? snap.z - visual.lastZ : 0;
+      const speed = dt > 0 ? Math.hypot(dx, dz) / dt : 0;
+      if (snap.seat === mySeat) focusSpeed = THREE.MathUtils.lerp(focusSpeed, speed, 0.18);
+      const suspensionSink = snap.alive ? Math.max(0, 0.022 * (1 - Math.min(speed / 1.2, 1))) : 0;
+      visual.root.position.set(snap.x, snap.y - suspensionSink, snap.z);
       visual.root.quaternion.set(snap.qx, snap.qy, snap.qz, snap.qw);
       visual.root.visible = true;
       visual.hp = snap.hp;
@@ -558,6 +588,34 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
           }
         }
         const detached = (snap.detach & 2 ** part.index) !== 0;
+        const condition = THREE.MathUtils.clamp((snap.pc[part.index] ?? 255) / 255, 0, 1);
+        part.condition = condition;
+        part.root.position.copy(part.basePosition);
+        part.root.scale.copy(part.baseScale);
+        if (condition < 0.5) part.root.scale.y *= 0.92;
+        if (condition < 0.25 && !reducedMotion) {
+          const vibration = (0.25 - condition) * 0.028;
+          part.root.position.x += Math.sin(clock * 73 + part.index * 4.1) * vibration;
+          part.root.position.z += Math.cos(clock * 67 + part.index * 2.7) * vibration;
+        }
+        for (const finish of part.finishes) {
+          const damage = 1 - condition;
+          finish.material.color.copy(finish.color).lerp(new THREE.Color(condition < 0.5 ? 0x171414 : 0x3c3934), damage * 0.72);
+          finish.material.roughness = THREE.MathUtils.clamp(0.58 + damage * 0.38, 0, 1);
+          finish.material.emissive.setHex(condition < 0.25 ? 0x8f2109 : 0x000000);
+          finish.material.emissiveIntensity = condition < 0.25 ? (0.25 - condition) * 5 : 0;
+        }
+        const smokeBucket = Math.floor(clock * 7 + part.index + snap.seat);
+        const previousSmokeBucket = Math.floor((clock - dt) * 7 + part.index + snap.seat);
+        if (condition < 0.25 && smokeBucket !== previousSmokeBucket) {
+          const point = new THREE.Vector3();
+          part.root.getWorldPosition(point);
+          puff(point.x, point.y + 0.05, point.z);
+        } else if (condition < 0.5 && smokeBucket !== previousSmokeBucket && smokeBucket % 5 === 0) {
+          const point = new THREE.Vector3();
+          part.root.getWorldPosition(point);
+          spark(point.x, point.y, point.z, 28);
+        }
         if (detached && !part.detached) {
           const point = new THREE.Vector3();
           part.root.getWorldPosition(point);
@@ -578,6 +636,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       }
       visual.lastX = snap.x;
       visual.lastZ = snap.z;
+      visual.initialized = true;
     }
   }
   function updateParticles(items: Particle[], dt: number, gravity: number): void {
@@ -627,12 +686,12 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     back.y = 0;
     back.normalize();
     const target = new THREE.Vector3(focus.x, Math.max(focus.y, 0) + 0.45, focus.z).lerp(center.setY(0.35), 0.32);
-    const desired = target.clone().addScaledVector(back, 5.8 + spread * 0.65);
+    const desired = target.clone().addScaledVector(back, 5.8 + spread * 0.65 + impactPull * 1.2);
     desired.y += 3.1 + spread * 0.34;
     camera.position.lerp(desired, 1 - Math.exp(-Math.max(dt, 0) * 4.6));
     if (!reducedMotion && cameraShake > 0.001) {
-      camera.position.x += Math.sin(clock * 77) * cameraShake;
-      camera.position.y += Math.cos(clock * 91) * cameraShake * 0.45;
+      camera.position.x += (Math.sin(clock * 77) * 0.58 + Math.sin(clock * 19) * 0.42) * cameraShake;
+      camera.position.y += (Math.cos(clock * 91) * 0.32 + Math.cos(clock * 16) * 0.36) * cameraShake;
       cameraShake *= Math.exp(-dt * 12);
     } else cameraShake = 0;
     camera.lookAt(target);
@@ -640,6 +699,11 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
   function renderTick(dt: number): void {
     if (disposed || paused) return;
     const safeDt = THREE.MathUtils.clamp(Number.isFinite(dt) ? dt : 0, 0, 0.1);
+    if (!reducedMotion && hitStopRemaining > 0) {
+      hitStopRemaining = Math.max(0, hitStopRemaining - safeDt);
+      renderer.render(scene, camera);
+      return;
+    }
     clock += safeDt;
     const nextBots = sampledBots();
     applyBots(nextBots, safeDt);
@@ -651,6 +715,16 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       }
     });
     updateCamera(nextBots, safeDt);
+    const speedAmount = THREE.MathUtils.clamp((focusSpeed - 2.5) / 10, 0, 1);
+    camera.fov = THREE.MathUtils.lerp(camera.fov, 42 + speedAmount * 5, 1 - Math.exp(-safeDt * 4));
+    camera.updateProjectionMatrix();
+    impactFlash *= Math.exp(-safeDt * 18);
+    impactPull *= Math.exp(-safeDt * 10);
+    const host = canvas.parentElement;
+    if (host) {
+      host.style.setProperty("--sc-speed", reducedMotion ? "0" : String(speedAmount * 0.62));
+      host.style.setProperty("--sc-impact", String(impactFlash));
+    }
     renderer.render(scene, camera);
   }
   function loop(now: number): void {
@@ -726,6 +800,8 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       disposeObject(botRoot);
       disposeObject(vfxRoot);
       renderer.dispose();
+      canvas.parentElement?.style.removeProperty("--sc-speed");
+      canvas.parentElement?.style.removeProperty("--sc-impact");
       scene.clear();
       snapshots = [];
       bots.clear();

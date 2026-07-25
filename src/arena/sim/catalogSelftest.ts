@@ -52,7 +52,7 @@ for (const w of weapons) {
   }
   if (w.effect === "impulse" && (w.impulse == null || w.cooldown == null)) note(`${w.id}: missing impulse fields`);
   // fuel is optional by contract: omitted or 0 means the weapon needs none
-  if (!["primary", "secondary"].includes(w.slot)) note(`${w.id}: bad slot ${w.slot}`);
+  if (!["primary", "secondary", "tertiary"].includes(w.slot)) note(`${w.id}: bad slot ${w.slot}`);
 }
 
 // cheap+heavy vs dear+light must actually exist among armour, or points are pointless
@@ -88,16 +88,17 @@ const presetRows = PRESETS.map((spec) => {
     if (def.category === "weapon") slots.push((def as WeaponDef).slot);
     for (const [x, z] of cellsOf(def, pp.cell, pp.rot)) {
       if (x < 0 || z < 0 || x >= chassis.deck[0] || z >= chassis.deck[1]) oob += 1;
-      const k = `${x},${z}`;
+      const k = `${pp.face}:${x},${z}`;
       if (used.has(k)) overlap += 1;
       used.add(k);
     }
   }
-  if (spec.v !== 2) note(`${spec.name}: spec version ${spec.v} != 2`);
+  if (spec.v !== 3) note(`${spec.name}: spec version ${spec.v} != 3`);
   if (cost > 1000) note(`${spec.name}: cost ${cost} > 1000`);
   if (drives < 2) note(`${spec.name}: drives ${drives} < 2`);
   if (slots.filter((s) => s === "primary").length > 1) note(`${spec.name}: two primaries`);
   if (slots.filter((s) => s === "secondary").length > 1) note(`${spec.name}: two secondaries`);
+  if (slots.filter((s) => s === "tertiary").length > 1) note(`${spec.name}: two tertiaries`);
   if (overlap) note(`${spec.name}: ${overlap} overlapping cells`);
   if (oob) note(`${spec.name}: ${oob} cells off the deck`);
   return { name: spec.name, cost, mass: +mass.toFixed(1), drives, slots: slots.join("+") || "none", overlap, oob };

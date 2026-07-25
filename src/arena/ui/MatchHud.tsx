@@ -2,6 +2,7 @@ import type { BotSnap, Snapshot } from "../net/protocol";
 import type { WeaponAction, WeaponSlot } from "../sim/types";
 
 export interface HudWeapon {
+  partIdx: number;
   slot: WeaponSlot;
   name: string;
   action: WeaponAction;
@@ -29,6 +30,12 @@ function botFor(snapshot: Snapshot | null, seat: number): BotSnap | undefined {
 
 export function MatchHud({ snapshot, names, mySeat, maxHp, matchSec, weapons, paused, onPause }: MatchHudProps) {
   const mine = botFor(snapshot, mySeat);
+  const target = snapshot?.bots.find((bot) => bot.seat !== mySeat && bot.alive);
+  const weaponIndices = new Set(weapons.map((weapon) => weapon.partIdx));
+  const otherCondition = mine?.pc.filter((_, index) => !weaponIndices.has(index));
+  const otherPercent = otherCondition?.length
+    ? otherCondition.reduce((sum, value) => sum + value, 0) / (otherCondition.length * 255) * 100
+    : 100;
   return (
     <div className="sc-hud">
       <section className="sc-hud__players" aria-label="機体HP">
@@ -50,7 +57,7 @@ export function MatchHud({ snapshot, names, mySeat, maxHp, matchSec, weapons, pa
       </div>
       <button className="sc-pause" type="button" onClick={onPause} aria-pressed={paused}>{paused ? "再開" : "一時停止"}</button>
       <section className="sc-weapon-gauges" aria-label="武装状態">
-        {(["primary", "secondary"] as const).map((slot) => {
+        {(["primary", "secondary", "tertiary"] as const).map((slot) => {
           const def = weapons.find((weapon) => weapon.slot === slot);
           const snap = mine?.w.find((weapon) => weapon.slot === slot);
           const fraction = !def ? 0 : def.action === "triggered" ? snap?.c ?? 0 :
@@ -61,17 +68,32 @@ export function MatchHud({ snapshot, names, mySeat, maxHp, matchSec, weapons, pa
             `${Math.round(Math.abs(snap?.o ?? 0))} rad/s`;
           return (
             <div className={`sc-weapon-gauge${snap?.on ? " is-live" : ""}`} key={slot}>
-              <span>{slot === "primary" ? "PRIMARY / SPACE" : "SECONDARY / SHIFT"}</span>
+              <span>{slot === "primary" ? "① PRIMARY / SPACE" : slot === "secondary" ? "② SECONDARY / SHIFT" : "③ TERTIARY / F"}</span>
               <strong>{def?.name ?? "未装備"}</strong>
               <div><i style={{ width: `${fraction * 100}%` }} /></div><small>{value}</small>
             </div>
           );
         })}
       </section>
+      <section className="sc-part-health" aria-label="自機パーツ耐久">
+        <strong>PART CONDITION</strong>
+        <div><span>シャーシ</span><i><b style={{ width: `${Math.min(100, (mine?.hp ?? 0) / Math.max(maxHp[mySeat] ?? 1, 1) * 100)}%` }} /></i></div>
+        {(["primary", "secondary", "tertiary"] as const).map((slot) => {
+          const def = weapons.find((weapon) => weapon.slot === slot);
+          const condition = def ? (mine?.pc[def.partIdx] ?? 255) / 255 * 100 : 0;
+          return <div key={slot}><span>{slot === "primary" ? "主兵装" : slot === "secondary" ? "副兵装" : "第3兵装"}</span><i><b style={{ width: `${condition}%` }} /></i></div>;
+        })}
+        <div><span>その他</span><i><b style={{ width: `${otherPercent}%` }} /></i></div>
+      </section>
+      {target && <section className="sc-target-health" aria-label="ロックオン対象耐久">
+        <span>LOCK // {names[target.seat] ?? `BOT ${target.seat + 1}`}</span>
+        <i><b style={{ width: `${target.pc.length ? target.pc.reduce((sum, value) => sum + value, 0) / (target.pc.length * 255) * 100 : 100}%` }} /></i>
+      </section>}
       <section className="sc-controls" aria-label="操作説明">
         <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>移動</span></div>
         <div><kbd>Space</kbd><span>主兵装</span></div>
         <div><kbd>Shift</kbd><span>副兵装</span></div>
+        <div><kbd>F</kbd><span>第3兵装</span></div>
         <div><kbd>R</kbd><span>セルフライト</span></div>
       </section>
       {mine && mine.burn > 0 && <div className="sc-burning">BURNING {mine.burn.toFixed(1)}s</div>}

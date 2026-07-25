@@ -1,6 +1,7 @@
 import type RAPIER from "@dimforge/rapier3d-compat";
 import {
   DRY_LOCKOUT,
+  DRIVE_TRACTION_ASSIST,
   FIXED_DT,
   MIN_TRIGGER_GAP,
   SELF_RIGHT_COOLDOWN,
@@ -18,7 +19,9 @@ function clamp(value: number): number {
 }
 
 function buttonFor(input: MatchInput, weapon: WeaponRuntime): boolean {
-  return weapon.def.slot === "primary" ? input.primary : input.secondary;
+  if (weapon.def.slot === "primary") return input.primary;
+  if (weapon.def.slot === "secondary") return input.secondary;
+  return input.tertiary;
 }
 
 function positionMotor(weapon: WeaponRuntime, target: number): void {
@@ -112,13 +115,41 @@ export function driveBot(
   const steer = enabled ? clamp(input.steer) : 0;
   const left = clamp(throttle + steer);
   const right = clamp(throttle - steer);
+  let driveCommand = 0;
+  let driveCount = 0;
+  let tractionAcceleration = 0;
+  let targetSpeed = Number.POSITIVE_INFINITY;
 
   for (const drive of bot.drives) {
     if (drive.detached) continue;
     const command = drive.side < 0 ? left : right;
+    driveCommand += command;
+    driveCount += 1;
+    tractionAcceleration += drive.def.torque / Math.max(drive.def.radius, Number.EPSILON);
+    targetSpeed = Math.min(targetSpeed, drive.def.maxOmega * drive.def.radius);
     drive.joint.configureMotorVelocity(
       -command * drive.def.maxOmega,
       drive.def.torque * bot.powerMul
+    );
+  }
+  if (driveCount > 0 && Math.abs(driveCommand) > Number.EPSILON) {
+    const averageCommand = driveCommand / driveCount;
+    const q = bot.chassis.rotation();
+    const forwardX = -2 * (q.x * q.z + q.w * q.y);
+    const forwardZ = -(1 - 2 * (q.x * q.x + q.y * q.y));
+    const length = Math.max(Math.hypot(forwardX, forwardZ), Number.EPSILON);
+    const dirX = forwardX / length;
+    const dirZ = forwardZ / length;
+    const velocity = bot.chassis.linvel();
+    const current = velocity.x * dirX + velocity.z * dirZ;
+    const desired = averageCommand * targetSpeed;
+    const mass = Math.max(bot.chassis.mass(), Number.EPSILON);
+    const maxDelta =
+      tractionAcceleration * bot.powerMul / mass * DRIVE_TRACTION_ASSIST * FIXED_DT;
+    const delta = Math.max(-maxDelta, Math.min(maxDelta, desired - current));
+    bot.chassis.applyImpulse(
+      { x: dirX * delta * mass, y: 0, z: dirZ * delta * mass },
+      true
     );
   }
   for (const weapon of bot.weapons) updateWeapon(bot, weapon, input, enabled, events);

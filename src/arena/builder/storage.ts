@@ -1,9 +1,10 @@
-import type { BotSpec, PlacedPart, Rot4 } from "../sim/types";
+import type { BotSpec, MountFace, PlacedPart, Rot4 } from "../sim/types";
 
 const GARAGE_KEY = "sc.garage.v1";
 const MAX_SPECS = 64;
 const MAX_PARTS = 128;
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const FACES = new Set<MountFace>(["deck", "underside", "left", "right", "front", "rear"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -38,13 +39,14 @@ function decodePlacedPart(value: unknown): PlacedPart | null {
   }
   return {
     partId: value.partId,
+    face: typeof value.face === "string" && FACES.has(value.face as MountFace) ? value.face as MountFace : "deck",
     cell: [x, z],
     rot: candidateRot as Rot4
   };
 }
 
 function decodeValue(value: unknown): BotSpec | null {
-  if (!isRecord(value) || value.v !== 2) return null;
+  if (!isRecord(value) || value.v !== 2 && value.v !== 3) return null;
   const candidatePaint = value.paint;
   if (
     typeof value.name !== "string" ||
@@ -71,7 +73,7 @@ function decodeValue(value: unknown): BotSpec | null {
     parts.push(part);
   }
   return {
-    v: 2,
+    v: 3,
     name: value.name,
     chassisId: value.chassisId,
     paint: candidatePaint,

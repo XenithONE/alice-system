@@ -24,7 +24,15 @@ export const MIN_HIT_IMPULSE = 3.5;
 /** Same attacker/defender pair cannot be scored again within this window. */
 export const CONTACT_COOLDOWN = 0.12;
 /** Bodies with no weapon still hurt when rammed hard. */
-export const RAM_FACTOR = 0.35;
+/*
+ * Bare-hull ramming. Kept low on purpose: with the heavy-collision response
+ * added in v3, ramming grew to 52% of all damage dealt across the 20-match
+ * suite and out-damaged every fitted weapon, which makes a 72-part catalogue
+ * pointless. Collisions should still feel heavy — that is what the
+ * HEAVY_COLLISION_* constants are for — but the damage should come from what
+ * you bolted on.
+ */
+export const RAM_FACTOR = 0.18;
 /** A spinner at rest is nearly harmless; this is the floor of its damage curve. */
 export const SPIN_DAMAGE_FLOOR = 0.25;
 
@@ -82,6 +90,22 @@ export const DISENGAGE_SEC = 1.1;
 export const STEER_TORQUE = 42;
 export const DRIVE_LINEAR_DAMPING = 0.18;
 export const DRIVE_ANGULAR_DAMPING = 0.9;
+/**
+ * Rapier's point contacts can lose all motor traction when another fitted
+ * collider brushes the floor. This bounded assist represents the tyre/track
+ * contact patch and is still limited by fitted axle torque and top speed.
+ */
+export const DRIVE_TRACTION_ASSIST = 0.35;
+
+/** Bot-on-bot contacts should lose speed like heavy steel, not billiard balls. */
+export const BOT_COLLISION_RESTITUTION = 0.04;
+export const BOT_COLLISION_FRICTION = 1.35;
+/** Minimum impact before the extra heavy-collision response is applied. */
+export const HEAVY_COLLISION_IMPULSE = 18;
+/** Fractional velocity loss at a threshold impact (stronger hits lose more). */
+export const HEAVY_COLLISION_SPEED_LOSS = 0.22;
+/** Converts an off-centre impact impulse into visible pitch/roll/yaw. */
+export const HEAVY_COLLISION_ANGULAR_IMPULSE = 0.16;
 
 /** Arena hazards. */
 export const SAW_OMEGA = 46;

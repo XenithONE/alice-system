@@ -107,6 +107,7 @@ function validInput(value: MatchInput): boolean {
     value.steer >= -1 && value.steer <= 1 &&
     typeof value.primary === "boolean" &&
     typeof value.secondary === "boolean" &&
+    typeof value.tertiary === "boolean" &&
     typeof value.selfRight === "boolean";
 }
 
@@ -116,6 +117,7 @@ function copyInput(value: MatchInput): MatchInput {
     steer: value.steer,
     primary: value.primary,
     secondary: value.secondary,
+    tertiary: value.tertiary,
     selfRight: value.selfRight,
   };
 }
@@ -165,6 +167,9 @@ function snapshotOf(sim: ArenaSim): Snapshot {
       })),
       wp: 0,
       detach: bot.detached.reduce((mask, index) => mask + 2 ** index, 0),
+      pc: bot.partCondition.map((condition) =>
+        Math.max(0, Math.min(255, Math.round(condition * 255)))
+      ),
       burn: bot.burningFor,
     })),
     events: sim.drainEvents(),

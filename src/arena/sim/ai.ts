@@ -97,7 +97,7 @@ export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
   const state = sim.getState();
   const bot = state.bots.find((candidate) => candidate.seat === seat);
   if (!bot?.alive || state.phase !== "live") {
-    return { throttle: 0, steer: 0, primary: false, secondary: false, selfRight: false };
+    return { throttle: 0, steer: 0, primary: false, secondary: false, tertiary: false, selfRight: false };
   }
   let target: BotState | null = null;
   let targetDistance = Number.POSITIVE_INFINITY;
@@ -110,7 +110,7 @@ export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
     }
   }
   if (!target) {
-    return { throttle: 0, steer: 0, primary: false, secondary: false, selfRight: bot.inverted };
+    return { throttle: 0, steer: 0, primary: false, secondary: false, tertiary: false, selfRight: bot.inverted };
   }
 
   const ai = stateMemory(sim, seat, bot);
@@ -195,17 +195,20 @@ export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
   }
   let primary = false;
   let secondary = false;
+  let tertiary = false;
   for (const def of weaponsForSim(sim, seat)) {
     const weaponState = bot.weapons.find((weapon) => weapon.slot === def.slot);
     const wants = wantsWeapon(def, weaponState, targetDistance, facingDot);
     if (def.slot === "primary") primary ||= wants;
-    else secondary ||= wants;
+    else if (def.slot === "secondary") secondary ||= wants;
+    else tertiary ||= wants;
   }
   return {
     throttle,
     steer,
     primary,
     secondary,
+    tertiary,
     selfRight: bot.inverted
   };
 }

@@ -1,12 +1,14 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createIndustrialPart, industrialMaterial } from "../render/industrialKit";
-import { occupiedCells, partLocalPosition, validateBuild } from "../sim/build";
+import { faceGridSize, mountPartObject } from "../render/mounting";
+import { occupiedCells, validateBuild } from "../sim/build";
 import {
   CELL,
   type BotSpec,
   type Catalog,
   type ChassisDef,
+  type MountFace,
   type PartDef,
   type RoomSettings,
   type Rot4
@@ -14,6 +16,7 @@ import {
 
 export interface BuilderScene {
   setSpec(spec: BotSpec): void;
+  setFace(face: MountFace): void;
   setHoveredPart(partId: string | null): void;
   onChange(cb: (spec: BotSpec) => void): void;
   /** QA seam: このペインでは rAF が回らない。必ず用意すること */
@@ -49,9 +52,10 @@ function createPartObject(
   part: PartDef,
   color: number,
   rot: Rot4,
-  transparent = false
+  transparent = false,
+  face: MountFace = "deck"
 ): THREE.Group {
-  return createIndustrialPart(part, rot, color, transparent).root;
+  return createIndustrialPart(part, rot, color, transparent, face).root;
 }
 
 export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, settings: RoomSettings): BuilderScene {
@@ -93,7 +97,7 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
   scene.add(rim);
 
   let spec = cloneSpec(catalog.presets[0] ?? {
-    v: 1,
+    v: 3,
     name: "新規機体",
     chassisId: catalog.parts.find((part) => part.category === "chassis")?.id ?? "",
     paint: 0xc91a09,
@@ -104,6 +108,9 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
   let rot: Rot4 = 0;
   let camYaw = -0.72;
   let camPitch = 0.72;
+  let targetCamYaw = camYaw;
+  let targetCamPitch = camPitch;
+  let selectedFace: MountFace = "deck";
   let camDistance = 2.25;
   let dragging = false;
   let dragged = false;
@@ -115,7 +122,7 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const deckPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  const mountPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const planeHit = new THREE.Vector3();
 
   function chassis(): ChassisDef | null {
@@ -140,19 +147,34 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     const chassisMaterial = industrialMaterial(frame.material, spec.paint);
     const chassisGeo = new RoundedBoxGeometry(frame.deck[0] * CELL, frame.height, frame.deck[1] * CELL, 2, 0.009);
     const chassisMesh = new THREE.Mesh(chassisGeo, chassisMaterial);
-    chassisMesh.position.y = frame.height * 0.5;
+    chassisMesh.position.y = frame.groundClearance + frame.height * 0.5;
     chassisMesh.castShadow = true;
     chassisMesh.receiveShadow = true;
     buildRoot.add(chassisMesh);
 
+    const [gridU, gridV] = faceGridSize(frame, selectedFace);
+    const surfacePoint = (u: number, v: number): [number, number, number] => {
+      const halfW = frame.deck[0] * CELL / 2;
+      const halfD = frame.deck[1] * CELL / 2;
+      if (selectedFace === "deck") return [u, frame.groundClearance + frame.height + 0.002, v];
+      if (selectedFace === "underside") return [u, frame.groundClearance - 0.002, v];
+      if (selectedFace === "left") return [-halfW - 0.002, frame.groundClearance + v + gridV * CELL / 2, u];
+      if (selectedFace === "right") return [halfW + 0.002, frame.groundClearance + v + gridV * CELL / 2, u];
+      if (selectedFace === "front") return [u, frame.groundClearance + v + gridV * CELL / 2, -halfD - 0.002];
+      return [u, frame.groundClearance + v + gridV * CELL / 2, halfD + 0.002];
+    };
     const linePositions: number[] = [];
-    for (let x = 0; x <= frame.deck[0]; x += 1) {
-      const px = (x - frame.deck[0] / 2) * CELL;
-      linePositions.push(px, frame.height + 0.002, -frame.deck[1] * CELL / 2, px, frame.height + 0.002, frame.deck[1] * CELL / 2);
+    for (let u = 0; u <= gridU; u += 1) {
+      linePositions.push(
+        ...surfacePoint((u - gridU / 2) * CELL, -gridV * CELL / 2),
+        ...surfacePoint((u - gridU / 2) * CELL, gridV * CELL / 2)
+      );
     }
-    for (let z = 0; z <= frame.deck[1]; z += 1) {
-      const pz = (z - frame.deck[1] / 2) * CELL;
-      linePositions.push(-frame.deck[0] * CELL / 2, frame.height + 0.002, pz, frame.deck[0] * CELL / 2, frame.height + 0.002, pz);
+    for (let v = 0; v <= gridV; v += 1) {
+      linePositions.push(
+        ...surfacePoint(-gridU * CELL / 2, (v - gridV / 2) * CELL),
+        ...surfacePoint(gridU * CELL / 2, (v - gridV / 2) * CELL)
+      );
     }
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setAttribute("position", new THREE.Float32BufferAttribute(linePositions, 3));
@@ -161,9 +183,8 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     for (const placed of spec.parts) {
       const part = catalog.byId.get(placed.partId);
       if (!part || part.category === "chassis") continue;
-      const object = createPartObject(part, part.color, placed.rot);
-      const [x, z] = partLocalPosition(frame, part, placed.cell, placed.rot);
-      object.position.set(x, frame.height, z);
+      const object = createPartObject(part, part.color, placed.rot, false, placed.face);
+      mountPartObject(object, frame, part, placed);
       buildRoot.add(object);
     }
     rebuildGhost();
@@ -172,7 +193,7 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
   function candidateSpec(part: PartDef, cell: [number, number]): BotSpec {
     return {
       ...spec,
-      parts: [...spec.parts, { partId: part.id, cell, rot }]
+      parts: [...spec.parts, { partId: part.id, face: selectedFace, cell, rot }]
     };
   }
 
@@ -203,9 +224,8 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     }
     if (!hoverCell) return;
     const valid = placementValid(part, hoverCell);
-    const object = createPartObject(part, valid ? 0x55d68a : 0xe24338, rot, true);
-    const [x, z] = partLocalPosition(frame, part, hoverCell, rot);
-    object.position.set(x, frame.height + 0.004, z);
+    const object = createPartObject(part, valid ? 0x55d68a : 0xe24338, rot, true, selectedFace);
+    mountPartObject(object, frame, part, { partId: part.id, face: selectedFace, cell: hoverCell, rot }, 0.004);
     ghostRoot.add(object);
   }
 
@@ -218,14 +238,35 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     const rect = canvas.getBoundingClientRect();
     pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
-    deckPlane.constant = -frame.height;
-    if (!raycaster.ray.intersectPlane(deckPlane, planeHit)) {
+    const halfW = frame.deck[0] * CELL / 2;
+    const halfD = frame.deck[1] * CELL / 2;
+    const deckY = frame.groundClearance + frame.height;
+    const normal = selectedFace === "deck" ? new THREE.Vector3(0, 1, 0) :
+      selectedFace === "underside" ? new THREE.Vector3(0, -1, 0) :
+      selectedFace === "left" ? new THREE.Vector3(-1, 0, 0) :
+      selectedFace === "right" ? new THREE.Vector3(1, 0, 0) :
+      selectedFace === "front" ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(0, 0, 1);
+    const planePoint = selectedFace === "deck" ? new THREE.Vector3(0, deckY, 0) :
+      selectedFace === "underside" ? new THREE.Vector3(0, frame.groundClearance, 0) :
+      selectedFace === "left" ? new THREE.Vector3(-halfW, 0, 0) :
+      selectedFace === "right" ? new THREE.Vector3(halfW, 0, 0) :
+      selectedFace === "front" ? new THREE.Vector3(0, 0, -halfD) : new THREE.Vector3(0, 0, halfD);
+    mountPlane.setFromNormalAndCoplanarPoint(normal, planePoint);
+    if (!raycaster.ray.intersectPlane(mountPlane, planeHit)) {
       hoverCell = null;
     } else {
+      const [gridU, gridV] = faceGridSize(frame, selectedFace);
+      const u = selectedFace === "left" || selectedFace === "right" ? planeHit.z : planeHit.x;
+      const v = selectedFace === "deck" || selectedFace === "underside"
+        ? planeHit.z
+        : planeHit.y - frame.groundClearance;
       hoverCell = [
-        Math.floor(planeHit.x / CELL + frame.deck[0] / 2),
-        Math.floor(planeHit.z / CELL + frame.deck[1] / 2)
+        Math.floor(u / CELL + gridU / 2),
+        Math.floor(v / CELL)
       ];
+      if (selectedFace === "deck" || selectedFace === "underside") {
+        hoverCell[1] = Math.floor(v / CELL + gridV / 2);
+      }
     }
     rebuildGhost();
   }
@@ -234,6 +275,7 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     if (!hoverCell) return;
     for (let index = spec.parts.length - 1; index >= 0; index -= 1) {
       const placed = spec.parts[index]!;
+      if (placed.face !== selectedFace) continue;
       const part = catalog.byId.get(placed.partId);
       if (!part) continue;
       if (occupiedCells(part, placed.cell, placed.rot).some(([x, z]) => x === hoverCell![0] && z === hoverCell![1])) {
@@ -259,7 +301,11 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
   }
 
   function render(dt: number): void {
-    if (!reducedMotion && !dragging && hoveredPartId === null) camYaw += Math.min(Math.max(dt, 0), 0.05) * 0.09;
+    if (!dragging) {
+      const follow = reducedMotion ? 1 : 1 - Math.exp(-Math.min(Math.max(dt, 0), 0.1) * 8);
+      camYaw = THREE.MathUtils.lerp(camYaw, targetCamYaw, follow);
+      camPitch = THREE.MathUtils.lerp(camPitch, targetCamPitch, follow);
+    }
     updateCamera();
     renderer.render(scene, camera);
   }
@@ -299,6 +345,8 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     if (Math.abs(dx) + Math.abs(dy) > 2) dragged = true;
     camYaw -= dx * 0.007;
     camPitch = THREE.MathUtils.clamp(camPitch + dy * 0.005, 0.24, 1.28);
+    targetCamYaw = camYaw;
+    targetCamPitch = camPitch;
     pointerX = event.clientX;
     pointerY = event.clientY;
   };
@@ -346,6 +394,21 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     setSpec(nextSpec) {
       spec = cloneSpec(nextSpec);
       hoverCell = null;
+      rebuild();
+    },
+    setFace(nextFace) {
+      selectedFace = nextFace;
+      hoverCell = null;
+      const views: Record<MountFace, [number, number]> = {
+        deck: [-0.72, 1.08],
+        underside: [2.35, -0.42],
+        left: [-Math.PI / 2, 0.32],
+        right: [Math.PI / 2, 0.32],
+        front: [Math.PI, 0.32],
+        rear: [0, 0.32]
+      };
+      [targetCamYaw, targetCamPitch] = views[nextFace];
+      floorRoot.visible = nextFace !== "underside";
       rebuild();
     },
     setHoveredPart(partId) {

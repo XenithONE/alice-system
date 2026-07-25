@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import {
   CELL,
+  type MountFace,
   type PartDef,
   type Rot4,
   type SurfaceMaterial,
@@ -194,16 +195,19 @@ export interface IndustrialPart {
 export interface WeaponRig {
   readonly def: WeaponDef;
   readonly moving: THREE.Object3D[];
-  readonly blur: THREE.Mesh | null;
+  readonly blurs: THREE.Mesh[];
   readonly flameOrigin: THREE.Object3D | null;
-  readonly mode: "spin-y" | "spin-x" | "spear" | "arm" | "crusher" | "static" | "flame";
+  readonly mode: "spin" | "spear" | "arm" | "crusher" | "static" | "flame";
+  readonly spinAxis: THREE.Vector3;
+  readonly bases: THREE.Quaternion[];
 }
 
 export function createIndustrialPart(
   part: PartDef,
   rot: Rot4,
   paint: number,
-  transparent = false
+  transparent = false,
+  face: MountFace = "deck"
 ): IndustrialPart {
   const root = new THREE.Group();
   root.rotation.y = rot * Math.PI / 2;
@@ -219,100 +223,114 @@ export function createIndustrialPart(
   const darkSteel = industrialMaterial("steel", 0x303537);
   const brightSteel = industrialMaterial("steel", 0xaeb4b3);
   const rubber = industrialMaterial("rubber", 0x111315);
-  let body: THREE.Mesh;
-  if ((part.category === "armor" && part.id.includes("wedge")) ||
-      (part.category === "weapon" && part.effect === "static")) {
-    body = new THREE.Mesh(wedgeGeometry(w * 0.96, h, d * 0.96), material);
-    body.castShadow = true;
-    body.receiveShadow = true;
-  } else {
-    body = box(w * 0.96, h, d * 0.96, 0.009, material);
-    body.position.y = h * 0.5;
+  if (part.category !== "drive") {
+    let body: THREE.Mesh;
+    if ((part.category === "armor" && part.id.includes("wedge")) ||
+        (part.category === "weapon" && part.effect === "static")) {
+      body = new THREE.Mesh(wedgeGeometry(w * 0.96, h, d * 0.96), material);
+      body.castShadow = true;
+      body.receiveShadow = true;
+    } else {
+      body = box(w * 0.96, h, d * 0.96, 0.009, material);
+      body.position.y = h * 0.5;
+    }
+    root.add(body);
+    addBoltRows(root, w, d, h + 0.007, brightSteel);
   }
-  root.add(body);
-  addBoltRows(root, w, d, h + 0.007, brightSteel);
 
   let wheel: THREE.Object3D | null = null;
   let weapon: WeaponRig | null = null;
   if (part.category === "drive") {
+    const axleWidth = part.kind === "track"
+      ? Math.max(part.height, 0.08)
+      : Math.max(part.height, CELL);
+    const beltLength = Math.max(part.cells[0], part.cells[1]) * CELL;
     if (part.kind === "track") {
-      const track = box(w * 0.9, Math.max(part.radius * 1.42, 0.1), d * 0.88, 0.018, rubber);
-      track.position.y = Math.max(part.radius * 0.68, h * 0.5);
-      const inner = box(w * 0.74, Math.max(part.radius * 0.86, 0.065), d * 0.72, 0.012, darkSteel);
-      inner.position.copy(track.position);
+      const track = box(axleWidth, part.radius * 2, beltLength, 0.018, rubber);
+      const inner = box(axleWidth * 0.82, part.radius * 1.5, beltLength * 0.84, 0.012, darkSteel);
       root.add(track, inner);
-      wheel = track;
-      for (const z of [-d * 0.26, 0, d * 0.26]) {
-        const sprocket = new THREE.Mesh(new THREE.CylinderGeometry(part.radius * 0.38, part.radius * 0.38, w * 0.78, 14), brightSteel);
+      const sprockets = new THREE.Group();
+      for (const z of [-beltLength * 0.36, 0, beltLength * 0.36]) {
+        const sprocket = new THREE.Mesh(
+          new THREE.CylinderGeometry(part.radius * 0.55, part.radius * 0.55, axleWidth * 1.02, 14),
+          brightSteel
+        );
         sprocket.rotation.z = Math.PI / 2;
-        sprocket.position.set(0, track.position.y, z);
-        root.add(sprocket);
+        sprocket.position.z = z;
+        sprockets.add(sprocket);
       }
+      root.add(sprockets);
+      wheel = sprockets;
     } else {
       const tire = new THREE.Mesh(
-        new THREE.CylinderGeometry(part.radius, part.radius, Math.max(Math.min(w, d) * 0.7, 0.07), 20),
+        new THREE.CylinderGeometry(part.radius, part.radius, axleWidth, 20),
         rubber
       );
       tire.rotation.z = Math.PI / 2;
-      tire.position.y = Math.max(part.radius * 0.58, h * 0.5);
       const hub = new THREE.Mesh(
-        new THREE.CylinderGeometry(part.radius * 0.48, part.radius * 0.48, Math.max(Math.min(w, d) * 0.73, 0.075), 12),
+        new THREE.CylinderGeometry(part.radius * 0.48, part.radius * 0.48, axleWidth * 1.04, 12),
         brightSteel
       );
       hub.rotation.z = Math.PI / 2;
-      hub.position.copy(tire.position);
       root.add(tire, hub);
       wheel = tire;
     }
   } else if (part.category === "weapon") {
     const moving: THREE.Object3D[] = [];
-    let blur: THREE.Mesh | null = null;
+    const blurs: THREE.Mesh[] = [];
     let flameOrigin: THREE.Object3D | null = null;
     let mode: WeaponRig["mode"] = "static";
+    let spinAxis = new THREE.Vector3(0, 1, 0);
     const rotorRadius = Math.max(Math.min(w, d) * 0.43, 0.09);
     if (part.effect === "spin" || part.effect === "grind") {
-      const horizontal = !part.id.includes("drum") && !part.id.includes("cutting") && !part.id.includes("grinder");
-      const rotor = new THREE.Mesh(
-        new THREE.CylinderGeometry(rotorRadius, rotorRadius, Math.max(0.025, h * 0.42), part.id.includes("drum") ? 16 : 28),
-        brightSteel
-      );
-      rotor.position.y = h + rotorRadius * (horizontal ? 0.12 : 0.72);
-      if (horizontal) {
-        mode = "spin-y";
-      } else {
-        rotor.rotation.z = Math.PI / 2;
-        mode = "spin-x";
+      spinAxis = part.spinAxis !== "vertical"
+        ? new THREE.Vector3(0, 1, 0)
+        : (face === "left" || face === "right")
+          ? new THREE.Vector3(0, 0, face === "left" ? -1 : 1)
+          : new THREE.Vector3(1, 0, 0);
+      const rotorBase = spinAxis.y !== 0
+        ? new THREE.Quaternion()
+        : spinAxis.z !== 0
+          ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)
+          : new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+      const guardBase = rotorBase.clone()
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2))
+        .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -Math.PI * 0.18));
+      const rotorXs = part.pairMount === true ? [-w * 0.33, w * 0.33] : [0];
+      mode = "spin";
+      for (const x of rotorXs) {
+        const rotor = new THREE.Mesh(
+          new THREE.CylinderGeometry(rotorRadius, rotorRadius, Math.max(0.025, h * 0.42), part.type === "drum" ? 16 : 28),
+          brightSteel
+        );
+        rotor.position.set(x, h + rotorRadius * (spinAxis.y !== 0 ? 0.12 : 0.72), 0);
+        rotor.quaternion.copy(rotorBase);
+        root.add(rotor);
+        moving.push(rotor);
+
+        const guard = new THREE.Mesh(
+          new THREE.TorusGeometry(rotorRadius * 1.04, 0.018, 8, 28, Math.PI * 1.35),
+          darkSteel
+        );
+        guard.position.copy(rotor.position);
+        guard.quaternion.copy(guardBase);
+        root.add(guard);
+
+        const blur = new THREE.Mesh(
+          new THREE.CylinderGeometry(rotorRadius * 1.08, rotorRadius * 1.08, 0.008, 32),
+          new THREE.MeshBasicMaterial({
+            color: 0xd9dddd,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending
+          })
+        );
+        blur.position.copy(rotor.position);
+        blur.quaternion.copy(rotorBase);
+        root.add(blur);
+        blurs.push(blur);
       }
-      root.add(rotor);
-      moving.push(rotor);
-      if (part.id === "side-saws") {
-        rotor.position.x = -w * 0.33;
-        const second = rotor.clone();
-        second.position.x = w * 0.33;
-        root.add(second);
-        moving.push(second);
-      }
-      const guard = new THREE.Mesh(
-        new THREE.TorusGeometry(rotorRadius * 1.04, 0.018, 8, 28, Math.PI * 1.35),
-        darkSteel
-      );
-      guard.rotation.x = Math.PI / 2;
-      guard.rotation.z = -Math.PI * 0.18;
-      guard.position.copy(rotor.position);
-      root.add(guard);
-      blur = new THREE.Mesh(
-        new THREE.CylinderGeometry(rotorRadius * 1.08, rotorRadius * 1.08, 0.008, 32),
-        new THREE.MeshBasicMaterial({
-          color: 0xd9dddd,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending
-        })
-      );
-      blur.position.copy(rotor.position);
-      if (!horizontal) blur.rotation.z = Math.PI / 2;
-      root.add(blur);
     } else if (part.effect === "flame") {
       mode = "flame";
       const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, d * 0.55, 14), industrialMaterial("brass", 0x9b6a25));
@@ -376,7 +394,15 @@ export function createIndustrialPart(
       }
     }
     addCable(root, w, d);
-    weapon = { def: part, moving, blur, flameOrigin, mode };
+    weapon = {
+      def: part,
+      moving,
+      blurs,
+      flameOrigin,
+      mode,
+      spinAxis,
+      bases: moving.map((object) => object.quaternion.clone())
+    };
   } else if (part.category === "utility") {
     addCable(root, w, d);
   }
@@ -384,12 +410,10 @@ export function createIndustrialPart(
 }
 
 export function applyWeaponRig(rig: WeaponRig, angle: number, omega: number, active: boolean): void {
-  if (rig.mode === "spin-y") {
-    rig.moving.forEach((object) => { object.rotation.y = angle; });
-  } else if (rig.mode === "spin-x") {
-    rig.moving.forEach((object) => {
-      object.rotation.x = angle;
-      object.rotation.z = Math.PI / 2;
+  if (rig.mode === "spin") {
+    const q = new THREE.Quaternion().setFromAxisAngle(rig.spinAxis, angle);
+    rig.moving.forEach((object, index) => {
+      object.quaternion.copy(rig.bases[index]!).premultiply(q);
     });
   } else if (rig.mode === "spear") {
     rig.moving.forEach((object) => { object.position.z = -rig.def.cells[1] * CELL * 0.18 - Math.max(0, angle); });
@@ -398,9 +422,9 @@ export function applyWeaponRig(rig: WeaponRig, angle: number, omega: number, act
   } else if (rig.mode === "crusher") {
     rig.moving.forEach((object, index) => { object.rotation.z = (index === 0 ? -1 : 1) * angle * 0.46; });
   }
-  if (rig.blur) {
-    const opacity = active ? THREE.MathUtils.clamp(Math.abs(omega) / Math.max(rig.def.maxOmega ?? 1, 1), 0, 1) * 0.34 : 0;
-    (rig.blur.material as THREE.MeshBasicMaterial).opacity = opacity;
-    rig.blur.visible = opacity > 0.025;
+  const opacity = active ? THREE.MathUtils.clamp(Math.abs(omega) / Math.max(rig.def.maxOmega ?? 1, 1), 0, 1) * 0.34 : 0;
+  for (const blur of rig.blurs) {
+    (blur.material as THREE.MeshBasicMaterial).opacity = opacity;
+    blur.visible = opacity > 0.025;
   }
 }

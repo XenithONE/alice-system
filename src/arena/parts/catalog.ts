@@ -1,6 +1,7 @@
 /**
- * SCRAP CROWN v2 — realistic combat-robot part catalog + preset bots.
+ * SCRAP CROWN v3 — combat-robot part catalog + preset bots.
  * Pure data only. Budget is POINTS (cost); mass is physics only.
+ * Every part carries `type` (builder filter) and `faces` (mount surfaces).
  * Look: welded plate, titanium, UHMW, scorched steel — no toy brick palette.
  */
 import type {
@@ -16,10 +17,23 @@ import type {
 /* scorched 0x3a3f45                                                    */
 /* ------------------------------------------------------------------ */
 
+const ALL_FACES = ["deck", "underside", "left", "right", "front", "rear"] as const;
+const WHEEL_FACES = ["underside", "left", "right"] as const;
+const TRACK_FACES = ["left", "right"] as const;
+const SPINNER_FACES = ["deck", "front"] as const;
+const SAW_DRILL_FACES = ["deck", "front", "left", "right"] as const;
+const IMPULSE_FACES = ["deck", "front"] as const;
+const STATIC_FACES = ["front", "left", "right", "rear"] as const;
+const SKIRT_FACES = ["left", "right", "front", "rear"] as const;
+const UTIL_FACES = ["deck", "underside"] as const;
+const CHASSIS_FACES = ["deck"] as const;
+
 export const PARTS: readonly PartDef[] = [
-  /* ======================== chassis (4) ======================== */
+  /* ======================== chassis / frame (5) ======================== */
   {
     id: "chassis-light",
+    type: "frame",
+    faces: CHASSIS_FACES,
     name: "Light Chassis",
     nameJa: "軽量シャーシ",
     category: "chassis",
@@ -30,6 +44,7 @@ export const PARTS: readonly PartDef[] = [
     cells: [5, 7],
     deck: [5, 7],
     height: 0.1,
+    heightCells: 3,
     groundClearance: 0.04,
     invertible: false,
     material: "aluminium",
@@ -38,6 +53,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "chassis-medium",
+    type: "frame",
+    faces: CHASSIS_FACES,
     name: "Medium Chassis",
     nameJa: "中量シャーシ",
     category: "chassis",
@@ -48,6 +65,7 @@ export const PARTS: readonly PartDef[] = [
     cells: [7, 9],
     deck: [7, 9],
     height: 0.12,
+    heightCells: 3,
     groundClearance: 0.05,
     invertible: false,
     material: "steel",
@@ -56,6 +74,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "chassis-heavy",
+    type: "frame",
+    faces: CHASSIS_FACES,
     name: "Heavy Chassis",
     nameJa: "重量シャーシ",
     category: "chassis",
@@ -66,6 +86,7 @@ export const PARTS: readonly PartDef[] = [
     cells: [9, 11],
     deck: [9, 11],
     height: 0.14,
+    heightCells: 4,
     groundClearance: 0.05,
     invertible: false,
     material: "hardox",
@@ -74,6 +95,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "chassis-invert",
+    type: "frame",
+    faces: CHASSIS_FACES,
     name: "Invertible Medium",
     nameJa: "インバーテッド中量シャーシ",
     category: "chassis",
@@ -84,16 +107,40 @@ export const PARTS: readonly PartDef[] = [
     cells: [7, 9],
     deck: [7, 9],
     height: 0.12,
+    heightCells: 3,
     groundClearance: 0.045,
     invertible: true,
     material: "steel",
     color: 0x2f3336,
     blurb: "上下対称デッキ。逆さでも走れる本格可逆設計。"
   },
+  {
+    id: "chassis-ultralow",
+    type: "frame",
+    faces: CHASSIS_FACES,
+    name: "Ultra-Low Frame",
+    nameJa: "超低車高フレーム",
+    category: "chassis",
+    cost: 145,
+    mass: 26,
+    hp: 320,
+    armor: 7,
+    cells: [6, 8],
+    deck: [6, 8],
+    height: 0.08,
+    heightCells: 2,
+    groundClearance: 0.025,
+    invertible: false,
+    material: "aluminium",
+    color: 0x2f3336,
+    blurb: "底面駆動向けの超低車高フレーム。側面は低い。"
+  },
 
-  /* ======================== drive (6) ======================== */
+  /* ======================== drive: wheel (8) ======================== */
   {
     id: "wheel-small",
+    type: "wheel",
+    faces: WHEEL_FACES,
     name: "Small Wheel",
     nameJa: "小ホイール",
     category: "drive",
@@ -114,6 +161,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "wheel-mid",
+    type: "wheel",
+    faces: WHEEL_FACES,
     name: "Mid Wheel",
     nameJa: "中ホイール",
     category: "drive",
@@ -134,6 +183,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "wheel-large",
+    type: "wheel",
+    faces: WHEEL_FACES,
     name: "Large Wheel",
     nameJa: "大ホイール",
     category: "drive",
@@ -154,6 +205,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "wheel-grip",
+    type: "wheel",
+    faces: WHEEL_FACES,
     name: "High-Grip Wheel",
     nameJa: "高グリップホイール",
     category: "drive",
@@ -173,27 +226,9 @@ export const PARTS: readonly PartDef[] = [
     blurb: "高μコンパウンド。押し合いと旋回に強い。"
   },
   {
-    id: "track-std",
-    name: "Track Drive",
-    nameJa: "履帯",
-    category: "drive",
-    kind: "track",
-    cost: 90,
-    mass: 16,
-    hp: 115,
-    armor: 10,
-    cells: [2, 4],
-    height: 0.12,
-    radius: 0.1,
-    torque: 58,
-    maxOmega: 16,
-    friction: 1.6,
-    material: "steel",
-    color: 0x2f3336,
-    blurb: "低速高牽引。最高速は落ちるが押しが強い。"
-  },
-  {
     id: "hub-invert",
+    type: "wheel",
+    faces: WHEEL_FACES,
     name: "Invertible Hub",
     nameJa: "インバーテッド対応ハブ",
     category: "drive",
@@ -212,10 +247,168 @@ export const PARTS: readonly PartDef[] = [
     color: 0x8d9299,
     blurb: "上下両用ハブ。可逆シャーシと組んで逆走を維持。"
   },
+  {
+    id: "wheel-buggy",
+    type: "wheel",
+    faces: WHEEL_FACES,
+    name: "Fat Buggy Tire",
+    nameJa: "極太バギータイヤ",
+    category: "drive",
+    kind: "wheel",
+    cost: 58,
+    mass: 14,
+    hp: 95,
+    armor: 5,
+    cells: [2, 3],
+    height: 0.2,
+    radius: 0.17,
+    torque: 55,
+    maxOmega: 32,
+    friction: 1.35,
+    material: "rubber",
+    color: 0x3a3f45,
+    blurb: "極太オフ路タイヤ。段差と横Gに強いが嵩張る。"
+  },
+  {
+    id: "wheel-spoke",
+    type: "wheel",
+    faces: WHEEL_FACES,
+    name: "Light Spoke Wheel",
+    nameJa: "軽量スポークホイール",
+    category: "drive",
+    kind: "wheel",
+    cost: 42,
+    mass: 3,
+    hp: 40,
+    armor: 1,
+    cells: [1, 1],
+    height: 0.1,
+    radius: 0.09,
+    torque: 20,
+    maxOmega: 62,
+    friction: 0.95,
+    material: "aluminium",
+    color: 0x8d9299,
+    blurb: "スポーク軽量輪。最高速向け、耐久は低い。"
+  },
+  {
+    id: "wheel-metal",
+    type: "wheel",
+    faces: WHEEL_FACES,
+    name: "Metal Wheel",
+    nameJa: "金属製ホイール",
+    category: "drive",
+    kind: "wheel",
+    cost: 55,
+    mass: 11,
+    hp: 120,
+    armor: 12,
+    cells: [2, 2],
+    height: 0.13,
+    radius: 0.11,
+    torque: 38,
+    maxOmega: 40,
+    friction: 0.9,
+    material: "steel",
+    color: 0x8d9299,
+    blurb: "鋼製ソリッド。グリップは落ちるが武器の直撃に耐える。"
+  },
 
-  /* ======================== weapon passive (4) ======================== */
+  /* ======================== drive: track (4) ======================== */
+  {
+    id: "track-std",
+    type: "track",
+    faces: TRACK_FACES,
+    name: "Track Drive",
+    nameJa: "標準履帯",
+    category: "drive",
+    kind: "track",
+    cost: 90,
+    mass: 16,
+    hp: 115,
+    armor: 10,
+    cells: [2, 4],
+    height: 0.12,
+    radius: 0.1,
+    torque: 58,
+    maxOmega: 16,
+    friction: 1.6,
+    material: "steel",
+    color: 0x2f3336,
+    blurb: "低速高牽引。最高速は落ちるが押しが強い。"
+  },
+  {
+    id: "track-wide",
+    type: "track",
+    faces: TRACK_FACES,
+    name: "Wide Track",
+    nameJa: "幅広履帯",
+    category: "drive",
+    kind: "track",
+    cost: 110,
+    mass: 22,
+    hp: 140,
+    armor: 12,
+    cells: [3, 4],
+    height: 0.13,
+    radius: 0.11,
+    torque: 72,
+    maxOmega: 14,
+    friction: 1.75,
+    material: "steel",
+    color: 0x2f3336,
+    blurb: "接地圧を下げた幅広履帯。押し合いと安定性に優れる。"
+  },
+  {
+    id: "track-rubber",
+    type: "track",
+    faces: TRACK_FACES,
+    name: "Rubber Crawler",
+    nameJa: "ゴムクローラ",
+    category: "drive",
+    kind: "track",
+    cost: 85,
+    mass: 12,
+    hp: 90,
+    armor: 6,
+    cells: [2, 4],
+    height: 0.11,
+    radius: 0.09,
+    torque: 48,
+    maxOmega: 20,
+    friction: 1.5,
+    material: "rubber",
+    color: 0x3a3f45,
+    blurb: "軽量ゴムクローラ。静粛で機敏、装甲は薄い。"
+  },
+  {
+    id: "track-stub",
+    type: "track",
+    faces: TRACK_FACES,
+    name: "Stub Track",
+    nameJa: "短尺スタブ履帯",
+    category: "drive",
+    kind: "track",
+    cost: 65,
+    mass: 9,
+    hp: 80,
+    armor: 8,
+    cells: [2, 2],
+    height: 0.1,
+    radius: 0.08,
+    torque: 40,
+    maxOmega: 22,
+    friction: 1.4,
+    material: "steel",
+    color: 0x2f3336,
+    blurb: "短いスタブ履帯。低車高の側面に収まりやすい。"
+  },
+
+  /* ======================== weapon: spinner / drum (6) ======================== */
   {
     id: "disc-light",
+    type: "spinner",
+    faces: SPINNER_FACES,
     mechanism: "revolute",
     spinAxis: "horizontal",
     name: "Light Horizontal Disc",
@@ -242,6 +435,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "disc-heavy",
+    type: "spinner",
+    faces: SPINNER_FACES,
     mechanism: "revolute",
     spinAxis: "horizontal",
     name: "Heavy Horizontal Disc",
@@ -268,6 +463,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "drum-std",
+    type: "drum",
+    faces: SPINNER_FACES,
     mechanism: "revolute",
     spinAxis: "vertical",
     name: "Vertical Drum",
@@ -293,7 +490,95 @@ export const PARTS: readonly PartDef[] = [
     inertia: 1.6
   },
   {
+    id: "shell-spinner",
+    type: "spinner",
+    faces: SPINNER_FACES,
+    mechanism: "revolute",
+    spinAxis: "vertical",
+    name: "Shell Spinner",
+    nameJa: "シェルスピナー",
+    category: "weapon",
+    action: "held",
+    effect: "spin",
+    slot: "primary",
+    cost: 360,
+    mass: 34,
+    hp: 250,
+    armor: 10,
+    cells: [5, 3],
+    height: 0.18,
+    material: "hardox",
+    color: 0x3a3f45,
+    blurb: "殻ごと回す重量スピナー。押している間だけ加速。",
+    damageMul: 2.0,
+    selfDamageMul: 0.25,
+    reach: 0.16,
+    maxOmega: 140,
+    spinUpTorque: 65,
+    inertia: 1.8
+  },
+  {
+    id: "vert-spinner",
+    type: "spinner",
+    faces: SPINNER_FACES,
+    mechanism: "revolute",
+    spinAxis: "vertical",
+    name: "Vertical Spinner",
+    nameJa: "バーティカルスピナー",
+    category: "weapon",
+    action: "passive",
+    effect: "spin",
+    slot: "primary",
+    cost: 330,
+    mass: 28,
+    hp: 190,
+    armor: 5,
+    cells: [3, 3],
+    height: 0.2,
+    material: "steel",
+    color: 0xc8102e,
+    blurb: "縦回転のディスクスピナー。上面と前面に効く。",
+    damageMul: 2.5,
+    selfDamageMul: 0.24,
+    reach: 0.2,
+    maxOmega: 210,
+    spinUpTorque: 50,
+    inertia: 0.8
+  },
+  {
+    id: "eggbeater",
+    type: "spinner",
+    faces: SPINNER_FACES,
+    mechanism: "revolute",
+    spinAxis: "horizontal",
+    name: "Eggbeater",
+    nameJa: "エッグビーター",
+    category: "weapon",
+    action: "passive",
+    effect: "spin",
+    slot: "primary",
+    cost: 310,
+    mass: 26,
+    hp: 175,
+    armor: 4,
+    cells: [3, 3],
+    height: 0.16,
+    material: "steel",
+    color: 0x7a2f20,
+    blurb: "二軸の撹拌スピナー。巻き込みと継続ヒット向き。",
+    damageMul: 2.2,
+    selfDamageMul: 0.22,
+    reach: 0.15,
+    maxOmega: 180,
+    spinUpTorque: 48,
+    inertia: 0.7
+  },
+
+  /* ======================== weapon: saw (5) ======================== */
+  {
     id: "side-saws",
+    type: "saw",
+    faces: SAW_DRILL_FACES,
     mechanism: "revolute",
     spinAxis: "horizontal",
     pairMount: true,
@@ -302,7 +587,7 @@ export const PARTS: readonly PartDef[] = [
     category: "weapon",
     action: "passive",
     effect: "grind",
-    slot: "primary",
+    slot: "tertiary",
     cost: 180,
     mass: 13,
     hp: 110,
@@ -320,37 +605,10 @@ export const PARTS: readonly PartDef[] = [
     inertia: 0.22,
     dps: 28
   },
-
-  /* ======================== weapon held (4) ======================== */
-  {
-    id: "flamethrower",
-    mechanism: "fixed",
-    name: "Flamethrower",
-    nameJa: "火炎放射器",
-    category: "weapon",
-    action: "held",
-    effect: "flame",
-    slot: "primary",
-    cost: 280,
-    mass: 17,
-    hp: 110,
-    armor: 2,
-    cells: [3, 2],
-    height: 0.12,
-    material: "brass",
-    color: 0xb08d57,
-    blurb: "燃料式火炎放射。装甲をほぼ無視して燃やす。",
-    damageMul: 1.0,
-    selfDamageMul: 0,
-    reach: 0.3,
-    dps: 32,
-    coneAngle: 0.38,
-    coneRange: 2.6,
-    fuel: 7.5,
-    refuelRate: 0.3
-  },
   {
     id: "cutting-disc",
+    type: "saw",
+    faces: SAW_DRILL_FACES,
     mechanism: "revolute",
     spinAxis: "horizontal",
     name: "Cutting Disc",
@@ -358,7 +616,7 @@ export const PARTS: readonly PartDef[] = [
     category: "weapon",
     action: "held",
     effect: "grind",
-    slot: "primary",
+    slot: "secondary",
     cost: 200,
     mass: 12,
     hp: 100,
@@ -379,6 +637,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "angle-grinder",
+    type: "saw",
+    faces: SAW_DRILL_FACES,
     mechanism: "revolute",
     spinAxis: "vertical",
     name: "Angle Grinder",
@@ -406,35 +666,162 @@ export const PARTS: readonly PartDef[] = [
     fuel: 0
   },
   {
-    id: "shell-spinner",
+    id: "chainsaw",
+    type: "saw",
+    faces: SAW_DRILL_FACES,
     mechanism: "revolute",
-    spinAxis: "vertical",
-    name: "Shell Spinner",
-    nameJa: "シェルスピナー",
+    spinAxis: "horizontal",
+    name: "Chainsaw",
+    nameJa: "チェーンソー",
     category: "weapon",
     action: "held",
-    effect: "spin",
-    slot: "primary",
-    cost: 360,
-    mass: 34,
-    hp: 250,
-    armor: 10,
-    cells: [5, 3],
-    height: 0.18,
+    effect: "grind",
+    slot: "secondary",
+    cost: 220,
+    mass: 15,
+    hp: 120,
+    armor: 3,
+    cells: [3, 2],
+    height: 0.1,
+    material: "steel",
+    color: 0xe0a80d,
+    blurb: "バー式チェーンソー。接触中に深く食い込む。",
+    damageMul: 1.35,
+    selfDamageMul: 0.14,
+    reach: 0.22,
+    maxOmega: 160,
+    spinUpTorque: 28,
+    inertia: 0.3,
+    dps: 42,
+    fuel: 0
+  },
+  {
+    id: "disc-saw-large",
+    type: "saw",
+    faces: SAW_DRILL_FACES,
+    mechanism: "revolute",
+    spinAxis: "horizontal",
+    name: "Large Circular Saw",
+    nameJa: "円盤ノコ（大）",
+    category: "weapon",
+    action: "passive",
+    effect: "grind",
+    slot: "secondary",
+    cost: 250,
+    mass: 18,
+    hp: 140,
+    armor: 4,
+    cells: [3, 3],
+    height: 0.12,
     material: "hardox",
-    color: 0x3a3f45,
-    blurb: "殻ごと回す重量スピナー。押している間だけ加速。",
-    damageMul: 2.0,
-    selfDamageMul: 0.25,
-    reach: 0.16,
-    maxOmega: 140,
-    spinUpTorque: 65,
-    inertia: 1.8
+    color: 0x8d9299,
+    blurb: "大径の円盤ノコ。常時回転で装甲を削る。",
+    damageMul: 1.4,
+    selfDamageMul: 0.16,
+    reach: 0.18,
+    maxOmega: 220,
+    spinUpTorque: 35,
+    inertia: 0.45,
+    dps: 36
   },
 
-  /* ======================== weapon triggered (5) ======================== */
+  /* ======================== weapon: drill (3) ======================== */
+  {
+    id: "drill-auger",
+    type: "drill",
+    faces: SAW_DRILL_FACES,
+    mechanism: "revolute",
+    spinAxis: "horizontal",
+    name: "Auger Drill",
+    nameJa: "オーガードリル",
+    category: "weapon",
+    action: "held",
+    effect: "grind",
+    slot: "primary",
+    cost: 240,
+    mass: 16,
+    hp: 130,
+    armor: 4,
+    cells: [2, 3],
+    height: 0.12,
+    material: "steel",
+    color: 0x8d9299,
+    blurb: "螺旋オーガー。単発の貫通は重いが継続DPSは低い。",
+    damageMul: 2.6,
+    selfDamageMul: 0.12,
+    reach: 0.28,
+    maxOmega: 90,
+    spinUpTorque: 45,
+    inertia: 0.5,
+    dps: 14,
+    fuel: 0
+  },
+  {
+    id: "drill-twin",
+    type: "drill",
+    faces: SAW_DRILL_FACES,
+    mechanism: "revolute",
+    spinAxis: "horizontal",
+    pairMount: true,
+    name: "Twin Drill",
+    nameJa: "ツインドリル",
+    category: "weapon",
+    action: "held",
+    effect: "grind",
+    slot: "primary",
+    cost: 280,
+    mass: 20,
+    hp: 150,
+    armor: 5,
+    cells: [3, 2],
+    height: 0.11,
+    material: "steel",
+    color: 0x2f3336,
+    blurb: "双頭ドリル。一点集中の貫通を左右で狙う。",
+    damageMul: 2.8,
+    selfDamageMul: 0.14,
+    reach: 0.24,
+    maxOmega: 100,
+    spinUpTorque: 50,
+    inertia: 0.55,
+    dps: 16,
+    fuel: 0
+  },
+  {
+    id: "drill-pile",
+    type: "drill",
+    faces: SAW_DRILL_FACES,
+    mechanism: "prismatic",
+    launch: "punch",
+    name: "Pile Bunker",
+    nameJa: "パイルバンカー",
+    category: "weapon",
+    action: "triggered",
+    effect: "impulse",
+    slot: "primary",
+    cost: 300,
+    mass: 22,
+    hp: 170,
+    armor: 6,
+    cells: [3, 2],
+    height: 0.12,
+    material: "hardox",
+    color: 0x3a3f45,
+    blurb: "杭打ち式バンカー。クールダウン付きの重貫通一撃。",
+    damageMul: 2.4,
+    selfDamageMul: 0.1,
+    reach: 0.4,
+    impulse: 1100,
+    cooldown: 2.8,
+    sweep: 0.35,
+    strokeSec: 0.1
+  },
+
+  /* ======================== weapon: impulse / clamp (6) ======================== */
   {
     id: "flipper-std",
+    type: "flipper",
+    faces: IMPULSE_FACES,
     mechanism: "revolute",
     launch: "flip",
     name: "Pneumatic Flipper",
@@ -462,6 +849,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "lifter-std",
+    type: "lifter",
+    faces: IMPULSE_FACES,
     mechanism: "revolute",
     launch: "flip",
     name: "Electric Lifter",
@@ -489,6 +878,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "spear-std",
+    type: "spear",
+    faces: IMPULSE_FACES,
     mechanism: "prismatic",
     launch: "punch",
     name: "Telescopic Spear",
@@ -516,6 +907,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "axe-hammer",
+    type: "hammer",
+    faces: IMPULSE_FACES,
     mechanism: "revolute",
     launch: "punch",
     name: "Axe Hammer",
@@ -543,6 +936,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "crusher-jaws",
+    type: "crusher",
+    faces: IMPULSE_FACES,
     mechanism: "revolute",
     name: "Crusher Jaws",
     nameJa: "クラッシャー顎",
@@ -566,17 +961,106 @@ export const PARTS: readonly PartDef[] = [
     holdSec: 3.2,
     cooldown: 3.5
   },
+  {
+    id: "grabber-bar",
+    type: "crusher",
+    faces: IMPULSE_FACES,
+    mechanism: "revolute",
+    name: "Bar Grabber",
+    nameJa: "バール型グラバー",
+    category: "weapon",
+    action: "triggered",
+    effect: "clamp",
+    slot: "secondary",
+    cost: 200,
+    mass: 16,
+    hp: 160,
+    armor: 5,
+    cells: [3, 2],
+    height: 0.12,
+    material: "steel",
+    color: 0xb08d57,
+    blurb: "安価なバール型掴み。保持は短いが手軽に挟める。",
+    damageMul: 0.85,
+    selfDamageMul: 0.1,
+    reach: 0.14,
+    dps: 24,
+    holdSec: 2.0,
+    cooldown: 2.4
+  },
 
-  /* ======================== weapon static (3) ======================== */
+  /* ======================== weapon: flame (2) ======================== */
+  {
+    id: "flamethrower",
+    type: "flame",
+    faces: IMPULSE_FACES,
+    mechanism: "fixed",
+    name: "Flamethrower",
+    nameJa: "火炎放射器",
+    category: "weapon",
+    action: "held",
+    effect: "flame",
+    slot: "primary",
+    cost: 280,
+    mass: 17,
+    hp: 110,
+    armor: 2,
+    cells: [3, 2],
+    height: 0.12,
+    material: "brass",
+    color: 0xb08d57,
+    blurb: "燃料式火炎放射。装甲をほぼ無視して燃やす。",
+    damageMul: 1.0,
+    selfDamageMul: 0,
+    reach: 0.3,
+    dps: 32,
+    coneAngle: 0.38,
+    coneRange: 2.6,
+    fuel: 7.5,
+    refuelRate: 0.3
+  },
+  {
+    id: "burner-short",
+    type: "flame",
+    faces: IMPULSE_FACES,
+    mechanism: "fixed",
+    name: "Short Burner",
+    nameJa: "短射程バーナー",
+    category: "weapon",
+    action: "held",
+    effect: "flame",
+    slot: "secondary",
+    cost: 150,
+    mass: 10,
+    hp: 85,
+    armor: 1,
+    cells: [2, 2],
+    height: 0.1,
+    material: "brass",
+    color: 0xb08d57,
+    blurb: "安価な短射程バーナー。燃料は多め、届きは短い。",
+    damageMul: 0.85,
+    selfDamageMul: 0,
+    reach: 0.18,
+    dps: 26,
+    coneAngle: 0.45,
+    coneRange: 1.4,
+    fuel: 12,
+    refuelRate: 0.4
+  },
+
+  /* ======================== weapon: static (5) ======================== */
   {
     id: "wedge-std",
+    type: "wedge",
+    faces: STATIC_FACES,
     mechanism: "fixed",
     name: "Control Wedge",
     nameJa: "ウェッジ",
     category: "weapon",
     action: "passive",
     effect: "static",
-    slot: "secondary",
+    slot: "tertiary",
     cost: 90,
     mass: 12,
     hp: 260,
@@ -592,13 +1076,15 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "forks-std",
+    type: "fork",
+    faces: STATIC_FACES,
     mechanism: "fixed",
     name: "Front Forks",
     nameJa: "フォーク",
     category: "weapon",
     action: "passive",
     effect: "static",
-    slot: "secondary",
+    slot: "tertiary",
     cost: 85,
     mass: 12,
     hp: 240,
@@ -614,13 +1100,15 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "spike-rack",
+    type: "spike",
+    faces: STATIC_FACES,
     mechanism: "fixed",
     name: "Spike Rack",
     nameJa: "スパイクラック",
     category: "weapon",
     action: "passive",
     effect: "static",
-    slot: "secondary",
+    slot: "tertiary",
     cost: 75,
     mass: 10,
     hp: 220,
@@ -634,10 +1122,60 @@ export const PARTS: readonly PartDef[] = [
     selfDamageMul: 0,
     reach: 0.12
   },
+  {
+    id: "wedge-ramp",
+    type: "wedge",
+    faces: STATIC_FACES,
+    mechanism: "fixed",
+    name: "Long Ramp Wedge",
+    nameJa: "ランプウェッジ（長）",
+    category: "weapon",
+    action: "passive",
+    effect: "static",
+    slot: "tertiary",
+    cost: 120,
+    mass: 16,
+    hp: 280,
+    armor: 16,
+    cells: [5, 3],
+    height: 0.1,
+    material: "steel",
+    color: 0x8d9299,
+    blurb: "長いランプ状ウェッジ。深く潜り安定してすくう。",
+    damageMul: 0.28,
+    selfDamageMul: 0,
+    reach: 0.24
+  },
+  {
+    id: "spike-horn",
+    type: "spike",
+    faces: STATIC_FACES,
+    mechanism: "fixed",
+    name: "Horn Spike",
+    nameJa: "ホーンスパイク",
+    category: "weapon",
+    action: "passive",
+    effect: "static",
+    slot: "tertiary",
+    cost: 95,
+    mass: 11,
+    hp: 200,
+    armor: 10,
+    cells: [2, 3],
+    height: 0.14,
+    material: "steel",
+    color: 0x2f3336,
+    blurb: "前方に突き出す角型スパイク。突進の貫通力。",
+    damageMul: 0.55,
+    selfDamageMul: 0,
+    reach: 0.2
+  },
 
-  /* ======================== armor (6) ======================== */
+  /* ======================== armor (10) ======================== */
   {
     id: "plate-steel",
+    type: "plate",
+    faces: ALL_FACES,
     name: "Steel Plate",
     nameJa: "鋼板",
     category: "armor",
@@ -653,6 +1191,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "plate-titanium",
+    type: "plate",
+    faces: ALL_FACES,
     name: "Titanium Plate",
     nameJa: "チタン板",
     category: "armor",
@@ -668,6 +1208,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "armor-uhmw",
+    type: "plate",
+    faces: ALL_FACES,
     name: "UHMW Polymer",
     nameJa: "UHMWポリマー",
     category: "armor",
@@ -684,6 +1226,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "skirt-hardox",
+    type: "skirt",
+    faces: SKIRT_FACES,
     name: "Hardox Skirt",
     nameJa: "Hardoxスカート",
     category: "armor",
@@ -699,6 +1243,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "heat-shield",
+    type: "plate",
+    faces: ALL_FACES,
     name: "Heat Shield",
     nameJa: "耐熱シールド",
     category: "armor",
@@ -715,6 +1261,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "rail-anti-spinner",
+    type: "plate",
+    faces: ALL_FACES,
     name: "Anti-Spinner Rail",
     nameJa: "アンチスピナー・レール",
     category: "armor",
@@ -729,10 +1277,80 @@ export const PARTS: readonly PartDef[] = [
     blurb: "スピナーを受け流す前面レール。",
     spinnerResist: 0.5
   },
+  {
+    id: "plate-ti-thin",
+    type: "plate",
+    faces: ALL_FACES,
+    name: "Thin Titanium Sheet",
+    nameJa: "チタン薄板",
+    category: "armor",
+    cost: 100,
+    mass: 4,
+    hp: 180,
+    armor: 14,
+    cells: [2, 2],
+    height: 0.03,
+    material: "titanium",
+    color: 0x8d9299,
+    blurb: "薄いチタン板。軽いが本格装甲より脆い。"
+  },
+  {
+    id: "applique-light",
+    type: "applique",
+    faces: ALL_FACES,
+    name: "Light Applique",
+    nameJa: "軽量貼付装甲",
+    category: "armor",
+    cost: 28,
+    mass: 2,
+    hp: 95,
+    armor: 7,
+    cells: [2, 1],
+    height: 0.02,
+    material: "aluminium",
+    color: 0x8d9299,
+    blurb: "薄く安い貼付装甲。余った予算で弱点を塞ぐ。"
+  },
+  {
+    id: "applique-mid",
+    type: "applique",
+    faces: ALL_FACES,
+    name: "Mid Applique",
+    nameJa: "中量貼付装甲",
+    category: "armor",
+    cost: 42,
+    mass: 4,
+    hp: 125,
+    armor: 10,
+    cells: [2, 2],
+    height: 0.025,
+    material: "steel",
+    color: 0x8d9299,
+    blurb: "標準サイズの貼付装甲。どの面にも貼れる。"
+  },
+  {
+    id: "applique-edge",
+    type: "applique",
+    faces: ALL_FACES,
+    name: "Edge Applique Strip",
+    nameJa: "縁貼付装甲ストリップ",
+    category: "armor",
+    cost: 55,
+    mass: 5,
+    hp: 155,
+    armor: 13,
+    cells: [3, 1],
+    height: 0.025,
+    material: "hardox",
+    color: 0x3a3f45,
+    blurb: "縁に沿って貼るHardox薄帯。角の欠損を補修。"
+  },
 
-  /* ======================== utility (4) ======================== */
+  /* ======================== utility (6) ======================== */
   {
     id: "util-self-right",
+    type: "srimech",
+    faces: UTIL_FACES,
     name: "Self-Right Module",
     nameJa: "セルフライト機構",
     category: "utility",
@@ -749,6 +1367,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "util-power-cell",
+    type: "power",
+    faces: UTIL_FACES,
     name: "Power Cell",
     nameJa: "パワーセル",
     category: "utility",
@@ -765,6 +1385,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "util-weapon-boost",
+    type: "booster",
+    faces: UTIL_FACES,
     name: "Weapon Booster",
     nameJa: "武器ブースター",
     category: "utility",
@@ -781,6 +1403,8 @@ export const PARTS: readonly PartDef[] = [
   },
   {
     id: "util-light-frame",
+    type: "booster",
+    faces: UTIL_FACES,
     name: "Lightweight Frame",
     nameJa: "軽量フレーム",
     category: "utility",
@@ -793,141 +1417,515 @@ export const PARTS: readonly PartDef[] = [
     material: "carbon",
     color: 0x2f3336,
     blurb: "炭素繊維の軽量補強。わずかな質量で剛性を足す。"
+  },
+  {
+    id: "util-ballast",
+    type: "power",
+    faces: UTIL_FACES,
+    name: "CG Ballast",
+    nameJa: "重心バラスト",
+    category: "utility",
+    cost: 35,
+    mass: 14,
+    hp: 100,
+    armor: 4,
+    cells: [2, 2],
+    height: 0.05,
+    material: "steel",
+    color: 0x3a3f45,
+    blurb: "低重心用の鋼塊。機動は落ちるが転倒しにくい。"
+  },
+  {
+    id: "util-spare-battery",
+    type: "power",
+    faces: UTIL_FACES,
+    name: "Spare Battery",
+    nameJa: "予備バッテリー",
+    category: "utility",
+    cost: 95,
+    mass: 7,
+    hp: 60,
+    armor: 2,
+    cells: [2, 1],
+    height: 0.06,
+    material: "brass",
+    color: 0xe0a80d,
+    blurb: "予備電源。パワーセルほどではないがトルクを足す。",
+    powerMul: 1.08
+  },
+
+  /* ======================== EXTREME 枠（ネタ高額装備 ×12） ======================== */
+  /* 強いのではなく極端。明確な代償つき。1500+予算でようやく1つ、3200で複数。 */
+  {
+    id: "bedrock-plate",
+    type: "plate",
+    faces: ALL_FACES,
+    name: "Bedrock Plate",
+    nameJa: "岩盤装甲",
+    category: "armor",
+    cost: 760,
+    mass: 92,
+    hp: 2500,
+    armor: 90,
+    cells: [5, 4],
+    height: 0.12,
+    material: "hardox",
+    color: 0x3a3f45,
+    blurb: "一歩も動けないが、まず壊れない。"
+  },
+  {
+    id: "skypiercer",
+    type: "spear",
+    faces: IMPULSE_FACES,
+    mechanism: "prismatic",
+    launch: "punch",
+    name: "Skypiercer",
+    nameJa: "天突き",
+    category: "weapon",
+    action: "triggered",
+    effect: "impulse",
+    slot: "primary",
+    cost: 640,
+    mass: 20,
+    hp: 85,
+    armor: 2,
+    cells: [4, 2],
+    height: 0.1,
+    material: "titanium",
+    color: 0x8d9299,
+    blurb: "届く。びっくりするほど届く。",
+    damageMul: 1.6,
+    selfDamageMul: 0.12,
+    reach: 3.2,
+    impulse: 950,
+    cooldown: 5.0,
+    sweep: 3.2,
+    strokeSec: 0.22
+  },
+  {
+    id: "overdrive-turbo",
+    type: "booster",
+    faces: UTIL_FACES,
+    name: "Overdrive",
+    nameJa: "暴走ターボ",
+    category: "utility",
+    cost: 560,
+    mass: 4,
+    hp: 45,
+    armor: 1,
+    cells: [2, 2],
+    height: 0.07,
+    material: "brass",
+    color: 0xc8102e,
+    blurb: "速すぎて曲がれない。",
+    powerMul: 2.6
+  },
+  {
+    id: "mooneater",
+    type: "spinner",
+    faces: SPINNER_FACES,
+    mechanism: "revolute",
+    spinAxis: "horizontal",
+    name: "Mooneater",
+    nameJa: "月喰い",
+    category: "weapon",
+    action: "passive",
+    effect: "spin",
+    slot: "primary",
+    cost: 920,
+    mass: 66,
+    hp: 300,
+    armor: 8,
+    cells: [6, 3],
+    height: 0.14,
+    material: "hardox",
+    color: 0xc8102e,
+    blurb: "相手ごと自分も削る。",
+    damageMul: 4.6,
+    selfDamageMul: 0.5,
+    reach: 0.35,
+    maxOmega: 300,
+    spinUpTorque: 90,
+    inertia: 4.0
+  },
+  {
+    id: "cathedral-saw",
+    type: "saw",
+    faces: SAW_DRILL_FACES,
+    mechanism: "revolute",
+    spinAxis: "horizontal",
+    name: "Cathedral Saw",
+    nameJa: "大車輪",
+    category: "weapon",
+    action: "passive",
+    effect: "grind",
+    slot: "tertiary",
+    cost: 780,
+    mass: 56,
+    hp: 220,
+    armor: 5,
+    cells: [5, 5],
+    height: 0.2,
+    material: "hardox",
+    color: 0xe0a80d,
+    blurb: "機体より大きい円盤。寄れば道が開く。ただし重い。",
+    damageMul: 1.8,
+    selfDamageMul: 0.2,
+    reach: 1.6,
+    maxOmega: 160,
+    spinUpTorque: 55,
+    inertia: 2.8,
+    dps: 78
+  },
+  {
+    id: "dragon-breath",
+    type: "flame",
+    faces: IMPULSE_FACES,
+    mechanism: "fixed",
+    name: "Dragon Breath",
+    nameJa: "竜の息",
+    category: "weapon",
+    action: "held",
+    effect: "flame",
+    slot: "secondary",
+    cost: 680,
+    mass: 24,
+    hp: 100,
+    armor: 2,
+    cells: [3, 3],
+    height: 0.14,
+    material: "brass",
+    color: 0x7a2f20,
+    blurb: "竜の息。燃料は一瞬で尽きる。",
+    damageMul: 1.2,
+    selfDamageMul: 0,
+    reach: 0.5,
+    dps: 68,
+    coneAngle: 0.42,
+    coneRange: 5.0,
+    fuel: 4.0,
+    refuelRate: 0.15
+  },
+  {
+    id: "final-curtain",
+    type: "spear",
+    faces: IMPULSE_FACES,
+    mechanism: "prismatic",
+    launch: "punch",
+    name: "Final Curtain",
+    nameJa: "終幕",
+    category: "weapon",
+    action: "triggered",
+    effect: "impulse",
+    slot: "primary",
+    cost: 720,
+    mass: 30,
+    hp: 160,
+    armor: 6,
+    cells: [4, 2],
+    height: 0.14,
+    material: "hardox",
+    color: 0x3a3f45,
+    blurb: "終幕の一撃。外したら試合が終わる（あなたのほう）。",
+    damageMul: 2.8,
+    selfDamageMul: 0.15,
+    reach: 0.55,
+    impulse: 2700,
+    cooldown: 9.0,
+    sweep: 0.5,
+    strokeSec: 0.08
+  },
+  {
+    id: "immovable-anchor",
+    type: "power",
+    faces: UTIL_FACES,
+    name: "Immovable Anchor",
+    nameJa: "不動の錨",
+    category: "utility",
+    cost: 410,
+    mass: 60,
+    hp: 420,
+    armor: 12,
+    cells: [3, 3],
+    height: 0.1,
+    material: "steel",
+    color: 0x3a3f45,
+    blurb: "動かない。動かされない。ただ、それだけ。"
+  },
+  {
+    id: "meteor-booster",
+    type: "booster",
+    faces: UTIL_FACES,
+    name: "Meteor Booster",
+    nameJa: "流星",
+    category: "utility",
+    cost: 600,
+    mass: 14,
+    hp: 70,
+    armor: 2,
+    cells: [2, 2],
+    height: 0.1,
+    material: "brass",
+    color: 0xe0a80d,
+    blurb: "流星の一押し。次の打ち上げまで長い。",
+    powerMul: 2.7
+  },
+  {
+    id: "feather-frame",
+    type: "frame",
+    faces: CHASSIS_FACES,
+    name: "Feather Frame",
+    nameJa: "羽根フレーム",
+    category: "chassis",
+    cost: 600,
+    mass: 10,
+    hp: 130,
+    armor: 2,
+    cells: [5, 6],
+    deck: [5, 6],
+    height: 0.07,
+    heightCells: 2,
+    groundClearance: 0.035,
+    invertible: false,
+    material: "carbon",
+    color: 0x2f3336,
+    blurb: "羽根のように軽い。紙のように破れる。"
+  },
+  {
+    id: "twin-drill-auger",
+    type: "drill",
+    faces: SAW_DRILL_FACES,
+    mechanism: "revolute",
+    spinAxis: "horizontal",
+    pairMount: true,
+    name: "Twin Drill \"Auger\"",
+    nameJa: "双錐オーガー",
+    category: "weapon",
+    action: "held",
+    effect: "grind",
+    slot: "primary",
+    cost: 660,
+    mass: 50,
+    hp: 180,
+    armor: 6,
+    cells: [4, 3],
+    height: 0.14,
+    material: "hardox",
+    color: 0x8d9299,
+    blurb: "双錐で貫く。削るのは苦手、通すのが仕事。",
+    damageMul: 3.7,
+    selfDamageMul: 0.16,
+    reach: 0.4,
+    maxOmega: 70,
+    spinUpTorque: 60,
+    inertia: 1.4,
+    dps: 11,
+    fuel: 0
+  },
+  {
+    id: "joker-plate",
+    type: "applique",
+    faces: ALL_FACES,
+    name: "Joker Plate",
+    nameJa: "落書き装甲",
+    category: "armor",
+    cost: 340,
+    mass: 9,
+    hp: 170,
+    armor: 12,
+    cells: [3, 2],
+    height: 0.04,
+    material: "aluminium",
+    color: 0xc8102e,
+    blurb: "見た目だけ派手。中身は落書き。高いのがネタ。"
   }
 ];
 
 /* ------------------------------------------------------------------ */
-/* presets — cost / drive / weapon slots / deck / no-overlap by hand  */
+/* presets — v3: every PlacedPart has face; 8 bots; face-grid checks  */
 /* ------------------------------------------------------------------ */
 
 export const PRESETS: readonly BotSpec[] = [
-  // spin-king: chassis medium (cost 160 / 32kg)
-  //   wheel-mid x4 (45*4=180 / 32kg) @ (0,2)(5,2)(0,6)(5,6)
-  //   disc-heavy (380 / 30kg) @ (1,0) 5x2           [primary]
-  //   plate-steel (70 / 12kg) @ (2,4) 3x2
-  //   util-self-right (120 / 6kg) @ (2,7) 2x2
-  //   合計 cost 910 / 1000, mass 112kg, 占有セル重複なし
+  // spin-king — chassis-medium deck 7×9 / heightCells 3
+  // faces:
+  //   underside: wheel-mid×4 @ (0,2)(5,2)(0,6)(5,6)  each 2×2 — no overlap
+  //   deck: disc-heavy 5×2 @ (1,0); plate-steel 3×2 @ (2,4); util-self-right 2×2 @ (2,7)
+  // cost: 160 + 45×4 + 380 + 70 + 120 = 910 ≤ 1000
+  // mass: 32 + 8×4 + 30 + 12 + 6 = 112 kg
+  // drive×4 / primary disc / no secondary / all faces allowed
   {
-    v: 2,
+    v: 3,
     name: "spin-king",
     chassisId: "chassis-medium",
     paint: 0xc8102e,
     parts: [
-      { partId: "wheel-mid", cell: [0, 2], rot: 0 },
-      { partId: "wheel-mid", cell: [5, 2], rot: 0 },
-      { partId: "wheel-mid", cell: [0, 6], rot: 0 },
-      { partId: "wheel-mid", cell: [5, 6], rot: 0 },
-      { partId: "disc-heavy", cell: [1, 0], rot: 0 },
-      { partId: "plate-steel", cell: [2, 4], rot: 0 },
-      { partId: "util-self-right", cell: [2, 7], rot: 0 }
+      { partId: "wheel-mid", face: "underside", cell: [0, 2], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [5, 2], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [0, 6], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [5, 6], rot: 0 },
+      { partId: "disc-heavy", face: "deck", cell: [1, 0], rot: 0 },
+      { partId: "plate-steel", face: "deck", cell: [2, 4], rot: 0 },
+      { partId: "util-self-right", face: "deck", cell: [2, 7], rot: 0 }
     ]
   },
 
-  // flip-jack: chassis medium (cost 160 / 32kg)
-  //   wheel-grip x4 (48*4=192 / 28kg) @ (0,3)(5,3)(0,5)(5,5)
-  //   flipper-std (320 / 25kg) @ (1,0) 4x3         [primary]
-  //   wedge-std (90 / 12kg) @ (1,7) 5x2            [secondary]
-  //   util-self-right (120 / 6kg) @ (2,3) 2x2
-  //   合計 cost 882 / 1000, mass 103kg, 占有セル重複なし
+  // flip-jack — chassis-medium 7×9 / h3
+  //   underside: wheel-grip×4 @ (0,3)(5,3)(0,5)(5,5) 2×2
+  //   front (7×3): flipper-std 4×3 @ (1,0) — fills y fully
+  //   rear  (7×3): wedge-std 5×2 @ (1,0)
+  //   deck: util-self-right 2×2 @ (2,3)
+  // cost: 160 + 48×4 + 320 + 90 + 120 = 882
+  // mass: 32 + 7×4 + 25 + 12 + 6 = 103 kg
   {
-    v: 2,
+    v: 3,
     name: "flip-jack",
     chassisId: "chassis-medium",
     paint: 0xe0a80d,
     parts: [
-      { partId: "wheel-grip", cell: [0, 3], rot: 0 },
-      { partId: "wheel-grip", cell: [5, 3], rot: 0 },
-      { partId: "wheel-grip", cell: [0, 5], rot: 0 },
-      { partId: "wheel-grip", cell: [5, 5], rot: 0 },
-      { partId: "flipper-std", cell: [1, 0], rot: 0 },
-      { partId: "wedge-std", cell: [1, 7], rot: 0 },
-      { partId: "util-self-right", cell: [2, 3], rot: 0 }
+      { partId: "wheel-grip", face: "underside", cell: [0, 3], rot: 0 },
+      { partId: "wheel-grip", face: "underside", cell: [5, 3], rot: 0 },
+      { partId: "wheel-grip", face: "underside", cell: [0, 5], rot: 0 },
+      { partId: "wheel-grip", face: "underside", cell: [5, 5], rot: 0 },
+      { partId: "flipper-std", face: "front", cell: [1, 0], rot: 0 },
+      { partId: "wedge-std", face: "rear", cell: [1, 0], rot: 0 },
+      { partId: "util-self-right", face: "deck", cell: [2, 3], rot: 0 }
     ]
   },
 
-  // brick-wall: chassis heavy (cost 230 / 48kg)
-  //   track-std x2 (90*2=180 / 32kg) @ (0,3)(7,3)
-  //   side-saws (180 / 13kg) @ (3,2) 2x2           [primary]
-  //   wedge-std (90 / 12kg) @ (2,0) 5x2            [secondary]
-  //   plate-steel (70 / 12kg) @ (3,6) 3x2
-  //   armor-uhmw (110 / 8kg) @ (3,8) 3x2
-  //   合計 cost 860 / 1000, mass 125kg, 占有セル重複なし
+  // brick-wall — chassis-heavy 9×11 / h4
+  //   left  (11×4): track-std 2×4 @ (3,0)
+  //   right (11×4): track-std 2×4 @ (3,0)
+  //   front (9×4):  wedge-std 5×2 @ (2,0)  [tertiary static]
+  //   deck: cutting-disc 2×2 @ (3,2) [secondary]; plate-steel 3×2 @ (3,6); armor-uhmw 3×2 @ (3,8)
+  //   (side-saws→tertiary と wedge が同スロット衝突するため cutting-disc に差し替え)
+  // cost: 230 + 90×2 + 200 + 90 + 70 + 110 = 880
+  // mass: 48 + 16×2 + 12 + 12 + 12 + 8 = 124 kg
   {
-    v: 2,
+    v: 3,
     name: "brick-wall",
     chassisId: "chassis-heavy",
     paint: 0x8d9299,
     parts: [
-      { partId: "track-std", cell: [0, 3], rot: 0 },
-      { partId: "track-std", cell: [7, 3], rot: 0 },
-      { partId: "side-saws", cell: [3, 2], rot: 0 },
-      { partId: "wedge-std", cell: [2, 0], rot: 0 },
-      { partId: "plate-steel", cell: [3, 6], rot: 0 },
-      { partId: "armor-uhmw", cell: [3, 8], rot: 0 }
+      { partId: "track-std", face: "left", cell: [3, 0], rot: 0 },
+      { partId: "track-std", face: "right", cell: [3, 0], rot: 0 },
+      { partId: "cutting-disc", face: "deck", cell: [3, 2], rot: 0 },
+      { partId: "wedge-std", face: "front", cell: [2, 0], rot: 0 },
+      { partId: "plate-steel", face: "deck", cell: [3, 6], rot: 0 },
+      { partId: "armor-uhmw", face: "deck", cell: [3, 8], rot: 0 }
     ]
   },
 
-  // drum-runner: chassis light (cost 110 / 20kg)
-  //   wheel-small x4 (40*4=160 / 16kg) @ (0,3)(4,3)(0,6)(4,6)
-  //   drum-std (340 / 32kg) @ (0,0) 4x3            [primary]
-  //   util-power-cell (140 / 9kg) @ (1,4) 2x2
-  //   util-light-frame (90 / 5kg) @ (1,6) 2x1
-  //   合計 cost 840 / 1000, mass 82kg, 占有セル重複なし
+  // drum-runner — chassis-light 5×7 / h3
+  //   underside: wheel-small×4 @ (0,3)(4,3)(0,6)(4,6) 1×1
+  //   front (5×3): drum-std 4×3 @ (0,0)
+  //   deck: util-power-cell 2×2 @ (1,4); util-light-frame 2×1 @ (1,6)
+  // cost: 110 + 40×4 + 340 + 140 + 90 = 840
+  // mass: 20 + 4×4 + 32 + 9 + 5 = 82 kg
   {
-    v: 2,
+    v: 3,
     name: "drum-runner",
     chassisId: "chassis-light",
     paint: 0x1b4a8f,
     parts: [
-      { partId: "wheel-small", cell: [0, 3], rot: 0 },
-      { partId: "wheel-small", cell: [4, 3], rot: 0 },
-      { partId: "wheel-small", cell: [0, 6], rot: 0 },
-      { partId: "wheel-small", cell: [4, 6], rot: 0 },
-      { partId: "drum-std", cell: [0, 0], rot: 0 },
-      { partId: "util-power-cell", cell: [1, 4], rot: 0 },
-      { partId: "util-light-frame", cell: [1, 6], rot: 0 }
+      { partId: "wheel-small", face: "underside", cell: [0, 3], rot: 0 },
+      { partId: "wheel-small", face: "underside", cell: [4, 3], rot: 0 },
+      { partId: "wheel-small", face: "underside", cell: [0, 6], rot: 0 },
+      { partId: "wheel-small", face: "underside", cell: [4, 6], rot: 0 },
+      { partId: "drum-std", face: "front", cell: [0, 0], rot: 0 },
+      { partId: "util-power-cell", face: "deck", cell: [1, 4], rot: 0 },
+      { partId: "util-light-frame", face: "deck", cell: [1, 6], rot: 0 }
     ]
   },
 
-  // pyro: chassis medium (cost 160 / 32kg)
-  //   wheel-mid x4 (45*4=180 / 32kg) @ (0,1)(5,1)(0,5)(5,5)
-  //   flamethrower (280 / 17kg) @ (2,0) 3x2        [primary]
-  //   forks-std (85 / 12kg) @ (1,7) 5x2            [secondary]
-  //   heat-shield (120 / 9kg) @ (2,3) 3x3
-  //   合計 cost 825 / 1000, mass 102kg, 占有セル重複なし
+  // pyro — chassis-medium 7×9 / h3
+  //   underside: wheel-mid×4 @ (0,1)(5,1)(0,5)(5,5)
+  //   front (7×3): flamethrower 3×2 @ (2,0)
+  //   rear  (7×3): forks-std 5×2 @ (1,0)
+  //   deck: heat-shield 3×3 @ (2,3)
+  // cost: 160 + 45×4 + 280 + 85 + 120 = 825
+  // mass: 32 + 8×4 + 17 + 12 + 9 = 102 kg
   {
-    v: 2,
+    v: 3,
     name: "pyro",
     chassisId: "chassis-medium",
     paint: 0x7a2f20,
     parts: [
-      { partId: "wheel-mid", cell: [0, 1], rot: 0 },
-      { partId: "wheel-mid", cell: [5, 1], rot: 0 },
-      { partId: "wheel-mid", cell: [0, 5], rot: 0 },
-      { partId: "wheel-mid", cell: [5, 5], rot: 0 },
-      { partId: "flamethrower", cell: [2, 0], rot: 0 },
-      { partId: "forks-std", cell: [1, 7], rot: 0 },
-      { partId: "heat-shield", cell: [2, 3], rot: 0 }
+      { partId: "wheel-mid", face: "underside", cell: [0, 1], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [5, 1], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [0, 5], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [5, 5], rot: 0 },
+      { partId: "flamethrower", face: "front", cell: [2, 0], rot: 0 },
+      { partId: "forks-std", face: "rear", cell: [1, 0], rot: 0 },
+      { partId: "heat-shield", face: "deck", cell: [2, 3], rot: 0 }
     ]
   },
 
-  // impaler: chassis medium (cost 160 / 32kg)
-  //   wheel-mid x4 (45*4=180 / 32kg) @ (0,5)(5,5)(0,7)(5,7)
-  //   spear-std (290 / 18kg) @ (2,0) 3x2           [primary]
-  //   crusher-jaws (340 / 28kg) @ (1,2) 4x3        [secondary]
-  //   合計 cost 970 / 1000, mass 110kg, 占有セル重複なし
+  // impaler — chassis-medium 7×9 / h3
+  //   underside: wheel-mid×4 @ (0,5)(5,5)(0,7)(5,7)
+  //   front (7×3): spear-std 3×2 @ (2,0)
+  //   deck: crusher-jaws 4×3 @ (1,2)
+  // cost: 160 + 45×4 + 290 + 340 = 970
+  // mass: 32 + 8×4 + 18 + 28 = 110 kg
   {
-    v: 2,
+    v: 3,
     name: "impaler",
     chassisId: "chassis-medium",
     paint: 0x3a3f45,
     parts: [
-      { partId: "wheel-mid", cell: [0, 5], rot: 0 },
-      { partId: "wheel-mid", cell: [5, 5], rot: 0 },
-      { partId: "wheel-mid", cell: [0, 7], rot: 0 },
-      { partId: "wheel-mid", cell: [5, 7], rot: 0 },
-      { partId: "spear-std", cell: [2, 0], rot: 0 },
-      { partId: "crusher-jaws", cell: [1, 2], rot: 0 }
+      { partId: "wheel-mid", face: "underside", cell: [0, 5], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [5, 5], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [0, 7], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [5, 7], rot: 0 },
+      { partId: "spear-std", face: "front", cell: [2, 0], rot: 0 },
+      { partId: "crusher-jaws", face: "deck", cell: [1, 2], rot: 0 }
+    ]
+  },
+
+  // driller — chassis-medium 7×9 / h3
+  //   left  (9×3): wheel-mid 2×2 @ (1,0); wheel-mid 2×2 @ (5,0)
+  //   right (9×3): wheel-mid 2×2 @ (1,0); wheel-mid 2×2 @ (5,0)
+  //   front (7×3): drill-twin 3×2 @ (2,0)
+  //   deck: applique-mid 2×2 @ (2,4); util-spare-battery 2×1 @ (2,7)
+  // cost: 160 + 45×4 + 280 + 42 + 95 = 757
+  // mass: 32 + 8×4 + 20 + 4 + 7 = 95 kg
+  {
+    v: 3,
+    name: "driller",
+    chassisId: "chassis-medium",
+    paint: 0x1b4a8f,
+    parts: [
+      { partId: "wheel-mid", face: "left", cell: [1, 0], rot: 0 },
+      { partId: "wheel-mid", face: "left", cell: [5, 0], rot: 0 },
+      { partId: "wheel-mid", face: "right", cell: [1, 0], rot: 0 },
+      { partId: "wheel-mid", face: "right", cell: [5, 0], rot: 0 },
+      { partId: "drill-twin", face: "front", cell: [2, 0], rot: 0 },
+      { partId: "applique-mid", face: "deck", cell: [2, 4], rot: 0 },
+      { partId: "util-spare-battery", face: "deck", cell: [2, 7], rot: 0 }
+    ]
+  },
+
+  // shredder — chassis-medium 7×9 / h3
+  //   underside: wheel-small×4 @ (0,2)(6,2)(0,6)(6,6) 1×1
+  //   left  (9×3): side-saws 2×2 @ (3,0)
+  //   right (9×3): angle-grinder 2×2 @ (3,0)  [secondary grind]
+  //   deck: applique-light 2×1 @ (2,0); plate-ti-thin 2×2 @ (2,4)
+  // cost: 160 + 40×4 + 180 + 130 + 28 + 100 = 758
+  // mass: 32 + 4×4 + 13 + 10 + 2 + 4 = 77 kg
+  // note: side-saws tertiary, angle-grinder secondary — one each slot
+  {
+    v: 3,
+    name: "shredder",
+    chassisId: "chassis-medium",
+    paint: 0xc8102e,
+    parts: [
+      { partId: "wheel-small", face: "underside", cell: [0, 2], rot: 0 },
+      { partId: "wheel-small", face: "underside", cell: [6, 2], rot: 0 },
+      { partId: "wheel-small", face: "underside", cell: [0, 6], rot: 0 },
+      { partId: "wheel-small", face: "underside", cell: [6, 6], rot: 0 },
+      { partId: "side-saws", face: "left", cell: [3, 0], rot: 0 },
+      { partId: "angle-grinder", face: "right", cell: [3, 0], rot: 0 },
+      { partId: "applique-light", face: "deck", cell: [2, 0], rot: 0 },
+      { partId: "plate-ti-thin", face: "deck", cell: [2, 4], rot: 0 }
     ]
   }
 ];

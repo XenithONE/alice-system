@@ -2,16 +2,19 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import {
   DRIVE_ANGULAR_DAMPING,
   DRIVE_LINEAR_DAMPING,
+  BOT_COLLISION_FRICTION,
+  BOT_COLLISION_RESTITUTION,
   FIXED_DT,
   MIN_HIT_IMPULSE
 } from "./balance";
-import { partLocalPosition } from "./build";
+import { driveSide, partLocalPosition } from "./build";
 import {
   CELL,
   type BotSpec,
   type Catalog,
   type ChassisDef,
   type DriveDef,
+  type MountFace,
   type PartDef,
   type SeatIndex,
   type WeaponDef
@@ -30,6 +33,9 @@ export interface RuntimePart {
   readonly body: RAPIER.RigidBody;
   readonly joint: RAPIER.ImpulseJoint | null;
   readonly local: readonly [number, number, number];
+  readonly face: MountFace;
+  /** Elongated floor contact used by side-mounted tracks. */
+  readonly trackContact?: RAPIER.Collider;
   detached: boolean;
 }
 
@@ -46,6 +52,8 @@ export interface WeaponRuntime extends RuntimePart {
     | RAPIER.PrismaticImpulseJoint
     | null;
   readonly spear: boolean;
+  /** Chassis-local direction in which this mount attacks. */
+  readonly mountDir: readonly [number, number, number];
   active: boolean;
   cooldownLeft: number;
   triggerGapLeft: number;
@@ -97,11 +105,6 @@ function enableContactEvents(collider: RAPIER.Collider, seat?: number): void {
   if (seat !== undefined) collider.setCollisionGroups(botCollisionGroups(seat));
 }
 
-function quarterTurn(rot: number): RAPIER.Rotation {
-  const angle = -rot * Math.PI / 2;
-  return { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) };
-}
-
 function rotatedSize(part: PartDef, rot: number): readonly [number, number] {
   return rot === 1 || rot === 3 ? [part.cells[1], part.cells[0]] : part.cells;
 }
@@ -112,19 +115,54 @@ function worldOffset(x: number, z: number, yaw: number): readonly [number, numbe
   return [cos * x + sin * z, -sin * x + cos * z];
 }
 
+function faceNormal(face: MountFace): readonly [number, number, number] {
+  switch (face) {
+    case "deck": return [0, 1, 0];
+    case "underside": return [0, -1, 0];
+    case "left": return [-1, 0, 0];
+    case "right": return [1, 0, 0];
+    case "front": return [0, 0, -1];
+    case "rear": return [0, 0, 1];
+  }
+}
+
+function rotationFromY(axis: readonly [number, number, number]): RAPIER.Rotation {
+  if (axis[0] === 1) return { x: 0, y: 0, z: -Math.SQRT1_2, w: Math.SQRT1_2 };
+  if (axis[0] === -1) return { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 };
+  if (axis[1] === -1) return { x: 1, y: 0, z: 0, w: 0 };
+  if (axis[2] === 1) return { x: Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
+  if (axis[2] === -1) return { x: -Math.SQRT1_2, y: 0, z: 0, w: Math.SQRT1_2 };
+  return qIdentity;
+}
+
+function faceHalfExtents(
+  part: PartDef,
+  rot: number,
+  face: MountFace
+): readonly [number, number, number] {
+  const [w, d] = rotatedSize(part, rot);
+  if (face === "deck" || face === "underside") {
+    return [w * CELL / 2, part.height / 2, d * CELL / 2];
+  }
+  if (face === "left" || face === "right") {
+    return [part.height / 2, d * CELL / 2, w * CELL / 2];
+  }
+  return [w * CELL / 2, d * CELL / 2, part.height / 2];
+}
+
 function createBoxCollider(
   world: RAPIER.World,
   body: RAPIER.RigidBody,
   part: PartDef,
   local: readonly [number, number, number],
   rot: number,
+  face: MountFace,
   seat: number
 ): RAPIER.Collider {
-  const [w, d] = rotatedSize(part, rot);
+  const [hx, hy, hz] = faceHalfExtents(part, rot, face);
   const collider = world.createCollider(
-    RAPIER.ColliderDesc.cuboid(w * CELL / 2, part.height / 2, d * CELL / 2)
+    RAPIER.ColliderDesc.cuboid(hx, hy, hz)
       .setTranslation(local[0], local[1], local[2])
-      .setRotation(quarterTurn(rot))
       .setMass(part.mass),
     body
   );
@@ -169,7 +207,9 @@ export function assembleBot(
       chassisDef.deck[1] * CELL / 2
     )
       .setTranslation(0, chassisDef.groundClearance + chassisDef.height / 2, 0)
-      .setMass(chassisDef.mass),
+      .setMass(chassisDef.mass)
+      .setFriction(BOT_COLLISION_FRICTION)
+      .setRestitution(BOT_COLLISION_RESTITUTION),
     chassis
   );
   enableContactEvents(chassisCollider, seat);
@@ -189,16 +229,20 @@ export function assembleBot(
   for (const [idx, placed] of spec.parts.entries()) {
     const def = catalog.byId.get(placed.partId);
     if (!def || def.category === "chassis") continue;
-    const [localX, localZ] = partLocalPosition(chassisDef, def, placed.cell, placed.rot);
-    const deckY = chassisDef.groundClearance + chassisDef.height;
-    const local: [number, number, number] = [localX, deckY + def.height / 2, localZ];
+    const local = partLocalPosition(
+      chassisDef,
+      def,
+      placed.cell,
+      placed.rot,
+      placed.face
+    );
 
     if (
       def.category === "armor" ||
       def.category === "utility" ||
       (def.category === "weapon" && (def.effect === "flame" || def.effect === "static"))
     ) {
-      const collider = createBoxCollider(world, chassis, def, local, placed.rot, seat);
+      const collider = createBoxCollider(world, chassis, def, local, placed.rot, placed.face, seat);
       const runtime: RuntimePart = {
         idx,
         def,
@@ -207,6 +251,7 @@ export function assembleBot(
         body: chassis,
         joint: null,
         local,
+        face: placed.face,
         detached: false
       };
       parts.push(runtime);
@@ -224,6 +269,7 @@ export function assembleBot(
           def,
           joint: null,
           spear: false,
+          mountDir: faceNormal(placed.face),
           active: false,
           cooldownLeft: 0,
           triggerGapLeft: 0,
@@ -242,8 +288,8 @@ export function assembleBot(
     if (def.category === "drive") {
       const radius = def.radius;
       const halfWidth = Math.max(def.height, CELL) / 2;
-      const driveLocal: [number, number, number] = [localX, radius, localZ];
-      const [worldX, worldZ] = worldOffset(localX, localZ, facing);
+      const driveLocal: [number, number, number] = [local[0], radius, local[2]];
+      const [worldX, worldZ] = worldOffset(driveLocal[0], driveLocal[2], facing);
       const body = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(origin[0] + worldX, origin[1] + radius, origin[2] + worldZ)
@@ -258,6 +304,28 @@ export function assembleBot(
         body
       );
       enableContactEvents(collider, seat);
+      let trackContact: RAPIER.Collider | undefined;
+      if (
+        def.kind === "track" &&
+        (placed.face === "left" || placed.face === "right")
+      ) {
+        const contactHeight = Math.max(def.height * 0.45, 0.035);
+        const contactLength = Math.max(def.cells[0], def.cells[1]) * CELL;
+        trackContact = world.createCollider(
+          RAPIER.ColliderDesc.cuboid(
+            Math.max(def.height / 2, 0.04),
+            contactHeight / 2,
+            contactLength / 2
+          )
+            .setTranslation(driveLocal[0], contactHeight / 2, driveLocal[2])
+            // The shoe itself slides while the motorized sprocket plus the
+            // bounded traction model supply belt motion.
+            .setFriction(0.05)
+            .setDensity(0),
+          chassis
+        );
+        enableContactEvents(trackContact, seat);
+      }
       const joint = world.createImpulseJoint(
         RAPIER.JointData.revolute(
           { x: driveLocal[0], y: driveLocal[1], z: driveLocal[2] },
@@ -278,18 +346,27 @@ export function assembleBot(
         body,
         joint,
         local: driveLocal,
+        face: placed.face,
+        trackContact,
         detached: false,
-        side: localX < 0 ? -1 : 1
+        side: driveSide(
+          chassisDef,
+          placed.face,
+          placed.cell,
+          rotatedSize(def, placed.rot)[0]
+        ) || (local[0] < 0 ? -1 : 1)
       };
       parts.push(runtime);
       drives.push(runtime);
       colliderOwners.set(collider.handle, { seat, partIdx: idx });
+      if (trackContact) colliderOwners.set(trackContact.handle, { seat, partIdx: idx });
       continue;
     }
 
     const spear = isSpear(def);
     const spinHorizontal = def.spinAxis !== "vertical";
-    const [worldX, worldZ] = worldOffset(localX, localZ, facing);
+    const mountDir = faceNormal(placed.face);
+    const [worldX, worldZ] = worldOffset(local[0], local[2], facing);
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(origin[0] + worldX, origin[1] + local[1], origin[2] + worldZ)
@@ -299,15 +376,24 @@ export function assembleBot(
     let collider: RAPIER.Collider;
     if (def.effect === "spin" || def.effect === "grind") {
       const baseRadius = Math.max(def.cells[0], def.cells[1]) * CELL / 2 + def.reach;
-      const radius =
+      const drill = def.type === "drill";
+      const radius = drill
+        ? Math.max(def.height / 2, CELL * 0.2)
+        :
         def.pairMount === true
           ? Math.max(baseRadius, chassisDef.deck[0] * CELL / 2 + def.reach)
           : baseRadius;
+      const spinAxis: readonly [number, number, number] = spinHorizontal
+        ? mountDir
+        : placed.face === "left" || placed.face === "right"
+          ? [0, 1, 0]
+          : [1, 0, 0];
       collider = world.createCollider(
-        RAPIER.ColliderDesc.cylinder(def.height / 2, radius)
-          .setRotation(
-            spinHorizontal ? qIdentity : { x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 }
-          )
+        RAPIER.ColliderDesc.cylinder(
+          drill ? Math.max(def.height / 2, def.reach / 2) : def.height / 2,
+          radius
+        )
+          .setRotation(rotationFromY(spinAxis))
           .setMass(def.mass),
         body
       );
@@ -323,13 +409,9 @@ export function assembleBot(
         );
       }
     } else {
-      const [w, d] = rotatedSize(def, placed.rot);
+      const [hx, hy, hz] = faceHalfExtents(def, placed.rot, placed.face);
       collider = world.createCollider(
-        RAPIER.ColliderDesc.cuboid(
-          w * CELL / 2,
-          def.height / 2,
-          (d * CELL + def.reach) / 2
-        ).setMass(def.mass),
+        RAPIER.ColliderDesc.cuboid(hx, hy, hz).setMass(def.mass),
         body
       );
     }
@@ -344,7 +426,7 @@ export function assembleBot(
         RAPIER.JointData.prismatic(
           { x: local[0], y: local[1], z: local[2] },
           { x: 0, y: 0, z: 0 },
-          { x: 0, y: 0, z: -1 }
+          { x: mountDir[0], y: mountDir[1], z: mountDir[2] }
         ),
         chassis,
         body,
@@ -355,8 +437,10 @@ export function assembleBot(
       const axis =
         def.effect === "spin" || def.effect === "grind"
           ? spinHorizontal
-            ? { x: 0, y: 1, z: 0 }
-            : { x: 1, y: 0, z: 0 }
+            ? { x: mountDir[0], y: mountDir[1], z: mountDir[2] }
+            : placed.face === "left" || placed.face === "right"
+              ? { x: 0, y: 1, z: 0 }
+              : { x: 1, y: 0, z: 0 }
           : { x: 1, y: 0, z: 0 };
       joint = world.createImpulseJoint(
         RAPIER.JointData.revolute(
@@ -389,8 +473,10 @@ export function assembleBot(
       body,
       joint,
       local,
+      face: placed.face,
       detached: false,
       spear,
+      mountDir,
       active: false,
       cooldownLeft: 0,
       triggerGapLeft: 0,

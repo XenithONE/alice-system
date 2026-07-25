@@ -127,7 +127,7 @@ export function App() {
       const bot = state.bots.find((candidate) => candidate.seat === seat);
       const rivals = state.bots.filter((candidate) => candidate.alive && candidate.seat !== seat);
       if (!bot?.alive || state.phase !== "live" || rivals.length === 0) {
-        return { throttle: 0, steer: 0, primary: false, secondary: false, selfRight: false };
+        return { throttle: 0, steer: 0, primary: false, secondary: false, tertiary: false, selfRight: false };
       }
       const target = rivals.reduce((best, candidate) => {
         const candidateDistance = Math.hypot(candidate.pos[0] - bot.pos[0], candidate.pos[2] - bot.pos[2]);
@@ -144,6 +144,7 @@ export function App() {
         steer: Math.max(-1, Math.min(1, delta)),
         primary: true,
         secondary: true,
+        tertiary: true,
         selfRight: bot.inverted
       };
     }
@@ -286,12 +287,13 @@ export function App() {
         steer: (pressed.has("KeyD") ? 1 : 0) - (pressed.has("KeyA") ? 1 : 0),
         primary: pressed.has("Space"),
         secondary: pressed.has("ShiftLeft") || pressed.has("ShiftRight"),
+        tertiary: pressed.has("KeyF"),
         selfRight: pressed.has("KeyR")
       };
       sessionRef.current?.input(input);
     };
     const down = (event: KeyboardEvent): void => {
-      if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "KeyR"].includes(event.code)) {
+      if (["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "KeyF", "KeyR"].includes(event.code)) {
         event.preventDefault();
         pressed.add(event.code);
         sendInput();
@@ -306,7 +308,7 @@ export function App() {
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
-      sessionRef.current?.input({ throttle: 0, steer: 0, primary: false, secondary: false, selfRight: false });
+      sessionRef.current?.input({ throttle: 0, steer: 0, primary: false, secondary: false, tertiary: false, selfRight: false });
     };
   }, [screen]);
 
@@ -335,6 +337,7 @@ export function App() {
       if (part?.category !== "weapon") return [];
       const weapon = part as WeaponDef;
       return [{
+        partIdx: mine.parts.indexOf(placed),
         slot: weapon.slot,
         name: weapon.nameJa,
         action: weapon.action,

@@ -21,6 +21,9 @@ import {
   IMMOBILE_SPEED,
   IMMOBILE_WEAPON_OMEGA,
   IMPACT_SCALE,
+  HEAVY_COLLISION_ANGULAR_IMPULSE,
+  HEAVY_COLLISION_IMPULSE,
+  HEAVY_COLLISION_SPEED_LOSS,
   INVERTED_DOT,
   JUDGE_AGGRESSION,
   JUDGE_CONTROL,
@@ -110,6 +113,21 @@ function chassisForward(bot: DamageBot): readonly [number, number] {
   return length > Number.EPSILON ? [x / length, z / length] : [0, -1];
 }
 
+function mountedDirection(
+  bot: DamageBot,
+  local: readonly [number, number, number]
+): readonly [number, number, number] {
+  const q = bot.assembled.chassis.rotation();
+  const tx = 2 * (q.y * local[2] - q.z * local[1]);
+  const ty = 2 * (q.z * local[0] - q.x * local[2]);
+  const tz = 2 * (q.x * local[1] - q.y * local[0]);
+  return [
+    local[0] + q.w * tx + (q.y * tz - q.z * ty),
+    local[1] + q.w * ty + (q.z * tx - q.x * tz),
+    local[2] + q.w * tz + (q.x * ty - q.y * tx)
+  ];
+}
+
 export class DamageSystem {
   private readonly ownerByCollider = new Map<number, ColliderOwner>();
   private readonly botBySeat = new Map<SeatIndex, DamageBot>();
@@ -117,6 +135,7 @@ export class DamageSystem {
   private readonly cooldowns = new Map<string, number>();
   private readonly sustainedNext = new Map<string, number>();
   private readonly pendingAttacks = new Map<string, PendingAttack>();
+  private readonly heavyCollisionNext = new Map<string, number>();
   private readonly debris: Debris[] = [];
   private readonly kos: { seat: SeatIndex; reason: KoReason; at: number }[] = [];
   private currentTime = 0;
@@ -239,6 +258,11 @@ export class DamageSystem {
     bot.detached.push(part.idx);
     this.ownerByCollider.delete(part.collider.handle);
     bot.assembled.colliderOwners.delete(part.collider.handle);
+    if (part.trackContact?.isValid()) {
+      this.ownerByCollider.delete(part.trackContact.handle);
+      bot.assembled.colliderOwners.delete(part.trackContact.handle);
+      this.world.removeCollider(part.trackContact, true);
+    }
 
     if (part.joint) {
       if (part.joint.isValid()) this.world.removeImpulseJoint(part.joint, true);
@@ -297,12 +321,51 @@ export class DamageSystem {
       return;
     }
     if (!owner1 || !owner2 || owner1.seat === owner2.seat) return;
+    this.applyHeavyCollision(owner1, owner2, impulse, point);
 
     const special1 = this.processWeaponContact(owner1, owner2, impulse, point);
     const special2 = this.processWeaponContact(owner2, owner1, impulse, point);
     if (impulse < MIN_HIT_IMPULSE) return;
     if (!special1) this.queueAttack(owner1, owner2, impulse, point);
     if (!special2) this.queueAttack(owner2, owner1, impulse, point);
+  }
+
+  private applyHeavyCollision(
+    owner1: ColliderOwner,
+    owner2: ColliderOwner,
+    impulse: number,
+    point: RAPIER.Vector
+  ): void {
+    if (impulse < HEAVY_COLLISION_IMPULSE) return;
+    const first = this.botBySeat.get(owner1.seat);
+    const second = this.botBySeat.get(owner2.seat);
+    if (!first?.alive || !second?.alive) return;
+    const key = owner1.seat < owner2.seat
+      ? `${owner1.seat}:${owner2.seat}`
+      : `${owner2.seat}:${owner1.seat}`;
+    if ((this.heavyCollisionNext.get(key) ?? -Infinity) > this.currentTime) return;
+    this.heavyCollisionNext.set(key, this.currentTime + CONTACT_COOLDOWN);
+    const severity = Math.min(1, impulse / (HEAVY_COLLISION_IMPULSE * 4));
+    const retain = 1 - HEAVY_COLLISION_SPEED_LOSS * (0.5 + severity);
+    for (const bot of [first, second]) {
+      const body = bot.assembled.chassis;
+      const velocity = body.linvel();
+      body.setLinvel(
+        { x: velocity.x * retain, y: velocity.y * retain, z: velocity.z * retain },
+        true
+      );
+      const center = body.translation();
+      const sign = bot === first ? 1 : -1;
+      body.applyTorqueImpulse(
+        {
+          x: (point.z - center.z) * impulse * HEAVY_COLLISION_ANGULAR_IMPULSE * sign,
+          y: ((point.x - center.x) - (point.z - center.z)) *
+            impulse * HEAVY_COLLISION_ANGULAR_IMPULSE * sign,
+          z: -(point.x - center.x) * impulse * HEAVY_COLLISION_ANGULAR_IMPULSE * sign
+        },
+        true
+      );
+    }
   }
 
   private processWeaponContact(
@@ -354,9 +417,11 @@ export class DamageSystem {
       if (!weapon.active || weapon.impulseVictims.has(defenderOwner.seat)) return true;
       weapon.impulseVictims.add(defenderOwner.seat);
       const amount = weapon.def.impulse ?? 0;
-      const [forwardX, forwardZ] = chassisForward(attacker);
+      const [forwardX, forwardY, forwardZ] = mountedDirection(attacker, weapon.mountDir);
       const flipper = weapon.def.launch === "flip";
-      const vertical = flipper ? amount * 0.85 : weapon.spear ? amount * 0.08 : amount * 0.35;
+      const vertical =
+        (flipper ? amount * 0.85 : weapon.spear ? amount * 0.08 : amount * 0.35) +
+        forwardY * amount * 0.5;
       const horizontal = flipper ? amount * 0.45 : amount * 0.9;
       defender.assembled.chassis.applyImpulse(
         { x: forwardX * horizontal, y: vertical, z: forwardZ * horizontal },
@@ -520,9 +585,12 @@ export class DamageSystem {
     for (const attacker of this.bots) {
       if (!attacker.alive) continue;
       const ap = attacker.assembled.chassis.translation();
-      const [forwardX, forwardZ] = chassisForward(attacker);
       for (const weapon of attacker.assembled.weapons) {
         if (!weapon.active || weapon.detached || weapon.def.effect !== "flame") continue;
+        const [forwardX, , forwardZ] = mountedDirection(attacker, weapon.mountDir);
+        const horizontalLength = Math.hypot(forwardX, forwardZ);
+        const dirX = horizontalLength > Number.EPSILON ? forwardX / horizontalLength : 0;
+        const dirZ = horizontalLength > Number.EPSILON ? forwardZ / horizontalLength : -1;
         const range = weapon.def.coneRange ?? weapon.def.reach;
         const cosine = Math.cos(weapon.def.coneAngle ?? 0);
         this.events.push({
@@ -531,8 +599,8 @@ export class DamageSystem {
           x: ap.x,
           y: ap.y,
           z: ap.z,
-          dirX: forwardX,
-          dirZ: forwardZ
+          dirX,
+          dirZ
         });
         for (const victim of this.bots) {
           if (!victim.alive || victim === attacker) continue;
@@ -541,7 +609,7 @@ export class DamageSystem {
           const dz = vp.z - ap.z;
           const distance = Math.hypot(dx, dz);
           const dot =
-            distance > Number.EPSILON ? (dx * forwardX + dz * forwardZ) / distance : 1;
+            distance > Number.EPSILON ? (dx * dirX + dz * dirZ) / distance : 1;
           if (distance <= range && dot >= cosine) {
             this.ignite(victim, attacker.assembled.seat, vp, (weapon.def.dps ?? 0) * FIXED_DT);
           }
@@ -706,6 +774,11 @@ export class DamageSystem {
       vel: [v.x, v.y, v.z],
       weapons,
       detached: bot.detached,
+      partCondition: bot.assembled.spec.parts.map((_, index) => {
+        const part = bot.assembled.parts.find((candidate) => candidate.idx === index);
+        if (!part || part.detached) return 0;
+        return Math.max(0, Math.min(1, part.hp / Math.max(part.def.hp, Number.EPSILON)));
+      }),
       immobileFor: bot.immobileFor,
       damageDealt: bot.damageDealt,
       damageTaken: bot.damageTaken,

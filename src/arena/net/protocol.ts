@@ -22,7 +22,7 @@ import type {
   WeaponSlot
 } from "../sim/types";
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** One bot, one snapshot. Quaternion is sent whole; 4 floats beat unpack bugs. */
 export interface BotSnap {
@@ -42,6 +42,12 @@ export interface BotSnap {
   readonly wp: number;
   /** bit i set means BotSpec.parts[i] has fallen off */
   readonly detach: number;
+  /**
+   * Condition of each part, 0..255, indexed like BotSpec.parts. Damage has to
+   * be visible before something falls off or the fight reads as flat: this is
+   * what lets the renderer dent, scorch and smoke a part as it is worn down.
+   */
+  readonly pc: readonly number[];
   /** seconds of fire damage still burning, for the flame VFX */
   readonly burn: number;
 }

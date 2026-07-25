@@ -37,7 +37,7 @@ const partsOf = (extra: PlacedPart[]): PlacedPart[] => [...base.parts, ...extra]
 const costly = [...cat.parts].filter((p) => p.category !== "chassis").sort((a, b) => b.cost - a.cost)[0]!;
 check(
   "overBudget",
-  { ...base, parts: partsOf([{ partId: costly.id, cell: [0, 0], rot: 0 }]) },
+  { ...base, parts: partsOf([{ partId: costly.id, face: "deck", cell: [0, 0], rot: 0 }]) },
   false
 );
 
@@ -46,7 +46,7 @@ const firstDrive = base.parts.find((p) => cat.byId.get(p.partId)!.category === "
 check("overlap", { ...base, parts: partsOf([{ ...firstDrive }]) }, false);
 
 // 4. hanging off the deck
-check("outOfDeck", { ...base, parts: partsOf([{ partId: firstDrive.partId, cell: [40, 40], rot: 0 }]) }, false);
+check("outOfDeck", { ...base, parts: partsOf([{ partId: firstDrive.partId, face: "deck", cell: [40, 40], rot: 0 }]) }, false);
 
 // 5. fewer than two drives
 check("noDrive", { ...base, parts: base.parts.filter((p) => cat.byId.get(p.partId)!.category !== "drive") }, false);
@@ -55,11 +55,11 @@ check("noDrive", { ...base, parts: base.parts.filter((p) => cat.byId.get(p.partI
 const weapon = base.parts.find((p) => cat.byId.get(p.partId)!.category === "weapon");
 if (weapon) {
   const other = cat.parts.find((p) => p.category === "weapon" && p.id !== weapon.partId)!;
-  check("twoWeapons", { ...base, parts: partsOf([{ partId: other.id, cell: [0, 0], rot: 0 }]) }, false);
+  check("twoWeapons", { ...base, parts: partsOf([{ partId: other.id, face: "deck", cell: [0, 0], rot: 0 }]) }, false);
 }
 
 // 7. garbage input must not crash the host
-check("unknownPart", { ...base, parts: partsOf([{ partId: "does-not-exist", cell: [0, 0], rot: 0 }]) }, false);
+check("unknownPart", { ...base, parts: partsOf([{ partId: "does-not-exist", face: "deck", cell: [0, 0], rot: 0 }]) }, false);
 check("unknownChassis", { ...base, chassisId: "nope" }, false);
 check("emptyBuild", { ...base, parts: [] }, false);
 

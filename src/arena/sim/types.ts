@@ -53,10 +53,93 @@ export type WeaponEffect =
   /** no moving parts; wedges, forks and spikes win by geometry */
   | "static";
 
-/** Which button drives it. Two weapons means two buttons. */
-export type WeaponSlot = "primary" | "secondary";
+/** Which button drives it. Three weapons means three buttons. */
+export type WeaponSlot = "primary" | "secondary" | "tertiary";
+
+/** Fixed key for each slot, shown in the builder and the HUD. */
+export const SLOT_KEYS: readonly (readonly [WeaponSlot, string])[] = [
+  ["primary", "Space"],
+  ["secondary", "Shift"],
+  ["tertiary", "F"]
+];
+
+/**
+ * Fine-grained type, purely for letting the player find things. `category`
+ * still drives the rules; this drives the filter list, because "weapon" is
+ * useless when you are hunting for a drill.
+ */
+export type PartType =
+  | "frame"
+  | "wheel"
+  | "track"
+  | "spinner"
+  | "drum"
+  | "saw"
+  | "drill"
+  | "flipper"
+  | "lifter"
+  | "spear"
+  | "hammer"
+  | "crusher"
+  | "flame"
+  | "wedge"
+  | "fork"
+  | "spike"
+  | "plate"
+  | "applique"
+  | "skirt"
+  | "srimech"
+  | "power"
+  | "booster";
+
+/** Japanese labels for the builder's type filter, in display order. */
+export const PART_TYPE_LABELS: readonly (readonly [PartType, string])[] = [
+  ["frame", "フレーム"],
+  ["wheel", "タイヤ系"],
+  ["track", "ベルト系"],
+  ["spinner", "スピナー系"],
+  ["drum", "ドラム系"],
+  ["saw", "のこぎり系"],
+  ["drill", "ドリル系"],
+  ["flipper", "フリッパー"],
+  ["lifter", "リフター"],
+  ["spear", "スピア"],
+  ["hammer", "ハンマー"],
+  ["crusher", "クラッシャー"],
+  ["flame", "火炎"],
+  ["wedge", "ウェッジ"],
+  ["fork", "フォーク"],
+  ["spike", "スパイク"],
+  ["plate", "装甲板"],
+  ["applique", "貼付装甲"],
+  ["skirt", "スカート"],
+  ["srimech", "自立機構"],
+  ["power", "電源"],
+  ["booster", "ブースター"]
+];
+
+/**
+ * Which surface of the hull a part bolts to. Wheels tucked underneath give a
+ * low, hard-to-flip machine; wheels hung on the flanks are exposed but let the
+ * bot drive upside down; tracks belong on the sides. Restricting everything to
+ * the top deck made every robot look the same.
+ */
+export type MountFace = "deck" | "underside" | "left" | "right" | "front" | "rear";
+
+export const MOUNT_FACE_LABELS: readonly (readonly [MountFace, string])[] = [
+  ["deck", "上面"],
+  ["underside", "底面"],
+  ["left", "左側面"],
+  ["right", "右側面"],
+  ["front", "前面"],
+  ["rear", "背面"]
+];
 
 interface PartDefBase {
+  /** fine-grained kind, for the builder's filter list */
+  readonly type: PartType;
+  /** faces this part may bolt to; the builder greys out the rest */
+  readonly faces: readonly MountFace[];
   /** stable kebab-case key; referenced by BotSpec and never renamed */
   readonly id: string;
   readonly name: string;
@@ -99,6 +182,8 @@ export interface ChassisDef extends PartDefBase {
   readonly deck: readonly [number, number];
   /** m between the deck underside and the floor */
   readonly groundClearance: number;
+  /** how many cells tall the flanks are, giving the side faces a grid */
+  readonly heightCells: number;
   /** drive still works upside down (a real invertible design) */
   readonly invertible: boolean;
 }
@@ -198,17 +283,24 @@ export interface Catalog {
   readonly byId: ReadonlyMap<string, PartDef>;
 }
 
-/** A part bolted onto the deck at a cell, rotated in quarter turns. */
+/**
+ * A part bolted to one face of the hull at a cell, rotated in quarter turns.
+ * Cell coordinates are read in that face's own grid:
+ *   deck / underside -> (x, z) over deck[0] x deck[1]
+ *   left / right     -> (z, y) over deck[1] x heightCells
+ *   front / rear     -> (x, y) over deck[0] x heightCells
+ */
 export interface PlacedPart {
   readonly partId: string;
-  /** top-left cell of the footprint, deck coordinates */
+  readonly face: MountFace;
+  /** top-left cell of the footprint in the face's grid */
   readonly cell: readonly [number, number];
   readonly rot: Rot4;
 }
 
 /** Everything a player designs. Serialisable, shareable, untrusted over the wire. */
 export interface BotSpec {
-  readonly v: 2;
+  readonly v: 3;
   readonly name: string;
   readonly chassisId: string;
   /** livery colour, 0xRRGGBB */
@@ -224,7 +316,12 @@ export interface RoomSettings {
   readonly matchSec: number;
 }
 
-export const POINT_BUDGET_PRESETS = [600, 1000, 1500, 2200] as const;
+/**
+ * Room budgets. The top tier exists so the absurd hardware has somewhere to
+ * live: a 900-point disc or a 700-point slab of armour is unaffordable in a
+ * normal match, which is exactly what makes a MAYHEM room worth opening.
+ */
+export const POINT_BUDGET_PRESETS = [600, 1000, 1500, 2200, 3200] as const;
 export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   pointBudget: 1000,
   arenaId: "the-box",
@@ -248,6 +345,7 @@ export interface BuildStats {
   readonly driveCount: number;
   readonly primaryId: string | null;
   readonly secondaryId: string | null;
+  readonly tertiaryId: string | null;
   readonly hasSelfRight: boolean;
   readonly invertible: boolean;
 }
@@ -270,10 +368,12 @@ export interface MatchInput {
   readonly throttle: number;
   /** -1 left .. 1 right */
   readonly steer: number;
-  /** primary weapon button */
+  /** primary weapon button (Space) */
   readonly primary: boolean;
-  /** secondary weapon button */
+  /** secondary weapon button (Shift) */
   readonly secondary: boolean;
+  /** tertiary weapon button (F) */
+  readonly tertiary: boolean;
   /** self-right requested this frame */
   readonly selfRight: boolean;
 }
@@ -283,6 +383,7 @@ export const NEUTRAL_INPUT: MatchInput = {
   steer: 0,
   primary: false,
   secondary: false,
+  tertiary: false,
   selfRight: false
 };
 
@@ -323,6 +424,8 @@ export interface BotState {
   readonly weapons: readonly WeaponState[];
   /** indices into BotSpec.parts that have fallen off */
   readonly detached: readonly number[];
+  /** 0..1 condition per BotSpec.parts index, so damage shows before it falls off */
+  readonly partCondition: readonly number[];
   /** seconds the bot has been under the immobility threshold */
   readonly immobileFor: number;
   readonly damageDealt: number;
