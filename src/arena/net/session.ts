@@ -1,4 +1,9 @@
-import { FIXED_DT, INPUT_HZ, SNAPSHOT_HZ } from "../sim/balance";
+import {
+  FIXED_DT,
+  INPUT_HZ,
+  SNAPSHOT_HZ
+} from "../sim/balance";
+import { deployVersionForSim } from "../sim/world";
 import {
   NEUTRAL_INPUT,
   SEATS,
@@ -19,6 +24,7 @@ import {
   type Wire,
   type WireConn,
 } from "./protocol";
+import { shouldIncludeDeploy, snapshotFromState } from "./snapshot";
 
 export interface SessionDeps {
   validateBuild(spec: BotSpec, settings: RoomSettings): { ok: boolean; errors: readonly string[] };
@@ -139,42 +145,14 @@ function arenaDescriptor(id: string): ArenaDef {
   };
 }
 
-function snapshotOf(sim: ArenaSim): Snapshot {
+const lastDeployVersion = new WeakMap<ArenaSim, number>();
+
+export function snapshotOf(sim: ArenaSim): Snapshot {
   const state = sim.getState();
-  return {
-    tick: state.tick,
-    elapsed: state.elapsed,
-    phase: state.phase,
-    bots: state.bots.map((bot) => ({
-      seat: bot.seat,
-      alive: bot.alive,
-      hp: bot.chassisHp,
-      x: bot.pos[0],
-      y: bot.pos[1],
-      z: bot.pos[2],
-      qx: bot.quat[0],
-      qy: bot.quat[1],
-      qz: bot.quat[2],
-      qw: bot.quat[3],
-      w: bot.weapons.map((weapon) => ({
-        idx: weapon.partIdx,
-        slot: weapon.slot,
-        on: weapon.active,
-        a: weapon.angle,
-        o: weapon.omega,
-        c: weapon.charge,
-        f: weapon.fuel,
-      })),
-      wp: 0,
-      detach: bot.detached.reduce((mask, index) => mask + 2 ** index, 0),
-      pc: bot.partCondition.map((condition) =>
-        Math.max(0, Math.min(255, Math.round(condition * 255)))
-      ),
-      burn: bot.burningFor,
-      pl: [0, 255, 255, 0],
-    })),
-    events: sim.drainEvents(),
-  };
+  const dv = deployVersionForSim(sim);
+  const includeDeploy = shouldIncludeDeploy(lastDeployVersion.get(sim), dv, state.tick);
+  lastDeployVersion.set(sim, dv);
+  return snapshotFromState(state, dv, sim.drainEvents(), includeDeploy);
 }
 
 class HostSessionImpl implements HostSession {

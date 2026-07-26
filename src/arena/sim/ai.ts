@@ -86,6 +86,13 @@ function wantsWeapon(
   if (def.effect === "flame") {
     return distance <= (def.coneRange ?? def.reach) && facingDot >= Math.cos(def.coneAngle ?? 0);
   }
+  if (def.effect === "net" || def.effect === "harpoon") {
+    return (
+      distance <= (def.range ?? def.reach) &&
+      facingDot > 0.94 &&
+      (state?.charge ?? 1) >= 1
+    );
+  }
   if (def.effect === "grind") return distance <= Math.max(1.2, def.reach + 0.8);
   if (def.effect === "impulse" || def.effect === "clamp") {
     return distance <= Math.max(1.35, def.reach + 0.8) && (state?.charge ?? 1) >= 1;
@@ -157,6 +164,29 @@ export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
     targetZ = -targetZ;
   }
 
+  // The owner's pads are solid and dangerous to its own drives. Use the same
+  // projected-path avoidance pattern as the pit logic below.
+  for (const entity of state.entities) {
+    if (
+      entity.owner !== seat ||
+      entity.kind === "net" ||
+      entity.kind === "harpoon"
+    ) {
+      continue;
+    }
+    const trapX = entity.x - bot.pos[0];
+    const trapZ = entity.z - bot.pos[2];
+    const trapDistance = Math.hypot(trapX, trapZ);
+    const lookAhead = Math.max(1.2, Math.min(2.5, targetDistance));
+    const projectedX = bot.pos[0] + targetX * lookAhead;
+    const projectedZ = bot.pos[2] + targetZ * lookAhead;
+    const pathHitsTrap = Math.hypot(projectedX - entity.x, projectedZ - entity.z) < 0.8;
+    if (trapDistance < 1.2 || pathHitsTrap) {
+      [targetX, targetZ] = normalize(-trapX + trapZ, -trapZ - trapX);
+      break;
+    }
+  }
+
   const arena = arenaForSim(sim);
   if (arena?.pit) {
     const pitX = arena.pit.x - bot.pos[0];
@@ -198,7 +228,10 @@ export function aiInput(sim: ArenaSim, seat: SeatIndex): MatchInput {
   let tertiary = false;
   for (const def of weaponsForSim(sim, seat)) {
     const weaponState = bot.weapons.find((weapon) => weapon.slot === def.slot);
-    const wants = wantsWeapon(def, weaponState, targetDistance, facingDot);
+    const wants =
+      def.effect === "deploy"
+        ? ai.disengageFor > 0 && (weaponState?.charge ?? 1) >= 1
+        : wantsWeapon(def, weaponState, targetDistance, facingDot);
     if (def.slot === "primary") primary ||= wants;
     else if (def.slot === "secondary") secondary ||= wants;
     else tertiary ||= wants;

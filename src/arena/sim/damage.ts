@@ -14,12 +14,18 @@ import {
   CONTACT_COOLDOWN,
   CONTROL_RANGE,
   CONTROL_UNIT,
+  DISABLE_CONTROL_RATE,
+  DISABLE_GRACE_SEC,
   DEBRIS_LIFETIME,
+  DRIVE_ANGULAR_DAMPING,
+  DRIVE_LINEAR_DAMPING,
   FIXED_DT,
   FLAME_ARMOR_FACTOR,
   IMMOBILE_SEC,
   IMMOBILE_SPEED,
   IMMOBILE_WEAPON_OMEGA,
+  NET_ANGULAR_DAMPING,
+  NET_LINEAR_DAMPING,
   IMPACT_SCALE,
   HEAVY_COLLISION_ANGULAR_IMPULSE,
   HEAVY_COLLISION_IMPULSE,
@@ -70,6 +76,14 @@ export interface DamageBot {
   lastNearestDistance: number;
   burningFor: number;
   burningBy: SeatIndex | null;
+  nettedFor: number;
+  pinnedFor: number;
+  oiledFor: number;
+  tetheredBy: SeatIndex | null;
+  disabledBy: SeatIndex | null;
+  disableGraceFor: number;
+  wasDisabled: boolean;
+  netDampingApplied: boolean;
 }
 
 interface Debris {
@@ -158,6 +172,68 @@ export class DamageSystem {
 
   registerSaw(handle: number): void {
     this.sawColliders.add(handle);
+  }
+
+  ownerForCollider(handle: number): ColliderOwner | null {
+    return this.ownerByCollider.get(handle) ?? null;
+  }
+
+  isDriveOwner(owner: ColliderOwner): boolean {
+    return this.partFor(owner)?.def.category === "drive";
+  }
+
+  botForSeat(seat: SeatIndex): DamageBot | null {
+    return this.botBySeat.get(seat) ?? null;
+  }
+
+  applyTrapDamage(
+    owner: ColliderOwner,
+    amount: number,
+    by: SeatIndex,
+    point: RAPIER.Vector,
+    armorFactor: number
+  ): number {
+    const bot = this.botBySeat.get(owner.seat);
+    if (!bot?.alive) return 0;
+    return this.damageTarget(bot, owner, amount, by, point, "deploy", { armorFactor });
+  }
+
+  applyProjectileDamage(
+    owner: ColliderOwner,
+    amount: number,
+    by: SeatIndex,
+    point: RAPIER.Vector,
+    effect: "net" | "harpoon"
+  ): number {
+    const bot = this.botBySeat.get(owner.seat);
+    if (!bot?.alive) return 0;
+    return this.damageTarget(bot, owner, amount, by, point, effect, { armorFactor: 0.5 });
+  }
+
+  applyNet(seat: SeatIndex, by: SeatIndex, seconds: number): void {
+    const bot = this.botBySeat.get(seat);
+    if (!bot?.alive) return;
+    bot.nettedFor = Math.max(bot.nettedFor, seconds);
+    bot.disabledBy = by;
+  }
+
+  applyPin(seat: SeatIndex, by: SeatIndex, seconds: number): void {
+    const bot = this.botBySeat.get(seat);
+    if (!bot?.alive) return;
+    bot.pinnedFor = Math.max(bot.pinnedFor, seconds);
+    bot.disabledBy = by;
+  }
+
+  applyOil(seat: SeatIndex, seconds: number): void {
+    const bot = this.botBySeat.get(seat);
+    if (bot?.alive) bot.oiledFor = Math.max(bot.oiledFor, seconds);
+  }
+
+  setTether(seat: SeatIndex, by: SeatIndex | null): void {
+    const bot = this.botBySeat.get(seat);
+    if (!bot) return;
+    bot.tetheredBy = by;
+    if (by !== null) bot.disabledBy = by;
   }
 
   private partFor(owner: ColliderOwner): RuntimePart | null {
@@ -681,10 +757,35 @@ export class DamageSystem {
     this.updateBurning();
     for (const bot of this.bots) {
       if (!bot.alive) continue;
+      bot.nettedFor = Math.max(0, bot.nettedFor - FIXED_DT);
+      bot.pinnedFor = Math.max(0, bot.pinnedFor - FIXED_DT);
+      bot.oiledFor = Math.max(0, bot.oiledFor - FIXED_DT);
+      if (bot.nettedFor > 0) {
+        bot.assembled.chassis.setLinearDamping(NET_LINEAR_DAMPING);
+        bot.assembled.chassis.setAngularDamping(NET_ANGULAR_DAMPING);
+        bot.netDampingApplied = true;
+      } else if (bot.netDampingApplied) {
+        // Never restore a cached value: overlapping nets would cache the
+        // already-raised damping and make the second release permanent.
+        bot.assembled.chassis.setLinearDamping(DRIVE_LINEAR_DAMPING);
+        bot.assembled.chassis.setAngularDamping(DRIVE_ANGULAR_DAMPING);
+        bot.netDampingApplied = false;
+      }
       const body = bot.assembled.chassis;
       const position = body.translation();
       const speed = magnitude(body.linvel());
-      if (speed < IMMOBILE_SPEED && this.maximumWeaponOmega(bot) < IMMOBILE_WEAPON_OMEGA) {
+      const disabled =
+        bot.nettedFor > 0 || bot.pinnedFor > 0 || bot.tetheredBy !== null;
+      if (disabled) {
+        // Enemy holds freeze the anti-stall clock. Resetting here would let a
+        // bot at 9 seconds evade the KO forever by receiving another net.
+        bot.wasDisabled = true;
+      } else if (bot.wasDisabled) {
+        bot.wasDisabled = false;
+        bot.disableGraceFor = DISABLE_GRACE_SEC;
+      } else if (bot.disableGraceFor > 0) {
+        bot.disableGraceFor = Math.max(0, bot.disableGraceFor - FIXED_DT);
+      } else if (speed < IMMOBILE_SPEED && this.maximumWeaponOmega(bot) < IMMOBILE_WEAPON_OMEGA) {
         bot.immobileFor += FIXED_DT;
       } else {
         bot.immobileFor = 0;
@@ -711,11 +812,23 @@ export class DamageSystem {
         nearEnemy ||= distance <= CONTROL_RANGE;
       }
       if (Number.isFinite(nearest) && Number.isFinite(bot.lastNearestDistance)) {
-        bot.aggression += Math.max(0, bot.lastNearestDistance - nearest) / AGGRESSION_UNIT;
+        if (bot.tetheredBy === null) {
+          bot.aggression += Math.max(0, bot.lastNearestDistance - nearest) / AGGRESSION_UNIT;
+        }
       }
       bot.lastNearestDistance = nearest;
       if (nearEnemy && magnitude(bot.assembled.chassis.linvel()) >= IMMOBILE_SPEED) {
         bot.control += FIXED_DT / CONTROL_UNIT;
+      }
+    }
+    for (const victim of this.bots) {
+      const disabled =
+        victim.alive &&
+        (victim.nettedFor > 0 || victim.pinnedFor > 0 || victim.tetheredBy !== null);
+      if (!disabled || victim.disabledBy === null) continue;
+      const attacker = this.botBySeat.get(victim.disabledBy);
+      if (attacker?.alive) {
+        attacker.control += DISABLE_CONTROL_RATE * FIXED_DT / CONTROL_UNIT;
       }
     }
   }
@@ -797,7 +910,12 @@ export class DamageSystem {
       inverted: upDot < INVERTED_DOT,
       burningFor: bot.burningFor,
       selfRightCooldown: bot.assembled.selfRightCooldown,
-      plant: plantState(bot.assembled)
+      plant: plantState(bot.assembled),
+      nettedFor: bot.nettedFor,
+      pinnedFor: bot.pinnedFor,
+      oiledFor: bot.oiledFor,
+      tetheredBy: bot.tetheredBy,
+      disabledBy: bot.disabledBy
     };
   }
 

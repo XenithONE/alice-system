@@ -20,6 +20,10 @@ import type { MatchInput, MatchPhase, SimEvent } from "./types";
 export interface DriverFrame {
   readonly inverted: boolean;
   readonly alive?: boolean;
+  /** Enemy holds stop only the drive; weapons deliberately remain enabled. */
+  readonly driveDisabled?: boolean;
+  /** Oil leaves steering available but weakens the non-contact traction assist. */
+  readonly tractionMul?: number;
 }
 
 export interface DriverTuning {
@@ -190,28 +194,85 @@ function totalBotMass(bot: AssembledBot): number {
   return Math.max(mass, Number.EPSILON);
 }
 
-function applyYawHold(bot: AssembledBot, steer: number, tuning: DriverTuning): void {
-  if (Math.abs(steer) >= 0.05 || tuning.yawHoldAssist <= 0) return;
+/**
+ * The reaction brake: the path a weapon's spin-up torque takes into the floor.
+ *
+ * Without it a passive rotor's reaction goes straight into the chassis and the
+ * machine turns itself — measured at -146 deg in the first second for a heavy
+ * disc and -178 for a front drum. The linear traction assist could never have
+ * helped, because it is an impulse along the forward axis with y pinned to zero.
+ *
+ * All three axes, not just yaw. A rotor's reaction lands on the axis its joint
+ * turns about, and that depends on the mount face: a horizontal spinner on the
+ * deck reacts in yaw, but the same weapon on the front or the rear reacts in
+ * ROLL, and a vertical spinner reacts in PITCH about the wheels' own axle line —
+ * the one rotation the drivetrain does not constrain at all. A yaw-only brake
+ * leaves those two free, and a yaw-only gate cannot even see them: the tire-shred
+ * preset, which carries a low saw front and back, rolled 1,075 degrees.
+ *
+ * Each axis is capped by what the machine could actually resist through its
+ * contact patches — yaw by the tyres' grip across the track, pitch and roll by
+ * the moment that would tip it — so a machine with no wheels gets no help and a
+ * machine with one side of them gets half. Steering suppresses yaw only; you
+ * should still be able to spin turn while the brake holds the other two.
+ */
+function applyReactionBrake(bot: AssembledBot, steer: number, tuning: DriverTuning): void {
+  if (tuning.yawHoldAssist <= 0) return;
   const drives = bot.drives.filter((drive) => !drive.detached);
   if (drives.length < 2) return;
+
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
   let tractionForce = 0;
   for (const drive of drives) {
     minX = Math.min(minX, drive.local[0]);
     maxX = Math.max(maxX, drive.local[0]);
+    minZ = Math.min(minZ, drive.local[2]);
+    maxZ = Math.max(maxZ, drive.local[2]);
     tractionForce +=
       drive.def.torque * bot.powerMul /
       Math.max(drive.def.radius, Number.EPSILON);
   }
-  const contactSpan = Math.max(0, maxX - minX);
-  const maxTorque = tractionForce * contactSpan / 2 * tuning.yawHoldAssist;
-  if (maxTorque <= 0) return;
-  const yawRate = bot.chassis.angvel().y;
-  const yawInertia = Math.max(bot.chassis.principalInertia().y, Number.EPSILON);
-  const requestedTorque = -yawRate * yawInertia / FIXED_DT;
-  const torque = Math.max(-maxTorque, Math.min(maxTorque, requestedTorque));
-  bot.chassis.addTorque({ x: 0, y: torque, z: 0 }, true);
+  const trackHalf = Math.max(0, maxX - minX) / 2;
+  const baseHalf = Math.max(0, maxZ - minZ) / 2;
+
+  // chassis.mass() counts the hull only; every wheel is its own rigid body, and
+  // it is exactly the light machines that flip worst.
+  let totalMass = bot.chassis.mass();
+  for (const part of bot.parts) {
+    if (part.detached || part.body === bot.chassis) continue;
+    if (part.body.isValid()) totalMass += part.body.mass();
+  }
+  const weight = totalMass * 9.81;
+
+  // No traction to push against while the machine is off the ground.
+  const grounded = Math.max(0, 1 - Math.abs(bot.chassis.linvel().y) / 2);
+  if (grounded <= 0) return;
+
+  const caps = {
+    x: weight * baseHalf,                       // pitch: the tipping moment
+    y: tractionForce * trackHalf,               // yaw: what the tyres can bite
+    z: weight * trackHalf                       // roll: the tipping moment
+  };
+  const rate = bot.chassis.angvel();
+  const inertia = bot.chassis.principalInertia();
+  const scale = tuning.yawHoldAssist * grounded;
+  const brake = (axisRate: number, axisInertia: number, cap: number): number => {
+    const limit = Math.max(0, cap) * scale;
+    if (limit <= 0) return 0;
+    const requested = -axisRate * Math.max(axisInertia, Number.EPSILON) / FIXED_DT;
+    return Math.max(-limit, Math.min(limit, requested));
+  };
+  bot.chassis.addTorque(
+    {
+      x: brake(rate.x, inertia.x, caps.x),
+      y: Math.abs(steer) >= 0.05 ? 0 : brake(rate.y, inertia.y, caps.y),
+      z: brake(rate.z, inertia.z, caps.z)
+    },
+    true
+  );
 }
 
 export function driveBot(
@@ -225,9 +286,10 @@ export function driveBot(
   bot.selfRightCooldown = Math.max(0, bot.selfRightCooldown - FIXED_DT);
   const alive = frame.alive !== false;
   const enabled = phase === "live" && alive;
+  const driveEnabled = enabled && frame.driveDisabled !== true;
   const alloc = allocatePower(bot, input, phase, alive);
-  const throttle = enabled ? clamp(input.throttle) : 0;
-  const steer = enabled ? clamp(input.steer) : 0;
+  const throttle = driveEnabled ? clamp(input.throttle) : 0;
+  const steer = driveEnabled ? clamp(input.steer) : 0;
   const left = clamp(throttle + steer);
   const right = clamp(throttle - steer);
   let driveCommand = 0;
@@ -244,7 +306,7 @@ export function driveBot(
     targetSpeed = Math.min(targetSpeed, drive.def.maxOmega * drive.def.radius);
     drive.joint.configureMotorVelocity(
       -command * drive.def.maxOmega,
-      drive.def.torque * bot.powerMul * alloc.driveScale
+      driveEnabled ? drive.def.torque * bot.powerMul * alloc.driveScale : 0
     );
   }
   if (driveCount > 0 && Math.abs(driveCommand) > Number.EPSILON) {
@@ -260,14 +322,14 @@ export function driveBot(
     const mass = totalBotMass(bot);
     const maxDelta =
       tractionAcceleration * bot.powerMul * alloc.driveScale /
-      mass * DRIVE_TRACTION_ASSIST * FIXED_DT;
+      mass * DRIVE_TRACTION_ASSIST * (frame.tractionMul ?? 1) * FIXED_DT;
     const delta = Math.max(-maxDelta, Math.min(maxDelta, desired - current));
     bot.chassis.applyImpulse(
       { x: dirX * delta * mass, y: 0, z: dirZ * delta * mass },
       true
     );
   }
-  applyYawHold(bot, steer, tuning);
+  if (driveEnabled) applyReactionBrake(bot, steer, tuning);
   refillHeldWeapons(bot, input, enabled);
   for (const [index, weapon] of bot.weapons.entries()) {
     updateWeapon(bot, weapon, input, enabled, events, tuning, alloc.weaponW[index] ?? 0);

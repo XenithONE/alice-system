@@ -58,6 +58,10 @@ export const DRY_LOCKOUT = 1.5;
 export const IMMOBILE_SPEED = 0.15;
 export const IMMOBILE_WEAPON_OMEGA = 1;
 export const IMMOBILE_SEC = 10;
+/** Enemy holds freeze the KO clock; after release it resumes from the frozen value. */
+export const DISABLE_GRACE_SEC = 1.5;
+/** One second of an enemy hold is worth one second of ordinary pushing. */
+export const DISABLE_CONTROL_RATE = 1;
 /** Below this height the bot has gone into the pit. */
 export const PIT_Y = -1.5;
 /** Chassis up-vector dot world-up below this counts as inverted. */
@@ -75,6 +79,35 @@ export const AGGRESSION_UNIT = 1;
 export const CONTROL_UNIT = 1;
 /** A rival must be within this to count as being controlled. */
 export const CONTROL_RANGE = 1.4;
+
+/* ---------------- deployables and projectiles (v5) ---------------- */
+
+export const DEPLOY_PAD_HALF_HEIGHT = 0.012;
+export const DEPLOY_CAP_PER_SEAT = 5;
+export const DEPLOY_CAP_GLOBAL = 20;
+export const DEPLOY_TTL = 25;
+export const DEPLOY_MIN_SPACING = 0.45;
+export const CALTROP_DAMAGE = 15;
+export const CALTROP_HITS = 6;
+export const MINE_ARM_SEC = 1;
+export const MINE_DAMAGE = 120;
+export const MINE_IMPULSE = 720;
+export const GLUE_SEC = 3;
+export const OIL_CONTACT_SEC = 0.12;
+export const OIL_TRACTION_MUL = 0.18;
+
+export const PROJECTILE_CAP = 4;
+export const PROJECTILE_TTL = 2.2;
+export const NET_SEC = 3;
+export const NET_LINEAR_DAMPING = 5.5;
+export const NET_ANGULAR_DAMPING = 4;
+export const TETHER_MIN_LEN = 0.9;
+export const TETHER_MAX_LEN = 4;
+export const TETHER_MAX_FORCE = 1800;
+export const TETHER_BREAK_IMPULSE = 340;
+
+/** Five-second deployable keyframes at the 20 Hz snapshot cadence. */
+export const DEP_KEYFRAME_TICKS = 100;
 
 /**
  * Stalemate breaking. Two robots pressed together generate almost no contact

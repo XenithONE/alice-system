@@ -4,7 +4,7 @@ import { CELL, type ArenaDef, type BotSpec, type Catalog, type ChassisDef, type 
 import { INTERP_DELAY } from "../sim/balance";
 import { CAM_DISTANCE, chaseCameraPose, smoothChaseYaw } from "../sim/chaseCamera";
 import { chassisForward } from "../sim/heading";
-import type { BotSnap, Snapshot, WeaponSnap } from "../net/protocol";
+import type { BotSnap, EntSnap, Snapshot, WeaponSnap } from "../net/protocol";
 import {
   applyWeaponRig,
   createIndustrialPart,
@@ -14,6 +14,7 @@ import {
 import { mountPartObject } from "./mounting";
 import type { ProceduralDrive } from "./procedural/types";
 import { configureRenderer, installStudioEnvironment } from "./renderEnv";
+import { createEntityVisual, type EntityVisual } from "./deployKit";
 
 const MAX_SNAPSHOTS = 48;
 const MAX_SPARKS = 96;
@@ -263,6 +264,16 @@ function lerpBot(a: BotSnap, b: BotSnap, alpha: number): BotSnap {
   };
 }
 
+function lerpEnt(a: EntSnap, b: EntSnap, alpha: number): EntSnap {
+  return {
+    ...b,
+    x: THREE.MathUtils.lerp(a.x, b.x, alpha),
+    y: THREE.MathUtils.lerp(a.y, b.y, alpha),
+    z: THREE.MathUtils.lerp(a.z, b.z, alpha),
+    r: THREE.MathUtils.lerp(a.r, b.r, alpha)
+  };
+}
+
 export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, quality: ArenaQuality = {}): ArenaScene {
   const settings = autoQuality(quality);
   const parameters: THREE.WebGLRendererParameters = {
@@ -281,8 +292,9 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
   const camera = new THREE.PerspectiveCamera(42, 1, 0.06, 120);
   const arenaRoot = new THREE.Group();
   const botRoot = new THREE.Group();
+  const entRoot = new THREE.Group();
   const vfxRoot = new THREE.Group();
-  scene.add(arenaRoot, botRoot, vfxRoot);
+  scene.add(arenaRoot, botRoot, entRoot, vfxRoot);
   scene.add(new THREE.HemisphereLight(0x536570, 0x120b07, 0.26));
   const rim = new THREE.DirectionalLight(0x4b86a3, 1.4);
   rim.position.set(-8, 6, 5);
@@ -345,6 +357,10 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
   let arena: ArenaDef | null = null;
   let mySeat: SeatIndex = 0;
   const bots = new Map<number, BotVisual>();
+  const ents = new Map<number, EntityVisual>();
+  let depCache: EntSnap[] = [];
+  let depVersion = -1;
+  let tetherLines: THREE.Line[] = [];
   let snapshots: TimedSnapshot[] = [];
   let clock = 0;
   let frame = 0;
@@ -577,6 +593,45 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       }
     }
   }
+
+  function resetEntities(): void {
+    disposeObject(entRoot);
+    ents.clear();
+    depCache = [];
+    depVersion = -1;
+    tetherLines = Array.from({ length: 4 }, () => {
+      const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(),
+        new THREE.Vector3()
+      ]);
+      const line = new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({ color: 0xd0b06b })
+      );
+      line.visible = false;
+      entRoot.add(line);
+      return line;
+    });
+  }
+
+  function syncDeploys(snapshot: Snapshot): void {
+    if (snapshot.dep === undefined || snapshot.dv === depVersion) return;
+    depVersion = snapshot.dv;
+    depCache = [...snapshot.dep];
+    const wanted = new Set(depCache.map((entity) => entity.i));
+    for (const [id, visual] of [...ents]) {
+      if (visual.kind >= 4 || wanted.has(id)) continue;
+      entRoot.remove(visual.root);
+      disposeObject(visual.root);
+      ents.delete(id);
+    }
+    for (const entity of depCache) {
+      if (ents.has(entity.i)) continue;
+      const visual = createEntityVisual(entity);
+      ents.set(entity.i, visual);
+      entRoot.add(visual.root);
+    }
+  }
   function sampledBots(): BotSnap[] {
     if (snapshots.length === 0) return [];
     const target = clock - INTERP_DELAY;
@@ -595,6 +650,65 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       const previous = older.snapshot.bots.find((bot) => bot.seat === next.seat);
       return previous ? lerpBot(previous, next, alpha) : next;
     });
+  }
+
+  function sampledEnts(): EntSnap[] {
+    if (snapshots.length === 0) return [];
+    const target = clock - INTERP_DELAY;
+    let older = snapshots[0]!;
+    let newer = snapshots[snapshots.length - 1]!;
+    for (const candidate of snapshots) {
+      if (candidate.receivedAt <= target) older = candidate;
+      if (candidate.receivedAt >= target) {
+        newer = candidate;
+        break;
+      }
+    }
+    if (older === newer || newer.receivedAt <= older.receivedAt) {
+      return [...older.snapshot.proj];
+    }
+    const alpha = THREE.MathUtils.clamp(
+      (target - older.receivedAt) / (newer.receivedAt - older.receivedAt),
+      0,
+      1
+    );
+    return newer.snapshot.proj.map((next) => {
+      const previous = older.snapshot.proj.find((entity) => entity.i === next.i);
+      return previous ? lerpEnt(previous, next, alpha) : next;
+    });
+  }
+
+  function applyEntities(next: readonly EntSnap[], nextBots: readonly BotSnap[]): void {
+    const wanted = new Set(next.map((entity) => entity.i));
+    for (const [id, visual] of [...ents]) {
+      if (visual.kind < 4 || wanted.has(id)) continue;
+      entRoot.remove(visual.root);
+      disposeObject(visual.root);
+      ents.delete(id);
+    }
+    for (const entity of next) {
+      let visual = ents.get(entity.i);
+      if (!visual) {
+        visual = createEntityVisual(entity);
+        ents.set(entity.i, visual);
+        entRoot.add(visual.root);
+      }
+      visual.root.position.set(entity.x, entity.y, entity.z);
+      visual.root.rotation.y = entity.r;
+    }
+    let cableIndex = 0;
+    for (const victim of nextBots) {
+      if (victim.th < 0 || cableIndex >= tetherLines.length) continue;
+      const attacker = nextBots.find((candidate) => candidate.seat === victim.th);
+      if (!attacker) continue;
+      const line = tetherLines[cableIndex++]!;
+      const positions = line.geometry.getAttribute("position") as THREE.BufferAttribute;
+      positions.setXYZ(0, attacker.x, attacker.y + 0.3, attacker.z);
+      positions.setXYZ(1, victim.x, victim.y + 0.3, victim.z);
+      positions.needsUpdate = true;
+      line.visible = true;
+    }
+    while (cableIndex < tetherLines.length) tetherLines[cableIndex++]!.visible = false;
   }
   function applyBots(nextBots: readonly BotSnap[], dt: number): void {
     for (const snap of nextBots) {
@@ -766,6 +880,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     const safeDt = THREE.MathUtils.clamp(Number.isFinite(dt) ? dt : 0, 0, 0.1);
     clock += safeDt;
     const nextBots = sampledBots();
+    const nextEnts = sampledEnts();
     if (!reducedMotion && hitStopRemaining > 0) {
       hitStopRemaining = Math.max(0, hitStopRemaining - safeDt);
       updateCamera(nextBots, safeDt);
@@ -773,6 +888,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       return;
     }
     applyBots(nextBots, safeDt);
+    applyEntities(nextEnts, nextBots);
     updateVfx(safeDt);
     arenaRoot.traverse((object) => {
       if (object.name === "arena-saw") object.rotation.y += safeDt * 7;
@@ -806,6 +922,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
     setup(specs, names, nextArena, nextMySeat) {
       disposeObject(botRoot);
       bots.clear();
+      resetEntities();
       snapshots = [];
       clock = 0;
       lastSnapshotTick = -1;
@@ -834,6 +951,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       snapshots.push({ receivedAt: clock, snapshot });
       if (snapshots.length > MAX_SNAPSHOTS) snapshots.splice(0, snapshots.length - MAX_SNAPSHOTS);
       processEvents(snapshot);
+      syncDeploys(snapshot);
       if (!cameraPoseInitialized) updateCamera(snapshot.bots, 0, true);
     },
     debugTick(dt) { renderTick(dt); },
@@ -885,6 +1003,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       resizeObserver.disconnect();
       disposeObject(arenaRoot);
       disposeObject(botRoot);
+      disposeObject(entRoot);
       disposeObject(vfxRoot);
       environment.dispose();
       renderer.dispose();
@@ -893,6 +1012,9 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       scene.clear();
       snapshots = [];
       bots.clear();
+      ents.clear();
+      depCache = [];
+      depVersion = -1;
       arena = null;
     }
   };

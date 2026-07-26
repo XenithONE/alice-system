@@ -56,18 +56,22 @@ async function main(): Promise<void> {
     impulse: 0,
     clamp: 0,
     flame: 0,
-    static: 0
+    static: 0,
+    deploy: 0,
+    net: 0,
+    harpoon: 0
   };
   const winsBySeat: [number, number, number, number] = [0, 0, 0, 0];
   let stepMilliseconds = 0;
   let stepCount = 0;
   let durationTotal = 0;
+  const rosterSize = Math.min(catalog.presets.length, 11);
 
   for (let match = 0; match < MATCHES; match += 1) {
     let sim: ReturnType<typeof createArenaSim> | null = null;
     try {
       const specs = [0, 1, 2, 3].map(
-        (seat) => catalog.presets[(seat + match) % 6]!
+        (seat) => catalog.presets[(seat + match) % rosterSize]!
       );
       const arena = ARENAS[match % ARENAS.length]!;
       sim = createArenaSim({
@@ -172,7 +176,17 @@ async function main(): Promise<void> {
     output.koFinishes >= 10 &&
     output.detachTotal >= 15 &&
     output.avgStepMs < 4 &&
-    (["spin", "grind", "impulse", "clamp", "flame"] as const).every(
+    ([
+      "spin",
+      "grind",
+      "impulse",
+      "clamp",
+      "flame",
+      "static",
+      "deploy",
+      "net",
+      "harpoon"
+    ] as const).every(
       (effect) => output.damageByEffect[effect] > 0
     ) &&
     output.triggeredFires > 0 &&

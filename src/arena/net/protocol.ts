@@ -56,6 +56,33 @@ export interface BotSnap {
    * that says why the spinner is not coming up to speed.
    */
   readonly pl: readonly [number, number, number, number];
+  /** status bits: 1 netted, 2 pinned, 4 oiled, 8 being winched */
+  readonly st: number;
+  /**
+   * Seat whose harpoon has this bot on a cable, or -1. The cable is drawn from
+   * the two bot transforms the renderer already holds, so a tether never needs
+   * an entity of its own.
+   */
+  readonly th: number;
+}
+
+/**
+ * A trap on the floor or a projectile in flight. Quantise before stringify:
+ * the transport is JSON text (net/peer.ts uses serialization "json"), so
+ * rounding the numbers IS the compression, and it is worth about 40%.
+ */
+export interface EntSnap {
+  /** unique for the match, never reused */
+  readonly i: number;
+  /** kind * 4 + owner seat. kind: 0 caltrop 1 mine 2 oil 3 glue 4 net 5 harpoon */
+  readonly k: number;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  /** yaw, rad */
+  readonly r: number;
+  /** traps 0 fresh / 1 worn / 2 spent; projectiles 0 in flight */
+  readonly s: number;
 }
 
 /** Enough to draw a weapon and its readiness without re-deriving anything. */
@@ -78,6 +105,21 @@ export interface Snapshot {
   readonly elapsed: number;
   readonly phase: MatchPhase;
   readonly bots: readonly BotSnap[];
+  /** projectiles in flight; capped, short-lived, present on every snapshot */
+  readonly proj: readonly EntSnap[];
+  /** bumps whenever the deployed set changes; guests cache the last `dep` seen */
+  readonly dv: number;
+  /*
+   * The deployed traps, sent only when `dv` changed and on a keyframe every
+   * DEP_KEYFRAME_TICKS regardless. Traps never move, so sending them every
+   * frame would be five hundred identical copies of the same six numbers.
+   *
+   * The keyframe is mandatory, not defensive: App.tsx tears down and recreates
+   * the whole ArenaScene when the match config or seat changes and replays only
+   * the latest snapshot. If that snapshot is not a keyframe, the rebuilt scene
+   * never learns about traps laid before it existed — for the rest of the match.
+   */
+  readonly dep?: readonly EntSnap[];
   /** everything that happened since the previous snapshot, for VFX only */
   readonly events: readonly SimEvent[];
 }

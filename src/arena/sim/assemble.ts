@@ -261,7 +261,12 @@ export function assembleBot(
     if (
       def.category === "armor" ||
       def.category === "utility" ||
-      (def.category === "weapon" && (def.effect === "flame" || def.effect === "static"))
+      (def.category === "weapon" &&
+        (def.effect === "flame" ||
+          def.effect === "static" ||
+          def.effect === "deploy" ||
+          def.effect === "net" ||
+          def.effect === "harpoon"))
     ) {
       const collider = createBoxCollider(world, chassis, def, local, placed.rot, placed.face, seat);
       const runtime: RuntimePart = {

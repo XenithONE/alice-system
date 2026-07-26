@@ -5,14 +5,22 @@ import {
   type AssembledBot
 } from "./assemble";
 import { validateBuild } from "./build";
-import { COUNTDOWN_SEC, FIXED_DT, SAW_OMEGA, WALL_RESTITUTION } from "./balance";
+import {
+  COUNTDOWN_SEC,
+  FIXED_DT,
+  OIL_TRACTION_MUL,
+  SAW_OMEGA,
+  WALL_RESTITUTION
+} from "./balance";
 import { DamageSystem, type DamageBot } from "./damage";
+import { DeploySystem } from "./deploy";
 import { driveBot } from "./driver";
 import {
   internalTelemetry,
   type InternalTelemetry
 } from "./internals";
 import { mulberry32 } from "./rng";
+import { ProjectileSystem } from "./projectile";
 import {
   CELL,
   NEUTRAL_INPUT,
@@ -40,6 +48,10 @@ interface SimMetadata {
   readonly arena: ArenaDef;
   readonly weaponsBySeat: ReadonlyMap<SeatIndex, readonly WeaponDef[]>;
   readonly botsBySeat: ReadonlyMap<SeatIndex, AssembledBot>;
+  readonly world: RAPIER.World;
+  readonly damage: DamageSystem;
+  readonly deploy: DeploySystem;
+  readonly projectile: ProjectileSystem;
 }
 
 const metadata = new WeakMap<ArenaSim, SimMetadata>();
@@ -58,6 +70,51 @@ export function internalsForSim(
 ): InternalTelemetry | null {
   const bot = metadata.get(sim)?.botsBySeat.get(seat);
   return bot ? internalTelemetry(bot) : null;
+}
+
+export function deployVersionForSim(sim: ArenaSim): number {
+  return metadata.get(sim)?.deploy.deployVersion ?? 0;
+}
+
+export function arenaSimDiagnostics(sim: ArenaSim): {
+  readonly bodies: number;
+  readonly colliders: number;
+  readonly impulseJoints: number;
+  readonly deploys: number;
+  readonly projectiles: number;
+  readonly tethers: number;
+} | null {
+  const value = metadata.get(sim);
+  if (!value) return null;
+  return {
+    bodies: value.world.bodies.len(),
+    colliders: value.world.colliders.len(),
+    impulseJoints: value.world.impulseJoints.len(),
+    deploys: value.deploy.diagnostics().count,
+    projectiles: value.projectile.entities().length,
+    tethers: value.projectile.tetherCount()
+  };
+}
+
+/** Narrow white-box access used only by the permanent mechanism gates. */
+export function arenaSimTestHooks(sim: ArenaSim): {
+  readonly world: RAPIER.World;
+  readonly damage: DamageSystem;
+  readonly deploy: DeploySystem;
+  readonly projectile: ProjectileSystem;
+  readonly bots: readonly DamageBot[];
+} | null {
+  const value = metadata.get(sim);
+  if (!value) return null;
+  return {
+    world: value.world,
+    damage: value.damage,
+    deploy: value.deploy,
+    projectile: value.projectile,
+    bots: [...value.botsBySeat.keys()]
+      .map((seat) => value.damage.botForSeat(seat))
+      .filter((bot): bot is DamageBot => bot !== null)
+  };
 }
 
 function addFixedBox(
@@ -214,12 +271,22 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
       contactCount: 0,
       lastNearestDistance: Number.POSITIVE_INFINITY,
       burningFor: 0,
-      burningBy: null
+      burningBy: null,
+      nettedFor: 0,
+      pinnedFor: 0,
+      oiledFor: 0,
+      tetheredBy: null,
+      disabledBy: null,
+      disableGraceFor: 0,
+      wasDisabled: false,
+      netDampingApplied: false
     });
   }
   bots.sort((a, b) => a.assembled.seat - b.assembled.seat);
 
   const damage = new DamageSystem(world, bots, events, opts.arena, opts.settings);
+  const deploy = new DeploySystem(world, damage, events);
+  const projectile = new ProjectileSystem(world, damage, events);
   for (const saw of opts.arena.saws) {
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicVelocityBased().setTranslation(saw.x, CELL / 2, saw.z)
@@ -255,16 +322,36 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
     step(inputs: readonly MatchInput[]): void {
       if (disposed) throw new Error("ArenaSim is disposed");
       if (phase === "over") return;
+      deploy.update(liveElapsed);
+      projectile.update(liveElapsed);
       for (const bot of bots) {
         const state = damage.stateFor(bot);
         const input = inputs[bot.assembled.seat] ?? NEUTRAL_INPUT;
+        const eventStart = events.length;
         const flipped = driveBot(
           bot.assembled,
           input,
           phase,
-          { inverted: state.inverted, alive: bot.alive },
+          {
+            inverted: state.inverted,
+            alive: bot.alive,
+            driveDisabled:
+              bot.nettedFor > 0 || bot.pinnedFor > 0,
+            tractionMul: bot.oiledFor > 0 ? OIL_TRACTION_MUL : 1
+          },
           events
         );
+        for (const event of events.slice(eventStart)) {
+          if (event.t !== "fire" || event.seat !== bot.assembled.seat) continue;
+          const weapon = bot.assembled.weapons.find(
+            (candidate) => candidate.def.slot === event.slot
+          );
+          if (!weapon || weapon.detached) continue;
+          if (event.effect === "deploy") deploy.deploy(bot, weapon);
+          else if (event.effect === "net" || event.effect === "harpoon") {
+            projectile.launch(bot, weapon);
+          }
+        }
         if (flipped) events.push({ t: "flip", seat: bot.assembled.seat });
       }
       world.step(queue);
@@ -284,10 +371,15 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
         if (!collider1 || !collider2) return;
         const point1 = collider1.translation();
         const point2 = collider2.translation();
-        damage.processContact(event.collider1(), event.collider2(), event.totalForceMagnitude(), {
+        const point = {
           x: (point1.x + point2.x) / 2,
           y: (point1.y + point2.y) / 2,
           z: (point1.z + point2.z) / 2
+        };
+        if (deploy.processContact(event.collider1(), event.collider2(), point)) return;
+        if (projectile.processContact(event.collider1(), event.collider2(), point)) return;
+        damage.processContact(event.collider1(), event.collider2(), event.totalForceMagnitude(), {
+          ...point
         });
       });
       damage.update(liveElapsed);
@@ -296,7 +388,13 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
     },
     getState(): MatchState {
       const states: BotState[] = bots.map((bot) => damage.stateFor(bot));
-      return { tick, elapsed: liveElapsed, phase, bots: states };
+      return {
+        tick,
+        elapsed: liveElapsed,
+        phase,
+        bots: states,
+        entities: [...deploy.entities(), ...projectile.entities()]
+      };
     },
     drainEvents(): readonly SimEvent[] {
       const drained = events.slice();
@@ -309,6 +407,8 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      projectile.dispose();
+      deploy.dispose();
       queue.free();
       world.free();
       metadata.delete(sim);
@@ -324,7 +424,11 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
     ),
     botsBySeat: new Map(
       bots.map((bot) => [bot.assembled.seat, bot.assembled])
-    )
+    ),
+    world,
+    damage,
+    deploy,
+    projectile
   });
   return sim;
 }

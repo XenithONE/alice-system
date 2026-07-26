@@ -44,7 +44,7 @@ for (const [k, n] of Object.entries(need)) {
   if ((roster as Record<string, number>)[k]! < n) note(`roster ${k}: ${(roster as Record<string, number>)[k]} < ${n}`);
 }
 // every effect the gate will demand must actually exist in the catalog
-for (const e of ["spin", "grind", "impulse", "clamp", "flame", "static"]) {
+for (const e of ["spin", "grind", "impulse", "clamp", "flame", "static", "deploy", "net", "harpoon"]) {
   if (byEffect(e).length === 0) note(`no weapon with effect "${e}"`);
 }
 // required per-effect fields
@@ -56,6 +56,14 @@ for (const w of weapons) {
     note(`${w.id}: missing flame fields`);
   }
   if (w.effect === "impulse" && (w.impulse == null || w.cooldown == null)) note(`${w.id}: missing impulse fields`);
+  if (w.effect === "deploy" && (w.trapKind == null || w.ammo == null || w.cooldown == null)) {
+    note(`${w.id}: missing deploy fields`);
+  }
+  if ((w.effect === "net" || w.effect === "harpoon") &&
+      (w.range == null || w.muzzle == null || w.cooldown == null)) {
+    note(`${w.id}: missing projectile fields`);
+  }
+  if (w.effect === "harpoon" && w.reelSpeed == null) note(`${w.id}: missing reelSpeed`);
   // fuel is optional by contract: omitted or 0 means the weapon needs none
   if (!["primary", "secondary", "tertiary"].includes(w.slot)) note(`${w.id}: bad slot ${w.slot}`);
 }

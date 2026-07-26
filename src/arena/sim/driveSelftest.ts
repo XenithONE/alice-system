@@ -3,8 +3,11 @@
 // promises the player. A big gap means the game lies to the player in the
 // workshop and feels dead in the arena.
 import { buildCatalog, PRESETS } from "../parts/catalog";
+import RAPIER from "@dimforge/rapier3d-compat";
 import { ARENAS } from "../parts/arenas";
 import { createArenaSim, initPhysics } from "./world";
+import { DEBRIS_COLLISION_GROUPS } from "./assemble";
+import { DEPLOY_PAD_HALF_HEIGHT } from "./balance";
 import { computeStats } from "./build";
 import {
   DEFAULT_ROOM_SETTINGS,
@@ -180,14 +183,58 @@ const main = async (): Promise<void> => {
   const mountRows = mountSpecs.map((spec) =>
     measure(spec, computeStats(spec, catalog, DEFAULT_ROOM_SETTINGS).topSpeed, catalog)
   );
+  const padWorld = new RAPIER.World({ x: 0, y: 0, z: 0 });
+  // This descriptor is also used by DeploySystem: one fixed anchor, four
+  // solid 24 mm pads. The isolated contact profile keeps the gate independent
+  // of trap ammo and AI while exercising the exact pad height.
+  const padAnchor = padWorld.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  for (let index = 0; index < 4; index += 1) {
+    padWorld.createCollider(
+      RAPIER.ColliderDesc.cylinder(DEPLOY_PAD_HALF_HEIGHT, 0.25)
+        .setTranslation(index * 0.6, DEPLOY_PAD_HALF_HEIGHT, 0)
+        .setCollisionGroups(DEBRIS_COLLISION_GROUPS),
+      padAnchor
+    );
+  }
+  const runner = padWorld.createRigidBody(
+    RAPIER.RigidBodyDesc.dynamic().setTranslation(-0.7, 0.16, 0)
+      .setLinvel(5, 0, 0)
+      .setLinearDamping(0)
+  );
+  padWorld.createCollider(
+    RAPIER.ColliderDesc.cuboid(0.3, 0.14, 0.3)
+      .setMass(80)
+      .setFriction(1.35)
+      .setCollisionGroups(DEBRIS_COLLISION_GROUPS),
+    runner
+  );
+  padWorld.timestep = 1 / 60;
+  let padEntrySpeed = runner.linvel().x;
+  let padExitSpeed = 0;
+  for (let step = 0; step < 90; step += 1) {
+    padWorld.step();
+    if (runner.translation().x > 2) {
+      padExitSpeed = Math.hypot(runner.linvel().x, runner.linvel().z);
+      break;
+    }
+  }
+  const padRow = {
+    pads: 4,
+    heightMm: DEPLOY_PAD_HALF_HEIGHT * 2 * 1000,
+    entrySpeed: +padEntrySpeed.toFixed(2),
+    exitSpeed: +padExitSpeed.toFixed(2),
+    ratio: +(padExitSpeed / padEntrySpeed).toFixed(2)
+  };
+  padWorld.free();
   // A robot that cannot reach the speed the workshop advertises makes the
   // whole builder a lie, and it is invisible in a match-outcome gate: bots that
   // barely move still finish matches, just on the judges' cards.
   const failures = [
     ...rows.filter((r) => r.ratio < 0.7).map((r) => `${r.bot} ${r.ratio}`),
-    ...mountRows.filter((r) => r.ratio < 0.5).map((r) => `${r.bot} ${r.ratio}`)
+    ...mountRows.filter((r) => r.ratio < 0.5).map((r) => `${r.bot} ${r.ratio}`),
+    ...(padRow.ratio < 0.9 ? [`G-DRIVE-PAD ${padRow.ratio}`] : [])
   ];
-  console.log(JSON.stringify({ rows, mountRows, failures }, null, 2));
+  console.log(JSON.stringify({ rows, mountRows, padRow, failures }, null, 2));
   console.log(failures.length ? "DRIVE SELFTEST FAIL" : "DRIVE SELFTEST PASS");
   if (failures.length) process.exitCode = 1;
 };

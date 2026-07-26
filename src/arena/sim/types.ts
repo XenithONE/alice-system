@@ -51,7 +51,16 @@ export type WeaponEffect =
   /** cone of fire; damage over time, burns fuel, ignores most armour */
   | "flame"
   /** no moving parts; wedges, forks and spikes win by geometry */
-  | "static";
+  | "static"
+  /** drops something on the floor that stays there and hurts whoever drives over it */
+  | "deploy"
+  /** fired; tangles the machine it hits so its drive stops but its weapons do not */
+  | "net"
+  /** fired; embeds, then a cable winches the two machines together */
+  | "harpoon";
+
+/** What a deploy weapon leaves behind. */
+export type TrapKind = "caltrop" | "mine" | "oil" | "glue";
 
 /** Which button drives it. Three weapons means three buttons. */
 export type WeaponSlot = "primary" | "secondary" | "tertiary";
@@ -100,7 +109,10 @@ export type PartType =
   | "engine"
   | "battery"
   | "tank"
-  | "radiator";
+  | "radiator"
+  | "trap"
+  | "netgun"
+  | "harpoon";
 
 /** Japanese labels for the builder's type filter, in display order. */
 export const PART_TYPE_LABELS: readonly (readonly [PartType, string])[] = [
@@ -129,7 +141,10 @@ export const PART_TYPE_LABELS: readonly (readonly [PartType, string])[] = [
   ["engine", "エンジン"],
   ["battery", "バッテリー"],
   ["tank", "燃料タンク"],
-  ["radiator", "ラジエーター"]
+  ["radiator", "ラジエーター"],
+  ["trap", "トラップ"],
+  ["netgun", "ネット"],
+  ["harpoon", "ハープーン"]
 ];
 
 /**
@@ -299,6 +314,17 @@ export interface WeaponDef extends PartDefBase {
    * what the player wanted it to mean anyway.
    */
   readonly chargeKj?: number;
+
+  /** deploy: what it drops, and how many it carries for the whole match */
+  readonly trapKind?: TrapKind;
+  readonly ammo?: number;
+  /** net / harpoon: metres the projectile crosses before it dies */
+  readonly range?: number;
+  /** net / harpoon: launch speed, m/s */
+  readonly muzzle?: number;
+  /** harpoon: how fast the winch closes the cable, m/s */
+  readonly reelSpeed?: number;
+
   /** impulse: radians the arm sweeps, or metres a spear extends */
   readonly sweep?: number;
   /** impulse: how long the stroke takes */
@@ -556,6 +582,21 @@ export interface BotState {
   readonly burningFor: number;
   readonly selfRightCooldown: number;
   readonly plant: PlantState;
+
+  /*
+   * Enemy effects that hold a machine. These freeze the immobility KO counter
+   * rather than resetting it: resetting would let a machine that has been dead
+   * in the water for nine seconds be rescued forever by being netted again, and
+   * the anti-stall rule would die. Oil is deliberately NOT one of these — you
+   * can still steer on a slick, you just cannot accelerate, so parking on one
+   * should still run the clock.
+   */
+  readonly nettedFor: number;
+  readonly pinnedFor: number;
+  readonly oiledFor: number;
+  readonly tetheredBy: SeatIndex | null;
+  /** seat that landed the most recent hold, for judge credit */
+  readonly disabledBy: SeatIndex | null;
 }
 
 /** Fire-and-forget signals for VFX and audio; not authoritative state. */
@@ -567,7 +608,30 @@ export type SimEvent =
   | { readonly t: "clamp"; readonly seat: SeatIndex; readonly victim: SeatIndex }
   | { readonly t: "ko"; readonly seat: SeatIndex; readonly reason: KoReason }
   | { readonly t: "flip"; readonly seat: SeatIndex }
-  | { readonly t: "hazard"; readonly seat: SeatIndex; readonly x: number; readonly y: number; readonly z: number };
+  | { readonly t: "hazard"; readonly seat: SeatIndex; readonly x: number; readonly y: number; readonly z: number }
+  | { readonly t: "deploy"; readonly seat: SeatIndex; readonly kind: TrapKind; readonly id: number; readonly x: number; readonly y: number; readonly z: number }
+  | { readonly t: "trap"; readonly seat: SeatIndex; readonly by: SeatIndex; readonly kind: TrapKind; readonly id: number; readonly x: number; readonly y: number; readonly z: number }
+  | { readonly t: "launch"; readonly seat: SeatIndex; readonly kind: "net" | "harpoon"; readonly x: number; readonly y: number; readonly z: number; readonly dirX: number; readonly dirZ: number }
+  | { readonly t: "tether"; readonly seat: SeatIndex; readonly by: SeatIndex; readonly on: boolean };
+
+/**
+ * A host-owned thing in the arena that is not a bot: a trap sitting on the
+ * floor, or a projectile in flight. Traps never move, which is why they ride a
+ * version-gated channel on the wire instead of being resent twenty times a
+ * second for the twenty-five seconds they live.
+ */
+export interface WorldEntity {
+  /** unique for the match, never reused */
+  readonly id: number;
+  readonly kind: TrapKind | "net" | "harpoon";
+  readonly owner: SeatIndex;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw: number;
+  /** traps 0 fresh / 1 worn / 2 spent; projectiles 0 in flight */
+  readonly state: number;
+}
 
 export type KoReason = "damage" | "immobile" | "pit" | "fire";
 
@@ -576,6 +640,12 @@ export interface MatchState {
   readonly elapsed: number;
   readonly phase: MatchPhase;
   readonly bots: readonly BotState[];
+  /*
+   * Traps and projectiles. These are here and not only on the wire because
+   * sim/ai.ts reads MatchState — without them the AI drives into its own
+   * caltrops, which it can, since a deployable does not spare its owner.
+   */
+  readonly entities: readonly WorldEntity[];
 }
 
 export interface MatchResult {

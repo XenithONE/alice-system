@@ -166,8 +166,14 @@ for (const part of PARTS) {
     });
   }
 }
-if (housingClearances.length !== 16) {
-  shapeProblems.push(`rotor housing coverage: expected 16 parts, measured ${housingClearances.length}`);
+const expectedHousingCount = PARTS.filter((part) => {
+  const face = part.faces[0] ?? "deck";
+  return part.category === "weapon" && Boolean(partPlan(part, face).rotor);
+}).length;
+if (housingClearances.length !== expectedHousingCount) {
+  shapeProblems.push(
+    `rotor housing coverage: expected ${expectedHousingCount} parts, measured ${housingClearances.length}`
+  );
 }
 
 rows.sort((a, b) => b.triangles - a.triangles);

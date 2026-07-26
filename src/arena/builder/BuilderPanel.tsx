@@ -35,7 +35,10 @@ const EFFECT_LABELS: Record<WeaponEffect, string> = {
   impulse: "打撃",
   clamp: "掴み",
   flame: "火炎",
-  static: "固定"
+  static: "固定",
+  deploy: "設置",
+  net: "ネット",
+  harpoon: "ハープーン"
 };
 const ACTION_LABELS: Record<WeaponAction, string> = {
   passive: "常時",
