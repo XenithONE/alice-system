@@ -160,7 +160,8 @@ export const PART_TYPE_LABELS: readonly (readonly [PartType, string])[] = [
   ["radiator", "ラジエーター"],
   ["trap", "トラップ"],
   ["netgun", "ネット"],
-  ["harpoon", "ハープーン"]
+  ["harpoon", "ハープーン"],
+  ["riser", "支柱"]
 ];
 
 /**
