@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CELL, type ArenaDef, type BotSpec, type Catalog, type ChassisDef, type DriveDef, type SeatIndex } from "../sim/types";
 import { INTERP_DELAY } from "../sim/balance";
+import { CAM_DISTANCE, chaseCameraPose, smoothChaseYaw } from "../sim/chaseCamera";
+import { chassisForward } from "../sim/heading";
 import type { BotSnap, Snapshot, WeaponSnap } from "../net/protocol";
 import {
   applyWeaponRig,
@@ -39,6 +41,9 @@ export interface ArenaScene {
     ready: boolean; botCount: number; meshCount: number;
     bots: { seat: number; x: number; y: number; z: number; hp: number; detached: number }[];
     camPos: [number, number, number];
+    camForward: [number, number, number];
+    botForward: [number, number, number];
+    cameraForwardDot: number;
     lastSnapshotTick: number;
     render: { calls: number; triangles: number };
     memory: { geometries: number; textures: number };
@@ -353,6 +358,12 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
   let impactPull = 0;
   let focusSpeed = 0;
   let koFocus: number | null = null;
+  let koFocusUntil = 0;
+  let cameraYaw = 0;
+  let cameraYawInitialized = false;
+  let cameraPoseInitialized = false;
+  const debugCamForward = new THREE.Vector3(0, 0, -1);
+  const debugBotForward = new THREE.Vector3(0, 0, -1);
   let lastSnapshotTick = -1;
   let vfxCursor = 0;
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -561,6 +572,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
         }
       } else if (event.t === "ko") {
         koFocus = event.seat;
+        koFocusUntil = clock + 1.6;
         renderer.toneMappingExposure = 0.74;
       }
     }
@@ -705,42 +717,61 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       if (item.life <= 0) item.mesh.visible = false;
     }
   }
-  function updateCamera(nextBots: readonly BotSnap[], dt: number): void {
+  function updateCamera(nextBots: readonly BotSnap[], dt: number, force = false): void {
     if (nextBots.length === 0) return;
+    if (koFocus !== null && clock >= koFocusUntil) {
+      koFocus = null;
+      renderer.toneMappingExposure = 1.03;
+    }
     const alive = nextBots.filter((bot) => bot.alive);
-    const focusSeat = koFocus !== null ? alive.length === 1 ? alive[0]!.seat : koFocus : mySeat;
+    const focusSeat = koFocus ?? mySeat;
     const focus = nextBots.find((bot) => bot.seat === focusSeat) ?? alive[0] ?? nextBots[0]!;
-    const center = new THREE.Vector3();
-    const framing = alive.length > 0 ? alive : nextBots;
-    for (const bot of framing) center.add(new THREE.Vector3(bot.x, bot.y, bot.z));
-    center.multiplyScalar(1 / framing.length);
-    let spread = 3.8;
-    for (const bot of framing) spread = Math.max(spread, Math.hypot(bot.x - center.x, bot.z - center.z));
-    const focusQuat = new THREE.Quaternion(focus.qx, focus.qy, focus.qz, focus.qw);
-    const back = new THREE.Vector3(0, 0, -1).applyQuaternion(focusQuat);
-    back.y = 0;
-    back.normalize();
-    const target = new THREE.Vector3(focus.x, Math.max(focus.y, 0) + 0.45, focus.z).lerp(center.setY(0.35), 0.32);
-    const desired = target.clone().addScaledVector(back, 5.8 + spread * 0.65 + impactPull * 1.2);
-    desired.y += 3.1 + spread * 0.34;
-    camera.position.lerp(desired, 1 - Math.exp(-Math.max(dt, 0) * 4.6));
+    const botForward = chassisForward({
+      x: focus.qx, y: focus.qy, z: focus.qz, w: focus.qw
+    });
+    debugBotForward.set(botForward.x, 0, botForward.z);
+    const targetYaw = Math.atan2(-botForward.x, -botForward.z);
+    if (!cameraYawInitialized || force) {
+      cameraYaw = targetYaw;
+      cameraYawInitialized = true;
+    } else {
+      cameraYaw = smoothChaseYaw(cameraYaw, targetYaw, dt);
+    }
+    const smoothForward = { x: -Math.sin(cameraYaw), z: -Math.cos(cameraYaw) };
+    const pose = chaseCameraPose(
+      { x: focus.x, y: focus.y, z: focus.z },
+      smoothForward,
+      CAM_DISTANCE + impactPull * 1.2
+    );
+    const desired = new THREE.Vector3(pose.camera.x, pose.camera.y, pose.camera.z);
+    const target = new THREE.Vector3(pose.target.x, pose.target.y, pose.target.z);
+    if (!cameraPoseInitialized || force) {
+      camera.position.copy(desired);
+      cameraPoseInitialized = true;
+    } else {
+      camera.position.lerp(desired, 1 - Math.exp(-Math.max(dt, 0) * 11));
+    }
     if (!reducedMotion && cameraShake > 0.001) {
       camera.position.x += (Math.sin(clock * 77) * 0.58 + Math.sin(clock * 19) * 0.42) * cameraShake;
       camera.position.y += (Math.cos(clock * 91) * 0.32 + Math.cos(clock * 16) * 0.36) * cameraShake;
       cameraShake *= Math.exp(-dt * 12);
     } else cameraShake = 0;
     camera.lookAt(target);
+    camera.getWorldDirection(debugCamForward);
+    debugCamForward.y = 0;
+    if (debugCamForward.lengthSq() > Number.EPSILON) debugCamForward.normalize();
   }
   function renderTick(dt: number): void {
     if (disposed || paused) return;
     const safeDt = THREE.MathUtils.clamp(Number.isFinite(dt) ? dt : 0, 0, 0.1);
+    clock += safeDt;
+    const nextBots = sampledBots();
     if (!reducedMotion && hitStopRemaining > 0) {
       hitStopRemaining = Math.max(0, hitStopRemaining - safeDt);
+      updateCamera(nextBots, safeDt);
       renderer.render(scene, camera);
       return;
     }
-    clock += safeDt;
-    const nextBots = sampledBots();
     applyBots(nextBots, safeDt);
     updateVfx(safeDt);
     arenaRoot.traverse((object) => {
@@ -779,6 +810,9 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       clock = 0;
       lastSnapshotTick = -1;
       koFocus = null;
+      koFocusUntil = 0;
+      cameraYawInitialized = false;
+      cameraPoseInitialized = false;
       renderer.toneMappingExposure = 1.03;
       arena = nextArena;
       mySeat = nextMySeat;
@@ -800,6 +834,7 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       snapshots.push({ receivedAt: clock, snapshot });
       if (snapshots.length > MAX_SNAPSHOTS) snapshots.splice(0, snapshots.length - MAX_SNAPSHOTS);
       processEvents(snapshot);
+      if (!cameraPoseInitialized) updateCamera(snapshot.bots, 0, true);
     },
     debugTick(dt) { renderTick(dt); },
     getDebugState() {
@@ -814,6 +849,9 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
           hp: bot.hp, detached: bot.detach
         })),
         camPos: [camera.position.x, camera.position.y, camera.position.z],
+        camForward: [debugCamForward.x, debugCamForward.y, debugCamForward.z],
+        botForward: [debugBotForward.x, debugBotForward.y, debugBotForward.z],
+        cameraForwardDot: debugCamForward.dot(debugBotForward),
         lastSnapshotTick,
         render: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
         memory: { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures },

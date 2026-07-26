@@ -8,6 +8,7 @@ import {
   SELF_RIGHT_IMPULSE
 } from "./balance";
 import type { AssembledBot, WeaponRuntime } from "./assemble";
+import { chassisForward } from "./heading";
 import type { MatchInput, MatchPhase, SimEvent } from "./types";
 
 export interface DriverFrame {
@@ -135,11 +136,9 @@ export function driveBot(
   if (driveCount > 0 && Math.abs(driveCommand) > Number.EPSILON) {
     const averageCommand = driveCommand / driveCount;
     const q = bot.chassis.rotation();
-    const forwardX = -2 * (q.x * q.z + q.w * q.y);
-    const forwardZ = -(1 - 2 * (q.x * q.x + q.y * q.y));
-    const length = Math.max(Math.hypot(forwardX, forwardZ), Number.EPSILON);
-    const dirX = forwardX / length;
-    const dirZ = forwardZ / length;
+    const forward = chassisForward(q);
+    const dirX = forward.x;
+    const dirZ = forward.z;
     const velocity = bot.chassis.linvel();
     const current = velocity.x * dirX + velocity.z * dirZ;
     const desired = averageCommand * targetSpeed;
