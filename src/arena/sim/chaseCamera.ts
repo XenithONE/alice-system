@@ -1,4 +1,4 @@
-import { chassisBack } from "./heading.ts";
+import { chassisBack } from "./heading";
 
 export const CAM_DISTANCE = 4.6;
 export const CAM_HEIGHT = 2.4;

@@ -4,8 +4,8 @@ import {
   chaseCameraPose,
   smoothChaseYaw,
   type ChaseCameraPose
-} from "./chaseCamera.ts";
-import { chassisForward } from "./heading.ts";
+} from "./chaseCamera";
+import { chassisForward } from "./heading";
 
 declare const process: { exitCode?: number };
 
