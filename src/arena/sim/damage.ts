@@ -784,7 +784,8 @@ export class DamageSystem {
       damageTaken: bot.damageTaken,
       inverted: upDot < INVERTED_DOT,
       burningFor: bot.burningFor,
-      selfRightCooldown: bot.assembled.selfRightCooldown
+      selfRightCooldown: bot.assembled.selfRightCooldown,
+      plant: { heat: 0, charge: 1, fuel: 1, load: 0 }
     };
   }
 

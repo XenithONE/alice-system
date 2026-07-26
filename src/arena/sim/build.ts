@@ -6,6 +6,7 @@ import {
   type BuildValidation,
   type Catalog,
   type ChassisDef,
+  isInternalPart,
   type MountFace,
   type PartDef,
   type RoomSettings,
@@ -18,7 +19,8 @@ const VALID_FACES: readonly MountFace[] = [
   "left",
   "right",
   "front",
-  "rear"
+  "rear",
+  "internal"
 ];
 
 export function occupiedCells(
@@ -102,8 +104,30 @@ export function computeStats(
     secondaryId,
     tertiaryId,
     hasSelfRight,
-    invertible: chassis?.invertible ?? false
+    invertible: chassis?.invertible ?? false,
+    powerKw: 0,
+    powerDemandKw: 0,
+    chargeKj: 0,
+    chargeDemandKj: 0,
+    fuelL: 0,
+    fuelBurnSec: 0,
+    coolingKw: 0,
+    heatKw: 0,
+    spinUpSec: 0,
+    internalCells: 0,
+    internalCellsMax: 0
   };
+}
+
+export function faceSize(
+  chassis: ChassisDef | null,
+  face: MountFace
+): readonly [number, number] {
+  if (!chassis) return [0, 0];
+  if (face === "internal") return chassis.internalGrid;
+  if (face === "deck" || face === "underside") return chassis.deck;
+  if (face === "left" || face === "right") return [chassis.deck[1], chassis.heightCells];
+  return [chassis.deck[0], chassis.heightCells];
 }
 
 export function validateBuild(
@@ -124,12 +148,6 @@ export function validateBuild(
   let leftDrive = 0;
   let rightDrive = 0;
   const occupied = new Set<string>();
-  const faceSize = (face: MountFace): readonly [number, number] => {
-    if (!chassis) return [0, 0];
-    if (face === "deck" || face === "underside") return chassis.deck;
-    if (face === "left" || face === "right") return [chassis.deck[1], chassis.heightCells];
-    return [chassis.deck[0], chassis.heightCells];
-  };
 
   for (const [partIdx, placed] of spec.parts.entries()) {
     const part = catalog.byId.get(placed.partId);
@@ -143,6 +161,14 @@ export function validateBuild(
     }
     if (!VALID_FACES.includes(placed.face)) {
       errors.push(`パーツ${partIdx + 1}の取り付け面が不正です。`);
+      continue;
+    }
+    if ((placed.face === "internal") !== isInternalPart(part)) {
+      errors.push(
+        isInternalPart(part)
+          ? `「${part.nameJa}」は機関室にしか搭載できません。`
+          : `「${part.nameJa}」は機関室に搭載できません。`
+      );
       continue;
     }
     if (!part.faces.includes(placed.face)) {
@@ -159,7 +185,7 @@ export function validateBuild(
     }
 
     const cells = occupiedCells(part, placed.cell, placed.rot);
-    const [gridW, gridH] = faceSize(placed.face);
+    const [gridW, gridH] = faceSize(chassis, placed.face);
     const outOfFace = cells.some(([i, j]) => i < 0 || j < 0 || i >= gridW || j >= gridH);
     if (outOfFace) errors.push(`「${part.nameJa}」が${faceLabel(placed.face)}の範囲からはみ出しています。`);
     let overlaps = false;
@@ -201,7 +227,7 @@ export function validateBuild(
   if (secondaryCount > 1) errors.push("secondary武装は1個までです。");
   if (tertiaryCount > 1) errors.push("tertiary武装は1個までです。");
 
-  return { ok: errors.length === 0, errors, stats };
+  return { ok: errors.length === 0, errors, warnings: [], stats };
 }
 
 function faceLabel(face: MountFace): string {
@@ -212,6 +238,7 @@ function faceLabel(face: MountFace): string {
     case "right": return "右側面";
     case "front": return "前面";
     case "rear": return "背面";
+    case "internal": return "機関室";
   }
 }
 
@@ -224,6 +251,7 @@ export function driveSide(
 ): -1 | 0 | 1 {
   if (face === "left") return -1;
   if (face === "right") return 1;
+  if (face === "internal") return 0;
   if (!chassis) return 0;
   if (face === "deck" || face === "underside") {
     const centerX = cell[0] + rotatedWidth / 2;
@@ -257,6 +285,12 @@ export function partLocalPosition(
       return [
         (u - chassis.deck[0] / 2) * CELL,
         chassis.groundClearance - part.height / 2,
+        (v - chassis.deck[1] / 2) * CELL
+      ];
+    case "internal":
+      return [
+        (u - chassis.deck[0] / 2) * CELL,
+        chassis.groundClearance + chassis.height / 2,
         (v - chassis.deck[1] / 2) * CELL
       ];
     case "left":

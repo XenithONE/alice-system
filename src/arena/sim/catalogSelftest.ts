@@ -2,7 +2,8 @@
 // for, the envelope, and does the preset arithmetic independently.
 import { PARTS, PRESETS, buildCatalog } from "../parts/catalog";
 import { ARENAS } from "../parts/arenas";
-import type { PartDef, Rot4, WeaponDef } from "./types";
+import { faceSize } from "./build";
+import { isInternalPart, type PartDef, type Rot4, type WeaponDef } from "./types";
 
 declare const process: { exitCode?: number };
 
@@ -16,6 +17,10 @@ for (const p of PARTS) {
   if (!(p.cost > 0)) note(`${p.id}: cost ${p.cost}`);
   if (!(p.mass > 0)) note(`${p.id}: mass ${p.mass}`);
   if (!p.material) note(`${p.id}: no material`);
+  const hasInternalFace = p.faces.includes("internal");
+  const internal = isInternalPart(p);
+  if (hasInternalFace !== internal) note(`${p.id}: internal face/type mismatch`);
+  if (internal && p.faces.length !== 1) note(`${p.id}: internal part must have exactly one face`);
 }
 
 const cat = (c: string) => PARTS.filter((p) => p.category === c);
@@ -86,8 +91,9 @@ const presetRows = PRESETS.map((spec) => {
     mass += def.mass;
     if (def.category === "drive") drives += 1;
     if (def.category === "weapon") slots.push((def as WeaponDef).slot);
+    const [gridW, gridH] = faceSize(chassis, pp.face);
     for (const [x, z] of cellsOf(def, pp.cell, pp.rot)) {
-      if (x < 0 || z < 0 || x >= chassis.deck[0] || z >= chassis.deck[1]) oob += 1;
+      if (x < 0 || z < 0 || x >= gridW || z >= gridH) oob += 1;
       const k = `${pp.face}:${x},${z}`;
       if (used.has(k)) overlap += 1;
       used.add(k);
@@ -100,7 +106,7 @@ const presetRows = PRESETS.map((spec) => {
   if (slots.filter((s) => s === "secondary").length > 1) note(`${spec.name}: two secondaries`);
   if (slots.filter((s) => s === "tertiary").length > 1) note(`${spec.name}: two tertiaries`);
   if (overlap) note(`${spec.name}: ${overlap} overlapping cells`);
-  if (oob) note(`${spec.name}: ${oob} cells off the deck`);
+  if (oob) note(`${spec.name}: ${oob} cells off their mounting faces`);
   return { name: spec.name, cost, mass: +mass.toFixed(1), drives, slots: slots.join("+") || "none", overlap, oob };
 }).filter(Boolean);
 

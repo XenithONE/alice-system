@@ -125,6 +125,7 @@ function faceNormal(face: MountFace): readonly [number, number, number] {
     case "right": return [1, 0, 0];
     case "front": return [0, 0, -1];
     case "rear": return [0, 0, 1];
+    case "internal": return [0, 1, 0];
   }
 }
 
@@ -143,7 +144,7 @@ function faceHalfExtents(
   face: MountFace
 ): readonly [number, number, number] {
   const [w, d] = rotatedSize(part, rot);
-  if (face === "deck" || face === "underside") {
+  if (face === "deck" || face === "underside" || face === "internal") {
     return [w * CELL / 2, part.height / 2, d * CELL / 2];
   }
   if (face === "left" || face === "right") {

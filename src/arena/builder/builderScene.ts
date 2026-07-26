@@ -151,7 +151,11 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     disposeTree(buildRoot);
     const frame = chassis();
     if (!frame) return;
-    const chassisMaterial = industrialMaterial(frame.material, spec.paint);
+    const chassisMaterial = industrialMaterial(
+      frame.material,
+      spec.paint,
+      selectedFace === "internal" ? { transparent: true, opacity: 0.24 } : undefined
+    );
     const chassisGeo = new RoundedBoxGeometry(frame.deck[0] * CELL, frame.height, frame.deck[1] * CELL, 2, 0.009);
     const chassisMesh = new THREE.Mesh(chassisGeo, chassisMaterial);
     chassisMesh.position.y = frame.groundClearance + frame.height * 0.5;
@@ -168,6 +172,13 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
       if (selectedFace === "left") return [-halfW - 0.002, frame.groundClearance + v + gridV * CELL / 2, u];
       if (selectedFace === "right") return [halfW + 0.002, frame.groundClearance + v + gridV * CELL / 2, u];
       if (selectedFace === "front") return [u, frame.groundClearance + v + gridV * CELL / 2, -halfD - 0.002];
+      if (selectedFace === "internal") {
+        return [
+          u + (gridU - frame.deck[0]) * CELL / 2,
+          frame.groundClearance + frame.height / 2,
+          v + (gridV - frame.deck[1]) * CELL / 2
+        ];
+      }
       return [u, frame.groundClearance + v + gridV * CELL / 2, halfD + 0.002];
     };
     const linePositions: number[] = [];
@@ -250,11 +261,13 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     const halfD = frame.deck[1] * CELL / 2;
     const deckY = frame.groundClearance + frame.height;
     const normal = selectedFace === "deck" ? new THREE.Vector3(0, 1, 0) :
+      selectedFace === "internal" ? new THREE.Vector3(0, 1, 0) :
       selectedFace === "underside" ? new THREE.Vector3(0, -1, 0) :
       selectedFace === "left" ? new THREE.Vector3(-1, 0, 0) :
       selectedFace === "right" ? new THREE.Vector3(1, 0, 0) :
       selectedFace === "front" ? new THREE.Vector3(0, 0, -1) : new THREE.Vector3(0, 0, 1);
     const planePoint = selectedFace === "deck" ? new THREE.Vector3(0, deckY, 0) :
+      selectedFace === "internal" ? new THREE.Vector3(0, frame.groundClearance + frame.height / 2, 0) :
       selectedFace === "underside" ? new THREE.Vector3(0, frame.groundClearance, 0) :
       selectedFace === "left" ? new THREE.Vector3(-halfW, 0, 0) :
       selectedFace === "right" ? new THREE.Vector3(halfW, 0, 0) :
@@ -265,15 +278,17 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     } else {
       const [gridU, gridV] = faceGridSize(frame, selectedFace);
       const u = selectedFace === "left" || selectedFace === "right" ? planeHit.z : planeHit.x;
-      const v = selectedFace === "deck" || selectedFace === "underside"
+      const v = selectedFace === "deck" || selectedFace === "underside" || selectedFace === "internal"
         ? planeHit.z
         : planeHit.y - frame.groundClearance;
       hoverCell = [
-        Math.floor(u / CELL + gridU / 2),
+        Math.floor(u / CELL + (selectedFace === "internal" ? frame.deck[0] : gridU) / 2),
         Math.floor(v / CELL)
       ];
-      if (selectedFace === "deck" || selectedFace === "underside") {
-        hoverCell[1] = Math.floor(v / CELL + gridV / 2);
+      if (selectedFace === "deck" || selectedFace === "underside" || selectedFace === "internal") {
+        hoverCell[1] = Math.floor(
+          v / CELL + (selectedFace === "internal" ? frame.deck[1] : gridV) / 2
+        );
       }
     }
     rebuildGhost();
@@ -413,7 +428,8 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
         left: [-Math.PI / 2, 0.32],
         right: [Math.PI / 2, 0.32],
         front: [Math.PI, 0.32],
-        rear: [0, 0.32]
+        rear: [0, 0.32],
+        internal: [-0.72, 1.35]
       };
       [targetCamYaw, targetCamPitch] = views[nextFace];
       floorRoot.visible = nextFace !== "underside";

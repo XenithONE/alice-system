@@ -3,6 +3,7 @@ import { CELL, type ChassisDef, type MountFace, type PartDef, type PlacedPart } 
 import { partLocalPosition } from "../sim/build";
 
 export function faceGridSize(chassis: ChassisDef, face: MountFace): readonly [number, number] {
+  if (face === "internal") return chassis.internalGrid;
   if (face === "deck" || face === "underside") return chassis.deck;
   if (face === "left" || face === "right") return [chassis.deck[1], chassis.heightCells];
   return [chassis.deck[0], chassis.heightCells];
@@ -53,6 +54,7 @@ export function mountPartObject(
   }
   const [x, y, z] = partLocalPosition(chassis, part, placed.cell, placed.rot, placed.face);
   const normal = placed.face === "deck" ? new THREE.Vector3(0, 1, 0) :
+    placed.face === "internal" ? new THREE.Vector3(0, 1, 0) :
     placed.face === "underside" ? new THREE.Vector3(0, -1, 0) :
     placed.face === "left" ? new THREE.Vector3(-1, 0, 0) :
     placed.face === "right" ? new THREE.Vector3(1, 0, 0) :

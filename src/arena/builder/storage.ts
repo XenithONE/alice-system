@@ -4,7 +4,7 @@ const GARAGE_KEY = "sc.garage.v1";
 const MAX_SPECS = 64;
 const MAX_PARTS = 128;
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const FACES = new Set<MountFace>(["deck", "underside", "left", "right", "front", "rear"]);
+const FACES = new Set<MountFace>(["deck", "underside", "left", "right", "front", "rear", "internal"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

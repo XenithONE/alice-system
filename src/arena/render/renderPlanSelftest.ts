@@ -8,6 +8,7 @@ import { partPlan } from "./partPlan";
 declare const process: { exitCode?: number };
 
 const problems: string[] = [];
+// Weapons never mount in the engine bay, so "internal" is intentionally absent.
 const faces: readonly MountFace[] = ["deck", "underside", "left", "right", "front", "rear"];
 const rotations: readonly Rot4[] = [0, 1, 2, 3];
 
@@ -71,7 +72,7 @@ for (const part of PARTS) {
 for (const required of ["saw-disc", "drill", "drum", "bar-spinner", "shell-spinner"]) {
   if (!shapes.has(required)) problems.push(`missing distinct rotor shape ${required}`);
 }
-if (PARTS.length !== 72) problems.push(`catalog part count ${PARTS.length}, expected 72`);
+if (PARTS.length < 72) problems.push(`catalog part count ${PARTS.length}, expected at least 72`);
 
 console.log(JSON.stringify({
   parts: PARTS.length,

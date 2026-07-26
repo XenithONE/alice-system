@@ -90,7 +90,17 @@ export type PartType =
   | "skirt"
   | "srimech"
   | "power"
-  | "booster";
+  | "booster"
+  /*
+   * The engine bay. These four are `category: "utility"` like any other bolt-on
+   * — what makes them internals is that they are the only types allowed on the
+   * "internal" face, and the only ones that contribute to the four plant
+   * budgets. See isInternalPart.
+   */
+  | "engine"
+  | "battery"
+  | "tank"
+  | "radiator";
 
 /** Japanese labels for the builder's type filter, in display order. */
 export const PART_TYPE_LABELS: readonly (readonly [PartType, string])[] = [
@@ -115,16 +125,41 @@ export const PART_TYPE_LABELS: readonly (readonly [PartType, string])[] = [
   ["skirt", "スカート"],
   ["srimech", "自立機構"],
   ["power", "電源"],
-  ["booster", "ブースター"]
+  ["booster", "ブースター"],
+  ["engine", "エンジン"],
+  ["battery", "バッテリー"],
+  ["tank", "燃料タンク"],
+  ["radiator", "ラジエーター"]
 ];
+
+/**
+ * The engine-bay types. A part is an internal if and only if it is one of
+ * these, and an internal may only be mounted on the "internal" face — both
+ * directions are enforced in validateBuild and asserted in catalogSelftest,
+ * because `faces` alone is catalogue data and catalogue data can be wrong.
+ */
+export const INTERNAL_TYPES = ["engine", "battery", "tank", "radiator"] as const;
+export type InternalType = (typeof INTERNAL_TYPES)[number];
+
+export function isInternalPart(part: PartDef): boolean {
+  return part.category === "utility"
+    && (INTERNAL_TYPES as readonly string[]).includes(part.type);
+}
 
 /**
  * Which surface of the hull a part bolts to. Wheels tucked underneath give a
  * low, hard-to-flip machine; wheels hung on the flanks are exposed but let the
  * bot drive upside down; tracks belong on the sides. Restricting everything to
  * the top deck made every robot look the same.
+ *
+ * "internal" is the engine bay: a grid INSIDE the hull slab rather than on a
+ * surface of it. It exists so that installing an engine costs volume you could
+ * have spent on something else — that spatial cost is the third cap that keeps
+ * the plant budgets from being free (the other two are points and waste heat).
+ * Only INTERNAL_TYPES may sit there, and they may sit nowhere else.
  */
-export type MountFace = "deck" | "underside" | "left" | "right" | "front" | "rear";
+export type MountFace =
+  | "deck" | "underside" | "left" | "right" | "front" | "rear" | "internal";
 
 export const MOUNT_FACE_LABELS: readonly (readonly [MountFace, string])[] = [
   ["deck", "上面"],
@@ -132,7 +167,8 @@ export const MOUNT_FACE_LABELS: readonly (readonly [MountFace, string])[] = [
   ["left", "左側面"],
   ["right", "右側面"],
   ["front", "前面"],
-  ["rear", "背面"]
+  ["rear", "背面"],
+  ["internal", "機関室"]
 ];
 
 interface PartDefBase {
@@ -186,6 +222,22 @@ export interface ChassisDef extends PartDefBase {
   readonly heightCells: number;
   /** drive still works upside down (a real invertible design) */
   readonly invertible: boolean;
+
+  /** engine bay in cells, read (x, z) like the deck */
+  readonly internalGrid: readonly [number, number];
+  /*
+   * The plant welded into the frame. Internals ADD to these; they do not
+   * replace them. This is not free power — it is the drive ESCs and the pack
+   * every combat robot has by definition, and without it the eight shipping
+   * presets (which carry no internals) would all become invalid builds and
+   * take buildSelftest, driveSelftest and the headless gate down with them.
+   * Tune so those eight validate with zero shortfall and zero heat derate.
+   */
+  readonly stockPowerKw: number;
+  readonly stockAlternatorKw: number;
+  readonly stockChargeKj: number;
+  readonly stockFuelL: number;
+  readonly stockCoolingKw: number;
 }
 
 export interface DriveDef extends PartDefBase {
@@ -239,6 +291,14 @@ export interface WeaponDef extends PartDefBase {
   readonly impulse?: number;
   /** impulse / clamp / triggered: seconds between uses */
   readonly cooldown?: number;
+  /*
+   * triggered: electrical energy one activation draws from the pack. Omitted
+   * means impulse/IMPULSE_KJ_DIVISOR, so existing parts need no edit. A weapon
+   * whose cost exceeds the pack cannot fire, and WeaponSnap.c already carries a
+   * 0..1 readiness meter — it now means "cooled down AND charged", which is
+   * what the player wanted it to mean anyway.
+   */
+  readonly chargeKj?: number;
   /** impulse: radians the arm sweeps, or metres a spear extends */
   readonly sweep?: number;
   /** impulse: how long the stroke takes */
@@ -272,6 +332,25 @@ export interface UtilityDef extends PartDefBase {
   readonly powerMul?: number;
   /** multiplies weapon spin-up torque */
   readonly weaponPowerMul?: number;
+
+  /*
+   * Plant. Only meaningful when isInternalPart(part) — an engine bolted to the
+   * deck is rejected by validateBuild, so these are never read off a surface
+   * part. Unlike the multipliers above, which stack with `*=`, these sum into a
+   * pool with `+=`: energy is extensive, two engines really is twice the power.
+   */
+  /** engine: mechanical output at the shaft */
+  readonly powerKw?: number;
+  /** engine: how much of its output it can divert to recharging the pack */
+  readonly alternatorKw?: number;
+  /** engine: waste-heat multiplier. A race engine makes more power AND cooks */
+  readonly heatMul?: number;
+  /** battery: stored electrical energy */
+  readonly chargeKj?: number;
+  /** tank: litres, drawn on to refill held weapons' own lines */
+  readonly fuelL?: number;
+  /** radiator: heat it can shed */
+  readonly coolingKw?: number;
 }
 
 export type PartDef = ChassisDef | DriveDef | WeaponDef | ArmorDef | UtilityDef;
@@ -348,12 +427,38 @@ export interface BuildStats {
   readonly tertiaryId: string | null;
   readonly hasSelfRight: boolean;
   readonly invertible: boolean;
+
+  /*
+   * The plant. Supply is chassis stock plus everything in the bay; demand is
+   * what the fitted drives and weapons ask for. The builder shows both sides so
+   * the player can see which one is short.
+   */
+  readonly powerKw: number;
+  readonly powerDemandKw: number;
+  readonly chargeKj: number;
+  readonly chargeDemandKj: number;
+  readonly fuelL: number;
+  /** seconds of held-weapon fire the tank is worth */
+  readonly fuelBurnSec: number;
+  readonly coolingKw: number;
+  /** waste heat at sustained full output */
+  readonly heatKw: number;
+  /** seconds the slowest fitted rotor needs to reach speed on this plant */
+  readonly spinUpSec: number;
+  readonly internalCells: number;
+  readonly internalCellsMax: number;
 }
 
 export interface BuildValidation {
   readonly ok: boolean;
   /** Japanese, shown verbatim in the builder */
   readonly errors: readonly string[];
+  /*
+   * Japanese, shown but NOT blocking. A machine that will overheat is a choice,
+   * not an illegal build — and world.ts throws on !ok, so anything that lands
+   * in `errors` locks the player out of the room entirely.
+   */
+  readonly warnings: readonly string[];
   readonly stats: BuildStats;
 }
 
@@ -412,6 +517,21 @@ export interface WeaponState {
   readonly clamping: SeatIndex | null;
 }
 
+/**
+ * Live plant meters, all 0..1 so the HUD needs no unit conversion and the wire
+ * can carry them as bytes.
+ */
+export interface PlantState {
+  /** of heat capacity; above HEAT_DERATE_START the engine is derating */
+  readonly heat: number;
+  /** of battery capacity */
+  readonly charge: number;
+  /** of tank capacity */
+  readonly fuel: number;
+  /** of engine output currently drawn */
+  readonly load: number;
+}
+
 export interface BotState {
   readonly seat: SeatIndex;
   readonly name: string;
@@ -435,6 +555,7 @@ export interface BotState {
   /** seconds of burning damage still to come */
   readonly burningFor: number;
   readonly selfRightCooldown: number;
+  readonly plant: PlantState;
 }
 
 /** Fire-and-forget signals for VFX and audio; not authoritative state. */

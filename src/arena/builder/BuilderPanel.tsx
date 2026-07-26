@@ -43,7 +43,7 @@ const ACTION_LABELS: Record<WeaponAction, string> = {
   triggered: "一発"
 };
 const FACE_ICONS: Record<MountFace, string> = {
-  deck: "⬆", underside: "⬇", left: "◀", right: "▶", front: "▲", rear: "▼"
+  deck: "⬆", underside: "⬇", left: "◀", right: "▶", front: "▲", rear: "▼", internal: "⚙"
 };
 
 function primaryValue(part: PartDef): string {

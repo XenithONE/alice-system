@@ -22,7 +22,7 @@ import type {
   WeaponSlot
 } from "../sim/types";
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** One bot, one snapshot. Quaternion is sent whole; 4 floats beat unpack bugs. */
 export interface BotSnap {
@@ -50,6 +50,12 @@ export interface BotSnap {
   readonly pc: readonly number[];
   /** seconds of fire damage still burning, for the flame VFX */
   readonly burn: number;
+  /**
+   * Plant meters as bytes 0..255: [heat, charge, fuel, load]. Four bytes per
+   * bot per snapshot — 320 B/s for a full room, which buys the player a HUD
+   * that says why the spinner is not coming up to speed.
+   */
+  readonly pl: readonly [number, number, number, number];
 }
 
 /** Enough to draw a weapon and its readiness without re-deriving anything. */

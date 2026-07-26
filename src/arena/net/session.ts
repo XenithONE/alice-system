@@ -171,6 +171,7 @@ function snapshotOf(sim: ArenaSim): Snapshot {
         Math.max(0, Math.min(255, Math.round(condition * 255)))
       ),
       burn: bot.burningFor,
+      pl: [0, 255, 255, 0],
     })),
     events: sim.drainEvents(),
   };
