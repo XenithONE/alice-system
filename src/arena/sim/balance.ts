@@ -143,6 +143,65 @@ export const DRIVE_ANGULAR_DAMPING = 0.9;
  * contact patch and is still limited by fitted axle torque and top speed.
  */
 export const DRIVE_TRACTION_ASSIST = 0.35;
+/**
+ * Legs (v4). A leg is a hub carrying `DriveDef.feet` capsule spokes on ONE
+ * rigid body with ONE revolute joint — physically identical topology to a
+ * wheel, so driver.ts, damage.ts and the wire format need no leg branch.
+ *
+ * These two fractions of DriveDef.radius are the only free numbers in the spoke:
+ * the capsule's thickness, and how far in toward the axle its inner end reaches.
+ * The tip distance is NOT tuned — ARCHITECTURE_V4 §6.4 fixes it at exactly
+ * `radius` and legSpokeLayout() in build.ts derives the centre offset
+ * `d = radius - halfHeight - capsuleRadius` from that. One formula, one file.
+ */
+export const LEG_SPOKE_RADIUS_FRAC = 0.17;
+export const LEG_HUB_FRAC = 0.22;
+/**
+ * What a leg's `DriveDef.tractionAssist` should be (contract L5). It is
+ * catalogue data, not a fallback: assemble/driver read
+ * `def.tractionAssist ?? DRIVE_TRACTION_ASSIST` exactly as the contract states,
+ * so a leg that omits the field gets the wheel value and skates through the air
+ * between footfalls. This constant exists so the catalogue has one number to
+ * copy rather than five guesses.
+ */
+export const LEG_TRACTION_ASSIST = 0.12;
+/**
+ * Extra hull clearance beyond a leg's static sink depth.
+ *
+ * The inscribed-circle figure driveSinkDepth() returns is the worst case for
+ * ONE axle held still. A walking machine also pitches, because the front and
+ * rear legs on a side are half a step apart, so the hull corners dip below what
+ * the static number predicts. Measured on the three shipped leg presets,
+ * percentage of live frames with the hull touching the floor:
+ *
+ *   margin   leg-walker   leg-stomper   leg-spire
+ *   1.00        24.2%         3.1%         5.3%
+ *   1.35         9.4%         2.2%         0.0%
+ *   1.70         0.8%         0.6%         0.0%
+ *
+ * 1.7 is where the sparsest star in the catalogue (leg-walker, 3 feet) stops
+ * scraping. Travel over the same six seconds does not drop.
+ */
+export const LEG_HULL_MARGIN = 1.7;
+/**
+ * Hard ceiling on PlacedPart.level, well above any chassis maxLevels. This is
+ * not balance — it is the bound that keeps a storey number from being a lever.
+ * levelRises() builds one array entry per storey, and the host runs it on a
+ * guest's spec before any validation rejects the level, so an unbounded
+ * `level: 1e9` would allocate gigabytes on the host and hang the room.
+ */
+export const MAX_BUILD_LEVEL = 8;
+/**
+ * Most drives one machine may fit. The shipped presets use two to four; twelve
+ * leaves room for a hexapod and then some.
+ *
+ * This is a wire bound as much as a design one. BotSnap.wp carries one float
+ * per drive, and the deck of chassis-fortress geometrically takes 231
+ * one-cell wheels — so without a cap the size of every snapshot in the room is
+ * set by whatever a guest chose to build, which is the same shape of defect as
+ * an unbounded storey number.
+ */
+export const MAX_DRIVES = 12;
 /** DC motors deliver peak mechanical output at one quarter stall torque × free speed. */
 export const DRIVE_POWER_DUTY = 0.25;
 /** Even under a spinner load, this fraction of plant output remains available to drive. */

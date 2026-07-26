@@ -1,4 +1,5 @@
 import { PROTOCOL_VERSION } from "./protocol";
+import { MAX_DRIVES } from "../sim/balance";
 import { shouldIncludeDeploy, snapshotFromState } from "./snapshot";
 import type {
   BotState,
@@ -51,6 +52,24 @@ function bot(seat: SeatIndex): BotState {
     burningFor: 2.345678,
     selfRightCooldown: 7.654321,
     plant: { heat: 0.98765, charge: 0.87654, fuel: 0.76543, load: 0.65432 },
+    /*
+     * MAX_DRIVES of them, late in a long match. `wp` is one float per drive, so
+     * a fixture pinned at four left the budget untested for exactly the builds
+     * that stress it. These are deliberately the worst case
+     * for the wire: the phase is ACCUMULATED, so a 180 s match at a wheel's
+     * ~40 rad/s reaches four digits before the point, and that is what has to
+     * fit inside the byte budget below — not a tidy 1.234.
+     */
+    /*
+     * MAX_DRIVES of them at the magnitude a long match reaches — the phase is
+     * accumulated, so 180 s at a wheel's ~40 rad/s is four figures before the
+     * point, and that is what has to fit the budget below. Alternating signs
+     * because a machine turning on the spot runs its sides opposite ways, which
+     * wp-carries-sign checks.
+     */
+    drivePhases: Array.from({ length: MAX_DRIVES }, (_, index) =>
+      (index % 2 === 0 ? -7213.456789 : 7198.123456) + seat + index / 100
+    ),
     nettedFor: seat === 0 ? 1 : 0,
     pinnedFor: seat === 1 ? 1 : 0,
     oiledFor: seat === 2 ? 1 : 0,
@@ -102,8 +121,25 @@ function main(): void {
   const keyframeJson = JSON.stringify(keyframe);
   checks.regularBytes = bytes(regular);
   checks.keyframeBytes = bytes(keyframe);
-  assert(`regular-size:${checks.regularBytes}`, bytes(regular) <= 2600);
-  assert(`keyframe-size:${checks.keyframeBytes}`, bytes(keyframe) <= 3600);
+  /*
+   * Both caps move, and it is worth saying why rather than just raising them.
+   *
+   * The fixture used to carry four drives, so the budget was never tested
+   * against the builds that actually stress it — MAX_DRIVES is twelve, and
+   * wp is one number per drive. Sizing the fixture honestly is what pushed
+   * these past their old ceilings; the snapshot did not silently grow.
+   *
+   * MAX_DRIVES is what keeps it bounded: without it a guest picks the room's
+   * bandwidth for everyone, since chassis-fortress geometrically takes 231
+   * one-cell wheels. The phase itself is sent accumulated. Folding it to an
+   * angle would have saved 144 B and cost correctness — at 20 Hz a drive moves
+   * up to 18 rad between snapshots, which a wrapped value cannot express.
+   *
+   * Ceilings are the measurement at MAX_DRIVES rounded up to the next hundred,
+   * which is how the earlier ones were set.
+   */
+  assert(`regular-size:${checks.regularBytes}`, bytes(regular) <= 2900);
+  assert(`keyframe-size:${checks.keyframeBytes}`, bytes(keyframe) <= 4200);
   assert("quantized", !/\.\d{4,}/.test(keyframeJson));
   assert("proj-every-frame", regular.proj.length === 4 && "proj" in regular);
   assert("dv-every-frame", regular.dv === 41 && keyframe.dv === 41);
@@ -111,7 +147,43 @@ function main(): void {
   assert("dep-on-change", shouldIncludeDeploy(40, 41, 99));
   assert("dep-on-keyframe", shouldIncludeDeploy(41, 41, 100));
   assert("dep-not-every-frame", !shouldIncludeDeploy(41, 41, 99));
-  assert("protocol-v4", PROTOCOL_VERSION === 4);
+  assert("protocol-v5", PROTOCOL_VERSION === 5);
+
+  /*
+   * What the drive phases cost. Measured, not asserted from a formula: the same
+   * snapshot with wp emptied, stringified the same way, subtracted. A regression
+   * that quietly widens wp (six decimals, one entry per spoke rather than per
+   * drive) shows up here as a number, and the budget above catches it.
+   */
+  const withoutPhases = {
+    ...regular,
+    bots: regular.bots.map((snap) => ({ ...snap, wp: [] as number[] }))
+  };
+  checks.wpBytes = bytes(regular) - bytes(withoutPhases);
+  checks.wpBytesPerBot = +(checks.wpBytes / regular.bots.length).toFixed(1);
+  checks.wpBytesPerSecondAt20Hz = checks.wpBytes * 20;
+  assert(
+    "wp-one-per-drive",
+    regular.bots.every(
+      (snap, index) => snap.wp.length === state.bots[index]!.drivePhases.length
+    )
+  );
+  assert(
+    "wp-carries-sign",
+    regular.bots.every((snap) => snap.wp.some((v) => v < 0) && snap.wp.some((v) => v > 0))
+  );
+  // 3 dp is the contract: the drawn foot must land within a millimetre of the
+  // physical one, and radius * 0.001 rad is 0.3 mm on the largest leg.
+  assert(
+    "wp-3dp",
+    regular.bots.every((snap) =>
+      snap.wp.every((v) => Math.abs(v * 1000 - Math.round(v * 1000)) < 1e-6)
+    )
+  );
+  assert(
+    "wp-not-flattened",
+    regular.bots.every((snap) => new Set(snap.wp).size === snap.wp.length)
+  );
   checks.longDecimals = (keyframeJson.match(/\.\d{4,}/g) ?? []).length;
   checks.regularHasDep = regular.dep === undefined ? 0 : 1;
   console.log(`G-WIRE PASS ${JSON.stringify(checks)}`);

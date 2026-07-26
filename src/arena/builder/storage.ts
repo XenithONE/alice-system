@@ -1,4 +1,5 @@
 import type { BotSpec, MountFace, PlacedPart, Rot4 } from "../sim/types";
+import { MAX_BUILD_LEVEL } from "../sim/balance";
 
 const GARAGE_KEY = "sc.garage.v1";
 const MAX_SPECS = 64;
@@ -37,12 +38,31 @@ function decodePlacedPart(value: unknown): PlacedPart | null {
   ) {
     return null;
   }
-  return {
+  /*
+   * The storey has to survive the round trip. Dropping it does not merely
+   * flatten the machine: level is part of the occupancy key, so every part
+   * lands on top of the riser that was holding it up and validateBuild
+   * rejects the whole build as overlapping. A saved multi-storey machine
+   * would come back unusable.
+   *
+   * Emitted only when non-zero so a single-storey build encodes to exactly
+   * the same bytes it did before v4 and old share codes stay valid.
+   */
+  const candidateLevel = value.level;
+  const level =
+    typeof candidateLevel === "number" &&
+    Number.isInteger(candidateLevel) &&
+    candidateLevel > 0 &&
+    candidateLevel <= MAX_BUILD_LEVEL
+      ? candidateLevel
+      : 0;
+  const base = {
     partId: value.partId,
     face: typeof value.face === "string" && FACES.has(value.face as MountFace) ? value.face as MountFace : "deck",
-    cell: [x, z],
+    cell: [x, z] as readonly [number, number],
     rot: candidateRot as Rot4
   };
+  return level > 0 ? { ...base, level } : base;
 }
 
 function decodeValue(value: unknown): BotSpec | null {

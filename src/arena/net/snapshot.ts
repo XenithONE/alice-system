@@ -75,7 +75,27 @@ export function snapshotFromState(
         c: q(weapon.charge, 2),
         f: q(weapon.fuel, 2)
       })),
-      wp: 0,
+      /*
+       * Three decimals, not two. This is the one quantity where the rounding
+       * step is directly a distance on screen: a leg's foot moves radius * d
+       * metres for d radians, so at the catalogue's largest leg (0.30 m) two
+       * decimals would leave a 3 mm gap between the drawn foot and the physical
+       * one, and three leaves 0.3 mm. The value is accumulated rather than
+       * wrapped so the renderer can lerp two snapshots with plain interpolation
+       * and never meet a +/-PI seam.
+       */
+      /*
+       * Sent accumulated, NOT folded into (-PI, PI].
+       *
+       * Folding it looks like free compression — a three-minute match reaches
+       * four figures, and the angle is all the renderer turns a hub by. It is
+       * not free. A drive advances up to 18 rad between snapshots at 20 Hz, and
+       * 18 rad is indistinguishable from 18 - 6*2PI once wrapped, so the guest
+       * reconstructs a different motion and a machine turning on the spot stops
+       * showing its drives running opposite ways. drivePhaseSelftest fails on
+       * both counts if this is wrapped. The saving was 144 B per snapshot.
+       */
+      wp: bot.drivePhases.map((phase) => q(phase, 3)),
       detach: bot.detached.reduce((mask, index) => mask + 2 ** index, 0),
       pc: bot.partCondition.map((condition) =>
         Math.max(0, Math.min(255, Math.round(condition * 255)))

@@ -34,6 +34,14 @@ const SKIRT_FACES = ["left", "right", "front", "rear"] as const;
 const UTIL_FACES = ["deck", "underside"] as const;
 const CHASSIS_FACES = ["deck"] as const;
 const INTERNAL_FACES = ["internal"] as const;
+/*
+ * Risers stand on a deck and make the next one. They cannot hang off a flank —
+ * a storey has to be supported from below, which is the whole point of H4.
+ */
+const RISER_FACES = ["deck"] as const;
+/* Legs bolt where wheels bolt: L3 forbids a leg-only exception to the C-DRIVE
+ * axle contract, so the mounting faces have to match too. */
+const LEG_FACES = WHEEL_FACES;
 
 export const PARTS: readonly PartDef[] = [
   /* ======================== chassis / frame (5) ======================== */
@@ -57,6 +65,7 @@ export const PARTS: readonly PartDef[] = [
     material: "aluminium",
     color: 0x2f3336,
     blurb: "機動重視の薄肉アルミデッキ。積載は控えめ。",
+    maxLevels: 1,
     internalGrid: [3, 5],
     stockPowerKw: 3.5,
     stockAlternatorKw: 0.6,
@@ -84,6 +93,7 @@ export const PARTS: readonly PartDef[] = [
     material: "steel",
     color: 0x8d9299,
     blurb: "溶接鋼板の標準デッキ。多くの構成に対応。",
+    maxLevels: 1,
     internalGrid: [5, 7],
     stockPowerKw: 5.0,
     stockAlternatorKw: 0.9,
@@ -111,6 +121,7 @@ export const PARTS: readonly PartDef[] = [
     material: "hardox",
     color: 0x3a3f45,
     blurb: "Hardox厚板の大甲板。重いが壊れにくい。",
+    maxLevels: 1,
     internalGrid: [7, 9],
     stockPowerKw: 6.5,
     stockAlternatorKw: 1.2,
@@ -138,6 +149,7 @@ export const PARTS: readonly PartDef[] = [
     material: "steel",
     color: 0x2f3336,
     blurb: "上下対称デッキ。逆さでも走れる本格可逆設計。",
+    maxLevels: 1,
     internalGrid: [5, 7],
     stockPowerKw: 5.0,
     stockAlternatorKw: 0.9,
@@ -165,6 +177,7 @@ export const PARTS: readonly PartDef[] = [
     material: "aluminium",
     color: 0x2f3336,
     blurb: "底面駆動向けの超低車高フレーム。側面は低い。",
+    maxLevels: 1,
     internalGrid: [4, 4],
     stockPowerKw: 4.0,
     stockAlternatorKw: 0.7,
@@ -1727,6 +1740,7 @@ export const PARTS: readonly PartDef[] = [
     material: "carbon",
     color: 0x2f3336,
     blurb: "羽根のように軽い。紙のように破れる。",
+    maxLevels: 1,
     internalGrid: [3, 4],
     stockPowerKw: 2.0,
     stockAlternatorKw: 0.4,
@@ -4302,6 +4316,7 @@ export const PARTS: readonly PartDef[] = [
     material: "steel",
     color: 3817285,
     blurb: "機関室の大きい重量級。大出力と冷却を積むための船体。",
+    maxLevels: 1,
     internalGrid: [8, 10],
     stockPowerKw: 6.5,
     stockAlternatorKw: 1.2,
@@ -4329,6 +4344,7 @@ export const PARTS: readonly PartDef[] = [
     material: "aluminium",
     color: 3093302,
     blurb: "機関室の小さい軽量級。武装優先、内装は最小限。",
+    maxLevels: 1,
     internalGrid: [2, 2],
     stockPowerKw: 2.5,
     stockAlternatorKw: 0.4,
@@ -4356,6 +4372,7 @@ export const PARTS: readonly PartDef[] = [
     material: "steel",
     color: 9278105,
     blurb: "横に広い甲板。横並び武装向き。",
+    maxLevels: 1,
     internalGrid: [5, 5],
     stockPowerKw: 5,
     stockAlternatorKw: 0.9,
@@ -4383,6 +4400,7 @@ export const PARTS: readonly PartDef[] = [
     material: "steel",
     color: 3093302,
     blurb: "前後に長い船体。スピアとウェッジの間合いを伸ばす。",
+    maxLevels: 1,
     internalGrid: [3, 7],
     stockPowerKw: 4.5,
     stockAlternatorKw: 0.8,
@@ -4410,6 +4428,7 @@ export const PARTS: readonly PartDef[] = [
     material: "aluminium",
     color: 3093302,
     blurb: "軽い可逆デッキ。転んでも走り続ける。",
+    maxLevels: 1,
     internalGrid: [3, 4],
     stockPowerKw: 3.5,
     stockAlternatorKw: 0.6,
@@ -4437,6 +4456,7 @@ export const PARTS: readonly PartDef[] = [
     material: "hardox",
     color: 3817285,
     blurb: "動く要塞。機関室も甲板も最大級。遅い。",
+    maxLevels: 1,
     internalGrid: [9, 9],
     stockPowerKw: 7,
     stockAlternatorKw: 1.4,
@@ -4586,6 +4606,344 @@ export const PARTS: readonly PartDef[] = [
     color: 14723085,
     blurb: "瞬間出力を盛るキャパシタ。駆動の突き上げ。",
     powerMul: 1.12,
+  }
+  ,
+
+  /* ================================================================== */
+  /* v4 additions — APPEND ONLY, and only at the tail.                   */
+  /*                                                                     */
+  /* driveSelftest picks its measurement subjects by first match in this */
+  /* array (P6) and headless only races presets[0..5] (P5). Anything     */
+  /* inserted above this line silently changes what the gates measure.   */
+  /* ================================================================== */
+
+  /* ======================== drive: leg (5) ==========================
+   * L6 envelope, measured against the same-class wheel each leg is meant
+   * to replace. Top speed here is maxOmega * radius, the metre-per-second
+   * the machine actually reaches — not the angular rate, which is
+   * meaningless to compare across a 0.08 m wheel and a 0.30 m leg.
+   *
+   *   leg            peer wheel     topSpeed   torque   mass
+   *   leg-scout      wheel-small      0.61x     1.55x   1.38x
+   *   leg-strider    wheel-mid        0.61x     1.65x   1.38x
+   *   leg-crab       wheel-grip       0.61x     1.61x   1.36x
+   *   leg-hauler     wheel-large      0.60x     1.61x   1.38x
+   *   leg-stilt      wheel-buggy      0.61x     1.60x   1.36x
+   *
+   * `radius` is the outline contract shared with wheels (L2): the farthest
+   * point of every foot is exactly this far from the axle, so it is also
+   * the ride height the leg buys you. `height` is the axial width, same as
+   * a wheel. `tractionAssist` is low because a leg spends part of every
+   * revolution in the air (L5).
+   */
+  {
+    id: "leg-scout",
+    type: "leg",
+    faces: LEG_FACES,
+    name: "Scout Leg",
+    nameJa: "軽量2脚",
+    category: "drive",
+    kind: "leg",
+    cost: 78,
+    mass: 5.5,
+    hp: 60,
+    armor: 3,
+    cells: [2, 3],
+    height: 0.1,
+    radius: 0.18,
+    torque: 34,
+    maxOmega: 15,
+    friction: 1.45,
+    feet: 4,
+    tractionAssist: 0.1,
+    material: "aluminium",
+    color: 0x8d9299,
+    blurb: "小さな足を4本刻む軽量脚。小ホイールの6割の速度で1.5倍のトルク。"
+  },
+  {
+    id: "leg-strider",
+    type: "leg",
+    faces: LEG_FACES,
+    name: "Strider Leg",
+    nameJa: "標準3脚",
+    category: "drive",
+    kind: "leg",
+    cost: 105,
+    mass: 11,
+    hp: 85,
+    armor: 5,
+    cells: [2, 4],
+    height: 0.12,
+    radius: 0.22,
+    torque: 66,
+    maxOmega: 16,
+    friction: 1.6,
+    feet: 3,
+    tractionAssist: 0.12,
+    material: "steel",
+    color: 0x2f3336,
+    blurb: "3本足の標準脚。中ホイールより遅く、押しと車高で勝る。"
+  },
+  {
+    id: "leg-crab",
+    type: "leg",
+    faces: LEG_FACES,
+    name: "Crab Leg",
+    nameJa: "高グリップ4脚",
+    category: "drive",
+    kind: "leg",
+    cost: 115,
+    mass: 9.5,
+    hp: 80,
+    armor: 4,
+    cells: [2, 4],
+    height: 0.11,
+    radius: 0.2,
+    torque: 58,
+    maxOmega: 15,
+    friction: 1.85,
+    feet: 4,
+    tractionAssist: 0.13,
+    material: "rubber",
+    color: 0x1b4a8f,
+    blurb: "4本足で接地が途切れにくい。カタログ最高の摩擦。"
+  },
+  {
+    id: "leg-hauler",
+    type: "leg",
+    faces: LEG_FACES,
+    name: "Hauler Leg",
+    nameJa: "重量4脚",
+    category: "drive",
+    kind: "leg",
+    cost: 145,
+    mass: 16.5,
+    hp: 110,
+    armor: 8,
+    cells: [2, 5],
+    height: 0.15,
+    radius: 0.26,
+    torque: 100,
+    maxOmega: 13,
+    friction: 1.7,
+    feet: 4,
+    tractionAssist: 0.14,
+    material: "steel",
+    color: 0x8d9299,
+    blurb: "鋼の重脚。カタログ最大トルク。遅く、重く、押し負けない。"
+  },
+  {
+    id: "leg-stilt",
+    type: "leg",
+    faces: LEG_FACES,
+    name: "Stilt Leg",
+    nameJa: "長脚スティルト",
+    category: "drive",
+    kind: "leg",
+    cost: 160,
+    mass: 19,
+    hp: 100,
+    armor: 6,
+    cells: [2, 5],
+    height: 0.13,
+    radius: 0.3,
+    torque: 88,
+    maxOmega: 11,
+    friction: 1.5,
+    feet: 3,
+    tractionAssist: 0.11,
+    material: "titanium",
+    color: 0x2f3336,
+    blurb: "車高0.30mを稼ぐ3本の長脚。重心が上がるので安定度をよく見ること。"
+  },
+
+  /* ======================== structure: riser (5) ====================
+   * A2/A3: `height` is IDENTICAL to `rise` on every one of these, to the
+   * literal. That is what lets the ordinary y = base(level) + height/2 put
+   * the riser's top exactly on the next storey's base, so build.ts's
+   * levelRises() stays the only place a storey height is ever computed.
+   * catalogSelftest checks |height - rise| < 1e-9; writing the same numeric
+   * literal twice makes the difference exactly 0.
+   */
+  {
+    id: "riser-light",
+    type: "riser",
+    faces: RISER_FACES,
+    name: "Light Riser",
+    nameJa: "軽量支柱",
+    category: "structure",
+    cost: 45,
+    mass: 3,
+    hp: 55,
+    armor: 2,
+    cells: [2, 2],
+    height: 0.1,
+    rise: 0.1,
+    material: "aluminium",
+    color: 0x8d9299,
+    blurb: "アルミ角パイプの短い支柱。一段だけ持ち上げる最安手段。"
+  },
+  {
+    id: "riser-post",
+    type: "riser",
+    faces: RISER_FACES,
+    name: "Steel Post",
+    nameJa: "鋼製支柱",
+    category: "structure",
+    cost: 70,
+    mass: 6,
+    hp: 90,
+    armor: 4,
+    cells: [2, 2],
+    height: 0.15,
+    rise: 0.15,
+    material: "steel",
+    color: 0x2f3336,
+    blurb: "溶接鋼の標準支柱。0.15mの段を素直に作る。"
+  },
+  {
+    id: "riser-tower",
+    type: "riser",
+    faces: RISER_FACES,
+    name: "Tower Riser",
+    nameJa: "高床支柱",
+    category: "structure",
+    cost: 110,
+    mass: 10,
+    hp: 120,
+    armor: 5,
+    cells: [2, 3],
+    height: 0.24,
+    rise: 0.24,
+    material: "steel",
+    color: 0x8d9299,
+    blurb: "0.24mの高床を一気に作る。上に載せるほど転びやすくなる。"
+  },
+  {
+    id: "riser-armored",
+    type: "riser",
+    faces: RISER_FACES,
+    name: "Armored Riser",
+    nameJa: "装甲支柱",
+    category: "structure",
+    cost: 165,
+    mass: 16,
+    hp: 190,
+    armor: 14,
+    cells: [3, 3],
+    height: 0.18,
+    rise: 0.18,
+    material: "hardox",
+    color: 0x3a3f45,
+    blurb: "Hardoxで囲った支柱。段を作りつつ側面の直撃を受け止める。"
+  },
+  {
+    id: "riser-mast",
+    type: "riser",
+    faces: RISER_FACES,
+    name: "Titanium Mast",
+    nameJa: "チタンマスト",
+    category: "structure",
+    cost: 135,
+    mass: 8,
+    hp: 85,
+    armor: 3,
+    cells: [2, 2],
+    height: 0.3,
+    rise: 0.3,
+    material: "titanium",
+    color: 0x2f3336,
+    blurb: "最大の0.30m。軽いが細い——折れるときは一瞬で折れる。"
+  },
+
+  /* ================== chassis: multi-storey frames (3) ==============
+   * H5: a frame that advertises maxLevels >= 2 is making a structural
+   * promise, and pays for it. Each of these costs more and weighs more
+   * than every existing frame with a deck area at or below its own.
+   */
+  {
+    id: "chassis-scaffold",
+    type: "frame",
+    faces: CHASSIS_FACES,
+    name: "Scaffold Frame",
+    nameJa: "足場フレーム",
+    category: "chassis",
+    cost: 215,
+    mass: 31,
+    hp: 330,
+    armor: 7,
+    cells: [6, 8],
+    deck: [6, 8],
+    height: 0.11,
+    heightCells: 3,
+    groundClearance: 0.05,
+    invertible: false,
+    material: "aluminium",
+    color: 0x8d9299,
+    blurb: "支柱前提の軽量2段フレーム。上に一段だけ積める。",
+    maxLevels: 2,
+    internalGrid: [4, 5],
+    stockPowerKw: 4.5,
+    stockAlternatorKw: 0.8,
+    stockChargeKj: 9,
+    stockFuelL: 4,
+    stockCoolingKw: 2.8
+  },
+  {
+    id: "chassis-tiered",
+    type: "frame",
+    faces: CHASSIS_FACES,
+    name: "Tiered Frame",
+    nameJa: "二段フレーム",
+    category: "chassis",
+    cost: 265,
+    mass: 44,
+    hp: 420,
+    armor: 10,
+    cells: [7, 9],
+    deck: [7, 9],
+    height: 0.13,
+    heightCells: 3,
+    groundClearance: 0.055,
+    invertible: false,
+    material: "steel",
+    color: 0x2f3336,
+    blurb: "二階建てを前提に骨を通した鋼船体。中量シャーシより重く高い。",
+    maxLevels: 2,
+    internalGrid: [5, 7],
+    stockPowerKw: 5.5,
+    stockAlternatorKw: 1,
+    stockChargeKj: 11,
+    stockFuelL: 5,
+    stockCoolingKw: 3.2
+  },
+  {
+    id: "chassis-pagoda",
+    type: "frame",
+    faces: CHASSIS_FACES,
+    name: "Pagoda Frame",
+    nameJa: "三段フレーム",
+    category: "chassis",
+    cost: 355,
+    mass: 60,
+    hp: 540,
+    armor: 13,
+    cells: [9, 9],
+    deck: [9, 9],
+    height: 0.15,
+    heightCells: 4,
+    groundClearance: 0.06,
+    invertible: false,
+    material: "hardox",
+    color: 0x3a3f45,
+    blurb: "三階建てまで許す塔型船体。高く積むほど転びやすい。",
+    maxLevels: 3,
+    internalGrid: [6, 7],
+    stockPowerKw: 6.8,
+    stockAlternatorKw: 1.3,
+    stockChargeKj: 15,
+    stockFuelL: 7,
+    stockCoolingKw: 4.2
   }
 
 ];
@@ -4884,6 +5242,106 @@ export const PRESETS: readonly BotSpec[] = [
       { partId: "disc-slim", face: "deck", cell: [3, 2], rot: 0 },
       { partId: "eng-cruise", face: "internal", cell: [2, 3], rot: 0 },
       { partId: "rad-mid", face: "internal", cell: [5, 3], rot: 0 }
+    ]
+  },
+
+  /* ================================================================== */
+  /* v4 presets — APPEND ONLY. headless.ts races presets[(seat+match)%6],
+   * so anything inserted before "shredder" changes the 20-match gate.   */
+  /* ================================================================== */
+
+  // leg-walker — 脚のみ / chassis-medium 7×9 h3
+  //   underside (7×9): leg-strider 2×4 @ (0,0)(5,0)(0,5)(5,5)
+  //     -> x 0-1 & 5-6 (<7), z 0-3 & 5-8 (<9), no overlap
+  //   front (7×3): wedge-std 5×2 @ (1,0)  [tertiary]
+  //   deck  (7×9): plate-steel 3×2 @ (2,3)
+  // cost: 160 + 105×4 + 90 + 70 = 740
+  // mass: 32 + 11×4 + 12 + 12 = 100 kg
+  // drive×4 legs / tertiary only
+  {
+    v: 3,
+    name: "leg-walker",
+    chassisId: "chassis-medium",
+    paint: 0xb08d57,
+    parts: [
+      { partId: "leg-strider", face: "underside", cell: [0, 0], rot: 0 },
+      { partId: "leg-strider", face: "underside", cell: [5, 0], rot: 0 },
+      { partId: "leg-strider", face: "underside", cell: [0, 5], rot: 0 },
+      { partId: "leg-strider", face: "underside", cell: [5, 5], rot: 0 },
+      { partId: "wedge-std", face: "front", cell: [1, 0], rot: 0 },
+      { partId: "plate-steel", face: "deck", cell: [2, 3], rot: 0 }
+    ]
+  },
+
+  // leg-stomper — 脚のみ / chassis-heavy 9×11 h4
+  //   underside (9×11): leg-hauler 2×5 @ (0,0)(7,0)(0,6)(7,6)
+  //     -> x 0-1 & 7-8 (<9), z 0-4 & 6-10 (<11), no overlap
+  //   deck: angle-grinder 2×2 @ (3,3) [secondary]; applique-light 2×1 @ (3,7)
+  // cost: 230 + 145×4 + 130 + 28 = 968
+  // mass: 48 + 16.5×4 + 10 + 2 = 126 kg
+  {
+    v: 3,
+    name: "leg-stomper",
+    chassisId: "chassis-heavy",
+    paint: 0x7a2f20,
+    parts: [
+      { partId: "leg-hauler", face: "underside", cell: [0, 0], rot: 0 },
+      { partId: "leg-hauler", face: "underside", cell: [7, 0], rot: 0 },
+      { partId: "leg-hauler", face: "underside", cell: [0, 6], rot: 0 },
+      { partId: "leg-hauler", face: "underside", cell: [7, 6], rot: 0 },
+      { partId: "angle-grinder", face: "deck", cell: [3, 3], rot: 0 },
+      { partId: "applique-light", face: "deck", cell: [3, 7], rot: 0 }
+    ]
+  },
+
+  // tier-tower — 多段（三階建て）/ chassis-pagoda 9×9 h4 maxLevels 3
+  //   underside (9×9): wheel-mid 2×2 @ (0,2)(7,2)(0,6)(7,6)
+  //     -> x 0-1 & 7-8 (<9), z 2-3 & 6-7 (<9)
+  //   deck level 0: riser-post 2×2 @ (3,3) -> x3-4 z3-4
+  //   deck level 1: riser-post 2×2 @ (3,3) -> x3-4 z3-4  ⊂ level 0 (H4)
+  //   deck level 2: angle-grinder 2×2 @ (3,3) -> x3-4 z3-4 ⊂ level 1 (H4)
+  //     [secondary]. level 2 needs maxLevels 3 — only chassis-pagoda has it.
+  //   Wheels, not legs: at 114 kg this hull is far past what four legs move.
+  // cost: 355 + 45×4 + 70×2 + 130 = 805
+  // mass: 60 + 8×4 + 6×2 + 10 = 114 kg
+  {
+    v: 3,
+    name: "tier-tower",
+    chassisId: "chassis-pagoda",
+    paint: 0x1b4a8f,
+    parts: [
+      { partId: "wheel-mid", face: "underside", cell: [0, 2], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [7, 2], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [0, 6], rot: 0 },
+      { partId: "wheel-mid", face: "underside", cell: [7, 6], rot: 0 },
+      { partId: "riser-post", face: "deck", cell: [3, 3], rot: 0, level: 0 },
+      { partId: "riser-post", face: "deck", cell: [3, 3], rot: 0, level: 1 },
+      { partId: "angle-grinder", face: "deck", cell: [3, 3], rot: 0, level: 2 }
+    ]
+  },
+
+  // leg-spire — 脚 + 多段 / chassis-scaffold 6×8 h3 maxLevels 2
+  //   underside (6×8): leg-strider 2×4 @ (0,0)(4,0)(0,4)(4,4)
+  //     -> x 0-1 & 4-5 (<6), z 0-3 & 4-7 (<8)
+  //   deck level 0: riser-post 2×2 @ (2,3) -> x2-3 z3-4
+  //   deck level 1: cutting-disc 2×2 @ (2,3) -> x2-3 z3-4 ⊂ level 0 (H4)
+  //     [secondary]
+  //   The light 2-storey frame is the one four legs can still carry: 93 kg
+  //   against chassis-pagoda's 114, and leg-strider has the torque for it.
+  // cost: 215 + 105×4 + 70 + 200 = 905
+  // mass: 31 + 11×4 + 6 + 12 = 93 kg
+  {
+    v: 3,
+    name: "leg-spire",
+    chassisId: "chassis-scaffold",
+    paint: 0xe0a80d,
+    parts: [
+      { partId: "leg-strider", face: "underside", cell: [0, 0], rot: 0 },
+      { partId: "leg-strider", face: "underside", cell: [4, 0], rot: 0 },
+      { partId: "leg-strider", face: "underside", cell: [0, 4], rot: 0 },
+      { partId: "leg-strider", face: "underside", cell: [4, 4], rot: 0 },
+      { partId: "riser-post", face: "deck", cell: [2, 3], rot: 0, level: 0 },
+      { partId: "cutting-disc", face: "deck", cell: [2, 3], rot: 0, level: 1 }
     ]
   }
 

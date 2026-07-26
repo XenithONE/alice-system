@@ -1,5 +1,5 @@
 import RAPIER from "@dimforge/rapier3d-compat";
-import { DEBRIS_COLLISION_GROUPS } from "./assemble";
+import { DEBRIS_COLLISION_GROUPS, sampleDrivePhases } from "./assemble";
 import type {
   AssembledBot,
   ColliderOwner,
@@ -845,6 +845,16 @@ export class DamageSystem {
   }
 
   stateFor(bot: DamageBot): BotState {
+    /*
+     * Re-read the axles before publishing. world.ts calls this once inside the
+     * step loop and once from getState() AFTER world.step(), and it is the
+     * second one that becomes the snapshot: without this line the published
+     * phase would be the pre-step angle while pos and quat below are the
+     * post-step ones, and the drawn foot would trail the physical foot by a
+     * whole solver tick. The sampler is idempotent, so the extra call costs a
+     * quaternion multiply and changes nothing else.
+     */
+    sampleDrivePhases(bot.assembled);
     const body = bot.assembled.chassis;
     const p = body.translation();
     const q = body.rotation();
@@ -911,6 +921,9 @@ export class DamageSystem {
       burningFor: bot.burningFor,
       selfRightCooldown: bot.assembled.selfRightCooldown,
       plant: plantState(bot.assembled),
+      // Fitted order, which is the order assembleBot pushed them in and the
+      // order BotSnap.wp is indexed by.
+      drivePhases: bot.assembled.drives.map((drive) => drive.phase),
       nettedFor: bot.nettedFor,
       pinnedFor: bot.pinnedFor,
       oiledFor: bot.oiledFor,

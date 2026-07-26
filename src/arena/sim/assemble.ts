@@ -8,7 +8,14 @@ import {
   FIXED_DT,
   MIN_HIT_IMPULSE
 } from "./balance";
-import { driveSide, partLocalPosition } from "./build";
+import {
+  driveSide,
+  legSpokeLayout,
+  hullLift,
+  levelRises,
+  partLocalPosition,
+  placedRise
+} from "./build";
 import {
   CELL,
   type BotSpec,
@@ -38,6 +45,12 @@ export interface RuntimePart {
   readonly face: MountFace;
   /** Elongated floor contact used by side-mounted tracks. */
   readonly trackContact?: RAPIER.Collider;
+  /*
+   * Legs only: the spoke capsules after the first. `collider` is spoke 0, so a
+   * leg looks exactly like a wheel to every consumer of RuntimePart; these are
+   * the rest of the same star on the same rigid body.
+   */
+  readonly legColliders?: readonly RAPIER.Collider[];
   detached: boolean;
 }
 
@@ -45,6 +58,20 @@ export interface DriveRuntime extends RuntimePart {
   readonly def: DriveDef;
   readonly joint: RAPIER.RevoluteImpulseJoint;
   readonly side: -1 | 1;
+  /*
+   * Accumulated rotation about the axle, measured against the chassis, in
+   * radians and continuous across turns. This is the ONLY place the number
+   * lives: BotState.drivePhases copies it, BotSnap.wp quantises that copy, and
+   * the renderer reads the copy. The renderer used to integrate it from how far
+   * the hull had travelled, which is a different fact wearing the same name.
+   */
+  phase: number;
+  /*
+   * Last axle angle sampled, wrapped to (-PI, PI]. Kept so `phase` can be built
+   * out of wrapped deltas — the raw angle folds at +/-PI and a leg turning
+   * through the fold would otherwise jump a whole revolution.
+   */
+  phaseAngle: number;
 }
 
 export interface WeaponRuntime extends RuntimePart {
@@ -189,6 +216,54 @@ function isSpear(def: WeaponDef): boolean {
   return def.effect === "impulse" && def.mechanism === "prismatic";
 }
 
+/**
+ * The twist of a chassis-relative rotation about the axle, wrapped to
+ * (-PI, PI].
+ *
+ * Every drive's revolute joint turns about chassis-local X (see the JointData
+ * below), so the twist component of conj(chassis) * drive about X is exactly
+ * how far that drive has turned in its mount. Only the x and w components of
+ * the relative quaternion take part: the y and z components are the swing the
+ * joint is not supposed to have.
+ */
+function axleTwist(
+  chassis: RAPIER.Rotation,
+  drive: RAPIER.Rotation
+): number {
+  // conj(chassis) * drive, x and w only.
+  const w =
+    chassis.w * drive.w + chassis.x * drive.x + chassis.y * drive.y + chassis.z * drive.z;
+  const x =
+    chassis.w * drive.x - chassis.x * drive.w - chassis.y * drive.z + chassis.z * drive.y;
+  // q and -q are the same rotation; pinning w >= 0 keeps 2*atan2 inside one turn.
+  return w < 0 ? 2 * Math.atan2(-x, -w) : 2 * Math.atan2(x, w);
+}
+
+/**
+ * Re-sync every drive's accumulated axle rotation with the bodies.
+ *
+ * Safe to call more than once per step and safe to call more often than the
+ * solver runs: each call adds the wrapped difference since the previous call,
+ * so the sum telescopes and extra calls contribute exactly zero. It is called
+ * from driveBot, which guarantees at least one sample per physics step (so a
+ * turn can never alias past PI), and again from DamageSystem.stateFor, so the
+ * state published AFTER world.step() carries the post-step angle rather than a
+ * frame-old one. A one-step lag is not cosmetic here: at a leg's 16 rad/s it is
+ * 0.27 rad, which puts the drawn foot 58 mm from the physical one.
+ */
+export function sampleDrivePhases(bot: AssembledBot): void {
+  const chassisRotation = bot.chassis.rotation();
+  for (const drive of bot.drives) {
+    if (drive.detached || !drive.body.isValid()) continue;
+    const angle = axleTwist(chassisRotation, drive.body.rotation());
+    let delta = angle - drive.phaseAngle;
+    if (delta > Math.PI) delta -= 2 * Math.PI;
+    else if (delta < -Math.PI) delta += 2 * Math.PI;
+    drive.phase += delta;
+    drive.phaseAngle = angle;
+  }
+}
+
 export function assembleBot(
   world: RAPIER.World,
   spec: BotSpec,
@@ -207,6 +282,14 @@ export function assembleBot(
     z: 0,
     w: Math.cos(facing / 2)
   };
+  /*
+   * How far the hull rides above its axles. Zero unless a leg is fitted: a star
+   * of spokes only guarantees its inscribed circle between footfalls, so
+   * without this the hull is on the floor for most of the match and the machine
+   * sleds on its belly with its legs turning in the air. Derived in build.ts so
+   * the mesh, the centre of mass and this collider cannot disagree.
+   */
+  const lift = hullLift(spec, catalog);
   const chassis = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(origin[0], origin[1], origin[2])
@@ -221,7 +304,7 @@ export function assembleBot(
       chassisDef.height / 2,
       chassisDef.deck[1] * CELL / 2
     )
-      .setTranslation(0, chassisDef.groundClearance + chassisDef.height / 2, 0)
+      .setTranslation(0, chassisDef.groundClearance + lift + chassisDef.height / 2, 0)
       .setMass(chassisDef.mass)
       .setFriction(BOT_COLLISION_FRICTION)
       .setRestitution(BOT_COLLISION_RESTITUTION),
@@ -247,6 +330,15 @@ export function assembleBot(
   let coolingKw = chassisDef.stockCoolingKw;
   let heatWeightedKw = chassisDef.stockPowerKw;
 
+  /*
+   * Storey heights, resolved ONCE for the whole machine. levelRises() in
+   * build.ts is the only place a rise is summed; assemble and render both feed
+   * its answer into partLocalPosition. Adding rises here instead would be the
+   * same defect that put the side wheels 5 cm high and 7 cm outboard: one fact,
+   * written down twice, drifting apart.
+   */
+  const rises = levelRises(spec, catalog);
+
   for (const [idx, placed] of spec.parts.entries()) {
     const def = catalog.byId.get(placed.partId);
     if (!def || def.category === "chassis") continue;
@@ -255,11 +347,17 @@ export function assembleBot(
       def,
       placed.cell,
       placed.rot,
-      placed.face
+      placed.face,
+      { levelRise: placedRise(rises, placed), hullLift: lift }
     );
 
     if (
       def.category === "armor" ||
+      // A riser is structure, but physically it is a plate welded to the hull:
+      // a fixed collider on the chassis body, no second rigid body (H8). Rapier
+      // composes its mass into the hull, so the centre of mass the builder
+      // prints and the one the solver uses come out of the same geometry.
+      def.category === "structure" ||
       def.category === "utility" ||
       (def.category === "weapon" &&
         (def.effect === "flame" ||
@@ -298,7 +396,7 @@ export function assembleBot(
           coolingKw += def.coolingKw ?? 0;
           heatWeightedKw += addedPowerKw * (def.heatMul ?? 1);
         }
-      } else {
+      } else if (def.category === "weapon") {
         weapons.push({
           ...runtime,
           def,
@@ -326,20 +424,64 @@ export function assembleBot(
       const halfWidth = Math.max(def.height, CELL) / 2;
       const driveLocal: [number, number, number] = [local[0], radius, local[2]];
       const [worldX, worldZ] = worldOffset(driveLocal[0], driveLocal[2], facing);
+      // Needed before the colliders because a leg's phase bias depends on it:
+      // the right side starts half a step out of phase so the machine walks
+      // rather than hops (L4).
+      const side: -1 | 1 =
+        driveSide(
+          chassisDef,
+          placed.face,
+          placed.cell,
+          rotatedSize(def, placed.rot)[0]
+        ) || (local[0] < 0 ? -1 : 1);
       const body = world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic()
           .setTranslation(origin[0] + worldX, origin[1] + radius, origin[2] + worldZ)
           .setRotation(chassisRotation)
           .setCcdEnabled(true)
       );
-      const collider = world.createCollider(
-        RAPIER.ColliderDesc.cylinder(halfWidth, radius)
-          .setRotation({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })
-          .setMass(def.mass)
-          .setFriction(def.friction),
-        body
-      );
-      enableContactEvents(collider, seat);
+      /*
+       * A leg is `feet` capsules on this ONE body, turned by the ONE revolute
+       * motor built below — identical physical topology to a wheel, which is
+       * why driver.ts, damage.ts and the wire format carry no leg branch at all.
+       * legSpokeLayout() (build.ts) owns the geometry so the renderer draws the
+       * same star the solver collides with.
+       */
+      const spokes: RAPIER.Collider[] = [];
+      if (def.kind === "leg") {
+        const layout = legSpokeLayout(def, side);
+        for (const theta of layout.angles) {
+          // Rotation about chassis-local X by theta sends the capsule's own +Y
+          // axis to (0, cos, sin); the centre rides out along that same
+          // direction by `d`, so the tip lands exactly on `radius` (§6.4).
+          const half = theta / 2;
+          const spoke = world.createCollider(
+            RAPIER.ColliderDesc.capsule(layout.halfHeight, layout.capsuleRadius)
+              .setRotation({ x: Math.sin(half), y: 0, z: 0, w: Math.cos(half) })
+              .setTranslation(
+                0,
+                Math.cos(theta) * layout.d,
+                Math.sin(theta) * layout.d
+              )
+              .setMass(def.mass / layout.feet)
+              .setFriction(def.friction),
+            body
+          );
+          enableContactEvents(spoke, seat);
+          spokes.push(spoke);
+        }
+      } else {
+        const wheel = world.createCollider(
+          RAPIER.ColliderDesc.cylinder(halfWidth, radius)
+            .setRotation({ x: 0, y: 0, z: Math.SQRT1_2, w: Math.SQRT1_2 })
+            .setMass(def.mass)
+            .setFriction(def.friction),
+          body
+        );
+        enableContactEvents(wheel, seat);
+        spokes.push(wheel);
+      }
+      const collider = spokes[0]!;
       let trackContact: RAPIER.Collider | undefined;
       if (
         def.kind === "track" &&
@@ -384,17 +526,27 @@ export function assembleBot(
         local: driveLocal,
         face: placed.face,
         trackContact,
+        legColliders: spokes.length > 1 ? spokes.slice(1) : undefined,
         detached: false,
-        side: driveSide(
-          chassisDef,
-          placed.face,
-          placed.cell,
-          rotatedSize(def, placed.rot)[0]
-        ) || (local[0] < 0 ? -1 : 1)
+        side,
+        /*
+         * Zero because the body is created with the chassis' own rotation, so
+         * the relative twist really is zero here — and because a leg's spoke
+         * angles already carry the L4 half-step bias inside legSpokeLayout(),
+         * exactly like the renderer carries it in driveMountQuaternion(). The
+         * phase is the turning on top of that mounting, not the mounting.
+         */
+        phase: 0,
+        phaseAngle: 0
       };
       parts.push(runtime);
       drives.push(runtime);
-      colliderOwners.set(collider.handle, { seat, partIdx: idx });
+      // Every spoke, not just the first: a leg struck on its third foot has to
+      // take the damage, and a leg standing on a caltrop with its second foot
+      // has to trip over it.
+      for (const spoke of spokes) {
+        colliderOwners.set(spoke.handle, { seat, partIdx: idx });
+      }
       if (trackContact) colliderOwners.set(trackContact.handle, { seat, partIdx: idx });
       continue;
     }

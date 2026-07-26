@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { createIndustrialPart, industrialMaterial } from "../render/industrialKit";
-import { faceGridSize, mountPartObject } from "../render/mounting";
+import { type BotMountGeometry, botMountGeometry, faceGridSize, mountPartObject } from "../render/mounting";
 import { configureRenderer, installStudioEnvironment } from "../render/renderEnv";
-import { occupiedCells, validateBuild } from "../sim/build";
+import { levelRises, occupiedCells, riseForLevel, validateBuild } from "../sim/build";
 import {
   CELL,
   type BotSpec,
@@ -11,6 +11,7 @@ import {
   type ChassisDef,
   type MountFace,
   type PartDef,
+  type PlacedPart,
   type RoomSettings,
   type Rot4
 } from "../sim/types";
@@ -18,6 +19,8 @@ import {
 export interface BuilderScene {
   setSpec(spec: BotSpec): void;
   setFace(face: MountFace): void;
+  /** 操作対象の段。0 が船体デッキ。上面以外の面では常に 0 として扱う（契約 H1） */
+  setLevel(level: number): void;
   setHoveredPart(partId: string | null): void;
   onChange(cb: (spec: BotSpec) => void): void;
   /** QA seam: このペインでは rAF が回らない。必ず用意すること */
@@ -32,6 +35,12 @@ export interface BuilderScene {
     env: boolean;
     toneMapping: number;
     shadowCasters: number;
+    /** 操作中の段と、その段の床が船体デッキから何m上か */
+    level: number;
+    levelRise: number;
+    maxLevels: number;
+    /** 直近の rebuild で「選択中でない段」として薄く描いたパーツ数 */
+    dimmedParts: number;
   };
   captureFrame(): string;
   setEnvironmentEnabled(enabled: boolean): void;
@@ -63,6 +72,46 @@ function createPartObject(
   face: MountFace = "deck"
 ): THREE.Group {
   return createIndustrialPart(part, rot, color, transparent, face).root;
+}
+
+/** 選択中でない段の描画不透明度。0 にはしない — 積んだものが見えないと組めない。 */
+const OFF_LEVEL_OPACITY = 0.24;
+
+/** そのオブジェクトの全マテリアルを薄くする。消さずに退がらせるための処理。 */
+function fadeObject(object: THREE.Object3D, opacity: number): void {
+  object.traverse((child) => {
+    if (child instanceof THREE.Mesh) child.castShadow = false;
+    const item = child as DisposableObject;
+    const materials = Array.isArray(item.material) ? item.material : item.material ? [item.material] : [];
+    for (const material of materials) {
+      material.transparent = true;
+      material.opacity = opacity;
+      material.depthWrite = false;
+    }
+  });
+}
+
+/**
+ * ビルダーがパーツを描くときの唯一の入口。
+ *
+ * 向きと取り付け法線方向のめり込み量は mountPartObject が持ち主。段の高さは
+ * levelRises() が唯一の出典（契約 A2）で、そこから1パーツぶんを引き当てるのが
+ * partLevelRise（deck 面以外は必ず 0 ＝ 契約 H1）、m に変換するのは
+ * partLocalPosition の第6引数だけ（契約 A1）。
+ *
+ * ⚠ ここに `y += なにか` を書いた瞬間に、段の高さが2箇所で決まることになる。
+ * 横付けタイヤ（5cm上・7cm外）・ベルトの裏返り・罠の判定半径と描画半径は
+ * 全部その形の欠陥だった。足し算はこの関数の外にも中にも置かない。
+ */
+export function mountPlaced(
+  object: THREE.Object3D,
+  chassis: ChassisDef,
+  part: PartDef,
+  placed: PlacedPart,
+  geometry: BotMountGeometry,
+  lift = 0
+): void {
+  mountPartObject(object, chassis, part, placed, lift, geometry);
 }
 
 export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, settings: RoomSettings): BuilderScene {
@@ -118,6 +167,8 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
   let targetCamYaw = camYaw;
   let targetCamPitch = camPitch;
   let selectedFace: MountFace = "deck";
+  let selectedLevel = 0;
+  let dimmedParts = 0;
   let camDistance = 2.25;
   let dragging = false;
   let dragged = false;
@@ -135,6 +186,16 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
   function chassis(): ChassisDef | null {
     const part = catalog.byId.get(spec.chassisId);
     return part?.category === "chassis" ? part : null;
+  }
+
+  /** 段は上面だけの概念（契約 H1）。他の面ではどのタブを選んでいても 0。 */
+  function activeLevel(): number {
+    return selectedFace === "deck" ? selectedLevel : 0;
+  }
+
+  /** 操作中の段の床が、船体デッキから何m上か。出典は levelRises() の一箇所だけ。 */
+  function activeRise(): number {
+    return selectedFace === "deck" ? riseForLevel(levelRises(spec, catalog), selectedLevel) : 0;
   }
 
   function updateCamera(): void {
@@ -164,10 +225,13 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     buildRoot.add(chassisMesh);
 
     const [gridU, gridV] = faceGridSize(frame, selectedFace);
+    // 格子は操作中の段の床に浮かせる。段を選んだのに1段目の床に線が残ると、
+    // どこに置こうとしているのかが分からなくなる。
+    const gridRise = activeRise();
     const surfacePoint = (u: number, v: number): [number, number, number] => {
       const halfW = frame.deck[0] * CELL / 2;
       const halfD = frame.deck[1] * CELL / 2;
-      if (selectedFace === "deck") return [u, frame.groundClearance + frame.height + 0.002, v];
+      if (selectedFace === "deck") return [u, frame.groundClearance + frame.height + gridRise + 0.002, v];
       if (selectedFace === "underside") return [u, frame.groundClearance - 0.002, v];
       if (selectedFace === "left") return [-halfW - 0.002, frame.groundClearance + v + gridV * CELL / 2, u];
       if (selectedFace === "right") return [halfW + 0.002, frame.groundClearance + v + gridV * CELL / 2, u];
@@ -198,22 +262,40 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     lineGeo.setAttribute("position", new THREE.Float32BufferAttribute(linePositions, 3));
     buildRoot.add(new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color: 0x2a3032, transparent: true, opacity: 0.72 })));
 
+    const geometry = botMountGeometry(spec, catalog);
+    const focusLevel = activeLevel();
+    dimmedParts = 0;
     for (const placed of spec.parts) {
       const part = catalog.byId.get(placed.partId);
       if (!part || part.category === "chassis") continue;
+      const partLevel = placed.face === "deck" ? placed.level ?? 0 : 0;
       const object = createPartObject(part, part.color, placed.rot, false, placed.face);
-      mountPartObject(object, frame, part, placed);
+      mountPlaced(object, frame, part, placed, geometry);
+      // 上面を編集しているときだけ段で色を分ける。側面などは段を持たないので、
+      // そこで作業している間に機体全部が薄くなるのは意味が無い。
+      if (selectedFace === "deck" && partLevel !== focusLevel) {
+        fadeObject(object, OFF_LEVEL_OPACITY);
+        dimmedParts += 1;
+      }
       buildRoot.add(object);
     }
     rebuildGhost();
     renderer.shadowMap.needsUpdate = true;
   }
 
+  /*
+   * level は 0 のとき書かない。既存機体・既存の共有コードのバイト列を変えないため
+   * （契約でも level は省略可能で、v4 以前の保存データには存在しない）。
+   */
+  function placedHere(partId: string, cell: [number, number]): PlacedPart {
+    const level = activeLevel();
+    return level > 0
+      ? { partId, face: selectedFace, cell, rot, level }
+      : { partId, face: selectedFace, cell, rot };
+  }
+
   function candidateSpec(part: PartDef, cell: [number, number]): BotSpec {
-    return {
-      ...spec,
-      parts: [...spec.parts, { partId: part.id, face: selectedFace, cell, rot }]
-    };
+    return { ...spec, parts: [...spec.parts, placedHere(part.id, cell)] };
   }
 
   function placementValid(part: PartDef, cell: [number, number]): boolean {
@@ -244,7 +326,7 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     if (!hoverCell) return;
     const valid = placementValid(part, hoverCell);
     const object = createPartObject(part, valid ? 0x55d68a : 0xe24338, rot, true, selectedFace);
-    mountPartObject(object, frame, part, { partId: part.id, face: selectedFace, cell: hoverCell, rot }, 0.004);
+    mountPlaced(object, frame, part, placedHere(part.id, hoverCell), botMountGeometry(spec, catalog), 0.004);
     ghostRoot.add(object);
   }
 
@@ -259,7 +341,9 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
     raycaster.setFromCamera(pointer, camera);
     const halfW = frame.deck[0] * CELL / 2;
     const halfD = frame.deck[1] * CELL / 2;
-    const deckY = frame.groundClearance + frame.height;
+    // レイを落とす面も操作中の段の床。ここを船体デッキに固定すると、2段目を
+    // 選んでいるのに1段目のセルを拾い、置いた場所と光った場所がずれる。
+    const deckY = frame.groundClearance + frame.height + activeRise();
     const normal = selectedFace === "deck" ? new THREE.Vector3(0, 1, 0) :
       selectedFace === "internal" ? new THREE.Vector3(0, 1, 0) :
       selectedFace === "underside" ? new THREE.Vector3(0, -1, 0) :
@@ -296,9 +380,13 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
 
   function removeAtHover(): void {
     if (!hoverCell) return;
+    const level = activeLevel();
     for (let index = spec.parts.length - 1; index >= 0; index -= 1) {
       const placed = spec.parts[index]!;
       if (placed.face !== selectedFace) continue;
+      // 操作対象は選択中の段だけ。でないと2段目を触っているつもりで
+      // 真下の1段目が消える。
+      if ((placed.level ?? 0) !== level) continue;
       const part = catalog.byId.get(placed.partId);
       if (!part) continue;
       if (occupiedCells(part, placed.cell, placed.rot).some(([x, z]) => x === hoverCell![0] && z === hoverCell![1])) {
@@ -435,6 +523,11 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
       floorRoot.visible = nextFace !== "underside";
       rebuild();
     },
+    setLevel(nextLevel) {
+      selectedLevel = Math.max(0, Math.trunc(nextLevel));
+      hoverCell = null;
+      rebuild();
+    },
     setHoveredPart(partId) {
       hoveredPartId = partId;
       rebuildGhost();
@@ -461,7 +554,11 @@ export function createBuilderScene(canvas: HTMLCanvasElement, catalog: Catalog, 
             if (object instanceof THREE.Light && object.castShadow) count += 1;
           });
           return count;
-        })()
+        })(),
+        level: activeLevel(),
+        levelRise: activeRise(),
+        maxLevels: chassis()?.maxLevels ?? 1,
+        dimmedParts
       };
     },
     captureFrame() {

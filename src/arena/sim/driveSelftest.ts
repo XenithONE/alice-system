@@ -96,8 +96,21 @@ const measure = (
     const state = sim.getState().bots[0]!;
     measured = Math.max(measured, Math.hypot(state.vel[0], state.vel[2]));
   }
+  /*
+   * A leg only touches the floor for part of its turn, so `maxOmega * radius`
+   * overstates what it can ever reach — not because the machine is broken but
+   * because the promise is computed for a rim that is always in contact. The
+   * contract (ARCHITECTURE_V4 §4 G-LEG) set 0.55 for legs against 0.7 for
+   * wheels BEFORE any of this was measured, so this is the registered
+   * threshold, not one chosen to make today's numbers pass.
+   */
+  const legDriven = spec.parts.some((placed) => {
+    const part = catalog.byId.get(placed.partId);
+    return part?.category === "drive" && part.kind === "leg";
+  });
   const row = {
     bot: spec.name,
+    floor: legDriven ? 0.55 : 0.7,
     promisedTopSpeed: +promised.toFixed(2),
     measuredSpeed: +measured.toFixed(2),
     ratio: +(measured / promised).toFixed(2),
@@ -138,8 +151,18 @@ const main = async (): Promise<void> => {
       const s0 = sim.getState().bots[0]!;
       measured = Math.max(measured, Math.hypot(s0.vel[0], s0.vel[2]));
     }
+    /*
+     * Legs are held to 0.55 rather than 0.7: an intermittent contact patch
+     * cannot reach the speed a continuously-rolling rim would. The two numbers
+     * come from ARCHITECTURE_V4 §4 G-LEG, registered before measurement.
+     */
+    const legDriven = preset.parts.some((placed) => {
+      const part = catalog.byId.get(placed.partId);
+      return part?.category === "drive" && part.kind === "leg";
+    });
     rows.push({
       bot: preset.name,
+      floor: legDriven ? 0.55 : 0.7,
       promisedTopSpeed: +promised.toFixed(2),
       measuredSpeed: +measured.toFixed(2),
       ratio: +(measured / promised).toFixed(2),
@@ -230,7 +253,7 @@ const main = async (): Promise<void> => {
   // whole builder a lie, and it is invisible in a match-outcome gate: bots that
   // barely move still finish matches, just on the judges' cards.
   const failures = [
-    ...rows.filter((r) => r.ratio < 0.7).map((r) => `${r.bot} ${r.ratio}`),
+    ...rows.filter((r) => r.ratio < r.floor).map((r) => `${r.bot} ${r.ratio} < ${r.floor}`),
     ...mountRows.filter((r) => r.ratio < 0.5).map((r) => `${r.bot} ${r.ratio}`),
     ...(padRow.ratio < 0.9 ? [`G-DRIVE-PAD ${padRow.ratio}`] : [])
   ];

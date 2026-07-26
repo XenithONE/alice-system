@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildCatalog } from "../parts/catalog";
-import { validateBuild } from "../sim/build";
+import { levelRises, riseForLevel, validateBuild } from "../sim/build";
 import type {
   BotSpec,
   MountFace,
@@ -27,7 +27,25 @@ const CATEGORY_LABELS: Record<PartCategory, string> = {
   drive: "駆動",
   weapon: "武装",
   armor: "装甲",
-  utility: "補助"
+  utility: "補助",
+  /*
+   * 支柱。装甲でもユーティリティでもなく「上の段を作る構造材」なので、
+   * ラベルと色の両方で他の5カテゴリと切り分ける。
+   */
+  structure: "構造"
+};
+/**
+ * カテゴリの色。パーツカードの見出しバッジに載る。構造材（紫）は装甲（金）とも
+ * 補助（緑）とも混ざらない色を割り当てる — デッキに置ける板という点では
+ * 装甲・補助と見た目が近く、置いた結果が「段が増える」で全く違うため。
+ */
+const CATEGORY_ACCENT: Record<PartCategory, string> = {
+  chassis: "#93a0a5",
+  drive: "#5fb0c9",
+  weapon: "#e0614f",
+  armor: "#d2a638",
+  utility: "#79c99a",
+  structure: "#b083e0"
 };
 const EFFECT_LABELS: Record<WeaponEffect, string> = {
   spin: "回転",
@@ -61,10 +79,23 @@ function primaryValue(part: PartDef): string {
     return `装甲 ${part.armor} / リーチ ${part.reach.toFixed(2)}m`;
   }
   if (part.category === "armor") return `装甲 ${part.armor} / HP ${part.hp}`;
+  /*
+   * 支柱を先に落とす。ここを通さないと残りは UtilityDef | RiserDef のままで、
+   * 下の selfRight / powerMul / weaponPowerMul は RiserDef に存在しない。
+   * 「rise が高さそのもの」は契約 A3（height === rise）なので、表示も rise 一本。
+   */
+  if (part.category === "structure") {
+    return `段上げ ${(part.rise * 100).toFixed(0)} cm / HP ${part.hp}`;
+  }
   if (part.selfRight) return "反転復帰機構";
   if (part.powerMul) return `駆動出力 ×${part.powerMul}`;
   if (part.weaponPowerMul) return `武器出力 ×${part.weaponPowerMul}`;
   return `HP ${part.hp}`;
+}
+
+/** 数値が未計算・非有限でも「—」で落ち着かせる。0 を捏造しない。 */
+function formatStat(value: number, digits: number): string {
+  return Number.isFinite(value) ? value.toFixed(digits) : "—";
 }
 
 const copySpec = (spec: BotSpec, name = spec.name): BotSpec => ({
@@ -82,6 +113,7 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
   const [partType, setPartType] = useState<PartType | "all">("all");
   const [query, setQuery] = useState("");
   const [face, setFace] = useState<MountFace>("deck");
+  const [level, setLevel] = useState(0);
   const [garage, setGarage] = useState<BotSpec[]>(() => loadGarage());
   const [shareCode, setShareCode] = useState("");
   const [notice, setNotice] = useState("");
@@ -89,6 +121,32 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
   const sceneRef = useRef<BuilderScene | null>(null);
   const validation = useMemo(() => validateBuild(spec, catalog, settings), [catalog, settings, spec]);
   const remaining = settings.pointBudget - validation.stats.cost;
+
+  /*
+   * 段（storey）。0 が船体デッキで、maxLevels は「船体デッキを1と数えた段数」
+   * （types.ts の ChassisDef 参照）なので、選べるのは 0 .. maxLevels - 1。
+   * 既存フレームは全て maxLevels: 1 ＝ 0 段目だけ、つまり多段不可。
+   * ただし読み込んだ機体が既にそれより上を使っていたら、その段も表に出す。
+   * 見えない段に置かれたパーツは撤去もできなくなるため。
+   */
+  const chassisDef = catalog.byId.get(spec.chassisId);
+  const maxLevels = chassisDef?.category === "chassis" ? Math.max(1, chassisDef.maxLevels) : 1;
+  const usedTopLevel = spec.parts.reduce(
+    (top, placed) => Math.max(top, placed.face === "deck" ? placed.level ?? 0 : 0),
+    0
+  );
+  const highestLevel = Math.max(maxLevels - 1, usedTopLevel);
+  // 段の高さは levelRises() だけが出典。ここは表示のために読むだけで、足さない。
+  const rises = useMemo(() => levelRises(spec, catalog), [catalog, spec]);
+  const stability = validation.stats.stability;
+  const unstable = Number.isFinite(stability) && stability < 1;
+
+  useEffect(() => {
+    sceneRef.current?.setLevel(level);
+  }, [level]);
+  useEffect(() => {
+    if (level > highestLevel) setLevel(highestLevel);
+  }, [highestLevel, level]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -159,9 +217,24 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
     const current = catalog.byId.get(spec.chassisId);
     return validation.stats.cost - (current?.cost ?? 0) + part.cost > settings.pointBudget;
   };
-  const availableTypes = PART_TYPE_LABELS.map(([type, label]) => ({
-    type, label, count: catalog.parts.filter((part) => part.type === type).length
-  })).filter((item) => item.count > 0);
+  /*
+   * 種別タブの正本は PART_TYPE_LABELS（types.ts）。ただし「カタログに在るのに表に無い」
+   * 種別が出ると、そのパーツはタブから永久に辿れなくなる。
+   * ⚠ 実測（2026-07-26）: PartType に "riser" はあるのに PART_TYPE_LABELS に
+   * ["riser", "支柱"] が無く、支柱5点がタブに出ない。types.ts は契約なので実装では
+   * 直さず、ここは「表から漏れた種別を末尾に出す」保険だけを置く。ラベルは種別キーの
+   * まま出す — 日本語名をここで作ると types.ts と二重の出典になるため。
+   * types.ts に行が入れば、この後段は自動的に空になる。
+   */
+  const labelledTypes = new Set<PartType>(PART_TYPE_LABELS.map(([type]) => type));
+  const countOfType = (type: PartType): number =>
+    catalog.parts.filter((part) => part.type === type).length;
+  const availableTypes = [
+    ...PART_TYPE_LABELS.map(([type, label]) => ({ type, label, count: countOfType(type) })),
+    ...[...new Set(catalog.parts.map((part) => part.type))]
+      .filter((type) => !labelledTypes.has(type))
+      .map((type) => ({ type, label: type, count: countOfType(type) }))
+  ].filter((item) => item.count > 0);
   const normalizedQuery = query.trim().toLocaleLowerCase("ja");
   const shownParts = catalog.parts.filter((part) =>
     (partType === "all" || part.type === partType) &&
@@ -187,6 +260,8 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
         .sc-budget{margin-bottom:13px}.sc-budget__line{display:flex;justify-content:space-between;align-items:end}.sc-budget__line strong{font:700 27px "Space Mono",monospace}.sc-budget__line strong.over{color:#ef6658}.sc-budget__bar{height:12px;background:#080a0b;border:1px solid #31393b;overflow:hidden}.sc-budget__bar i{display:block;height:100%;background:linear-gradient(90deg,#c58216,#f0c348)}.sc-budget__bar i.over{background:#d64b3e}.sc-remaining{color:#9da4a4;font-size:11px;margin-top:5px}.sc-weight{color:#c9cecc;margin:9px 0 13px}.sc-slots{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:10px 0 15px}.sc-slot{min-height:70px;border:1px solid #40494c;background:#0c1011;padding:8px}.sc-slot span{display:block;color:#e3b349;font:700 9px "Space Mono",monospace}.sc-slot strong{display:block;margin-top:7px;font-size:12px}.sc-slot small{color:#7e8789}.sc-name{width:100%;background:#0c1011;border:1px solid #3b4447;color:var(--ink);padding:8px;margin-bottom:12px}.sc-stat{display:grid;grid-template-columns:1fr auto;gap:8px;border-bottom:1px solid #2d3537;padding:7px 0}.sc-stat b{font-variant-numeric:tabular-nums}.sc-errors{margin:12px 0;padding:10px;background:#250f0f;border-left:3px solid var(--red);color:#efb1ac}.sc-errors ul{padding-left:19px;margin:5px 0}.sc-valid{color:#79c99a}.sc-launch{width:100%;padding:12px;background:var(--red);border:0;color:white;font-weight:800;letter-spacing:.12em;cursor:pointer}.sc-launch:disabled{filter:grayscale(1);opacity:.35}
         .sc-builder__bottom{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:14px;margin-top:14px}.sc-actions{display:flex;flex-wrap:wrap;gap:7px}.sc-actions button{background:#232b2d;color:var(--ink);border:1px solid #3b4649;padding:7px 10px;cursor:pointer}.sc-garage{display:grid;gap:7px;margin-top:10px}.sc-garage__item{display:grid;grid-template-columns:1fr auto;align-items:center;background:#101516;padding:8px}.sc-share{width:100%;min-height:72px;resize:vertical;background:#0c1011;border:1px solid #394346;color:#b9d8df;padding:8px;font:12px ui-monospace,monospace}.sc-notice{min-height:1.4em;color:#d7b454}
         .sc-type-tabs{display:flex;gap:5px;overflow-x:auto;padding:1px 0 9px;scrollbar-width:thin}.sc-type-tabs button{flex:0 0 auto;border:1px solid #3b4547;background:#0b0f10;color:#aeb5b5;padding:5px 7px;font-size:10px;cursor:pointer}.sc-type-tabs button[aria-pressed=true]{color:#101313;background:var(--amber);border-color:#efc45d}.sc-type-tabs small{opacity:.72}.sc-search{width:100%;margin-bottom:7px;background:#090d0e;color:var(--ink);border:1px solid #465052;padding:8px}.sc-part__head strong small{font-size:10px;font-weight:500}.sc-part__cost{font-size:25px}.sc-faces{display:flex;gap:3px;margin-top:6px}.sc-face-icon{width:21px;height:21px;display:grid;place-items:center;border:1px solid #465052;color:#e1b34e;font-size:10px}.sc-face-selector{position:absolute;left:50%;top:12px;display:flex;gap:5px;transform:translateX(-50%);z-index:2;padding:6px;background:#080b0ce8;border:1px solid #3d4648}.sc-face-selector button{min-width:54px;padding:6px;background:#161c1e;color:#c1c7c6;border:1px solid #465053;cursor:pointer;font-size:10px}.sc-face-selector button[aria-pressed=true]{background:#d2a02f;color:#111;border-color:#f2cd69}.sc-face-selector button:disabled{opacity:.22;cursor:not-allowed}.sc-slots{grid-template-columns:1fr}.sc-slot{min-height:61px}
+        .sc-level-selector{position:absolute;left:50%;top:58px;display:flex;gap:5px;align-items:center;transform:translateX(-50%);z-index:2;padding:5px 8px;background:#080b0ce8;border:1px solid #3d4648}.sc-level-selector>span{font:700 9px "Space Mono",monospace;letter-spacing:.09em;color:#9aa2a2}.sc-level-selector button{min-width:40px;padding:5px 7px;background:#161c1e;color:#c1c7c6;border:1px solid #465053;cursor:pointer;font-size:11px}.sc-level-selector button[aria-pressed=true]{background:#b083e0;color:#120a1c;border-color:#d0aef2}.sc-level-selector button:disabled{opacity:.24;cursor:not-allowed}.sc-level-selector button small{display:block;font-size:8px;opacity:.75}
+        .sc-badge--cat{font-weight:800}.sc-stat b.warn{color:#f0a63c}.sc-note{margin:7px 0 0;color:#9aa2a2;font-size:11px;line-height:1.4}.sc-note--warn{color:#f0a63c}
         @media(max-width:1050px){.sc-builder__top{grid-template-columns:280px 1fr}.sc-stats{grid-column:1/-1}.sc-builder__bottom{grid-template-columns:1fr 1fr}}@media(max-width:700px){.sc-builder{padding:9px}.sc-builder__top,.sc-builder__bottom{grid-template-columns:1fr}.sc-palette{max-height:460px}.sc-stage,.sc-stage canvas{min-height:450px}}
       `}</style>
 
@@ -219,6 +294,7 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
                 onMouseLeave={() => sceneRef.current?.setHoveredPart(selectedPart)}>
                 <span className="sc-part__head"><strong>{part.nameJa}<small> / {part.name}</small></strong><span className="sc-part__cost">{part.cost}<small> PT</small></span></span>
                 <span className="sc-part__meta">
+                  <span className="sc-badge sc-badge--cat" style={{ borderColor: CATEGORY_ACCENT[part.category], color: CATEGORY_ACCENT[part.category] }}>{CATEGORY_LABELS[part.category]}</span>
                   <span className="sc-badge">{part.mass} kg</span>
                   <span className="sc-badge">{PART_TYPE_LABELS.find(([type]) => type === part.type)?.[1]}</span>
                   {part.category === "weapon" && <span className="sc-badge sc-badge--action">{ACTION_LABELS[part.action]}</span>}
@@ -242,8 +318,32 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
               }}>{FACE_ICONS[mountFace]} {label}</button>;
             })}
           </div>
+          {/*
+            段セレクタ。段は上面（デッキ）だけの概念（契約 H1）なので、他の面を
+            選んでいるときは出さない。選択中の段のパーツだけが取付・撤去の対象で、
+            下の段は 3D 側で薄く描いて残す（積んでいるものが見えないと組めない）。
+          */}
+          {face === "deck" && (
+            <div className="sc-level-selector" aria-label="デッキの段">
+              <span>段</span>
+              {Array.from({ length: highestLevel + 1 }, (_, index) => index).map((choice) => {
+                const overMax = choice > maxLevels - 1;
+                return (
+                  <button type="button" key={choice} aria-pressed={level === choice} disabled={overMax && choice !== level}
+                    title={overMax
+                      ? `このフレームは${maxLevels}段までです（${maxLevels === 1 ? "多段不可" : `0〜${maxLevels - 1}段`}）`
+                      : `床から +${(riseForLevel(rises, choice) * 100).toFixed(0)} cm`}
+                    onClick={() => setLevel(choice)}>
+                    {choice}<small>+{(riseForLevel(rises, choice) * 100).toFixed(0)}cm</small>
+                  </button>
+                );
+              })}
+              {maxLevels === 1 && highestLevel === 0 &&
+                <span title="支柱を置いて段を作れるフレームに換えてください">多段不可</span>}
+            </div>
+          )}
           <canvas ref={canvasRef} aria-label="実機ロボット組み立て3Dビュー" />
-          <div className="sc-stage__hint">左クリック: 取付　右クリック / Delete: 撤去　R: 回転　ドラッグ: 周回　ホイール: ズーム</div>
+          <div className="sc-stage__hint">左クリック: 取付　右クリック / Delete: 撤去　R: 回転　ドラッグ: 周回　ホイール: ズーム{face === "deck" ? `　／ 操作中の段: ${level}` : ""}</div>
         </div>
 
         <aside className="sc-panel sc-stats">
@@ -273,6 +373,20 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
           <div className="sc-stat"><span>トルク</span><b>{validation.stats.torque.toFixed(0)} N·m</b></div>
           <div className="sc-stat"><span>一撃威力</span><b>{validation.stats.hitPower.toFixed(0)}</b></div>
           <div className="sc-stat"><span>継続火力</span><b>{validation.stats.sustainedDps.toFixed(0)} DPS</b></div>
+          {/*
+            高さの代償（契約 H7）。安定度 = 接地幅 ÷ (2 × 重心高) で、1.0 を切ると
+            押されて転ぶ。高く積めることを売りにする以上、その代償を数字で見せる。
+            隠すと「積んだら勝ち」になり、段が選択でなくなる。
+          */}
+          <div className="sc-stat"><span>重心高</span><b>{formatStat(validation.stats.comHeight, 3)} m</b></div>
+          <div className="sc-stat"><span>接地幅</span><b>{formatStat(validation.stats.trackWidth, 3)} m</b></div>
+          <div className="sc-stat"><span>安定度</span><b className={unstable ? "warn" : ""}>{formatStat(stability, 2)}</b></div>
+          <div className="sc-stat"><span>最上段</span><b>{formatStat(validation.stats.topLevel, 0)}</b></div>
+          <p className={unstable ? "sc-note sc-note--warn" : "sc-note"} role={unstable ? "status" : undefined}>
+            {unstable
+              ? `安定度 ${formatStat(stability, 2)} — 1.00 未満は押されると転びます。重心を下げるか、駆動の間隔を広げてください。`
+              : "安定度 = 接地幅 ÷ (2 × 重心高)。1.00 未満は押されると転びます。"}
+          </p>
           <div className="sc-stat"><span>機関出力</span><b>{validation.stats.powerKw.toFixed(1)} / {validation.stats.powerDemandKw.toFixed(1)} kW</b></div>
           <div className="sc-stat"><span>蓄電</span><b>{validation.stats.chargeKj.toFixed(1)} / {validation.stats.chargeDemandKj.toFixed(1)} kJ</b></div>
           <div className="sc-stat"><span>燃料</span><b>{validation.stats.fuelL.toFixed(1)} L</b></div>

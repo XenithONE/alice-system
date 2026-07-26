@@ -22,7 +22,7 @@ import type {
   WeaponSlot
 } from "../sim/types";
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** One bot, one snapshot. Quaternion is sent whole; 4 floats beat unpack bugs. */
 export interface BotSnap {
@@ -38,8 +38,14 @@ export interface BotSnap {
   readonly qw: number;
   /** one entry per fitted weapon, in slot order */
   readonly w: readonly WeaponSnap[];
-  /** accumulated wheel rotation, rad */
-  readonly wp: number;
+  /*
+   * Accumulated rotation of each drive about its axle, rad, in fitted order.
+   * One number per drive rather than one per bot: a machine turning on the
+   * spot has its left and right drives going opposite ways, and a leg drawn at
+   * the average of the two has both feet in the wrong place. Four floats per
+   * bot at 20 Hz is 320 B/s for a full room.
+   */
+  readonly wp: readonly number[];
   /** bit i set means BotSpec.parts[i] has fallen off */
   readonly detach: number;
   /**

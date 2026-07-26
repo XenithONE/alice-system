@@ -11,7 +11,7 @@ import {
   industrialMaterial,
   type WeaponRig
 } from "./industrialKit";
-import { mountPartObject } from "./mounting";
+import { botMountGeometry, mountPartObject } from "./mounting";
 import type { ProceduralDrive } from "./procedural/types";
 import { configureRenderer, installStudioEnvironment } from "./renderEnv";
 import { createEntityVisual, type EntityVisual } from "./deployKit";
@@ -79,19 +79,32 @@ interface PartVisual {
   condition: number;
   lastConditionByte: number;
 }
+/**
+ * One fitted drive as the renderer sees it.
+ *
+ * `fitted` is the machine's drive ordinal — the index BotSnap.wp is keyed by.
+ * It is counted over spec.parts with the same filter sim/assemble.ts uses when
+ * it fills its `drives` array, so the two agree without either importing the
+ * other's list. It is NOT the wheelRoots position: a drive part whose mesh
+ * failed to build would silently shift every phase after it by one.
+ */
+interface DriveVisual {
+  readonly rig: ProceduralDrive;
+  readonly radius: number;
+  readonly fitted: number;
+  phase: number;
+}
 interface BotVisual {
   readonly seat: SeatIndex;
   readonly root: THREE.Group;
   readonly parts: PartVisual[];
-  readonly wheelRoots: ProceduralDrive[];
-  readonly wheelRadii: number[];
+  readonly drives: DriveVisual[];
   readonly nameSprite: THREE.Sprite;
   hp: number;
   burn: number;
   detach: number;
   lastX: number;
   lastZ: number;
-  wheelPhase: number;
   initialized: boolean;
 }
 interface Particle {
@@ -194,13 +207,17 @@ function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalo
   const root = new THREE.Group();
   addChassisDetails(root, chassis, spec.paint, seat);
   const parts: PartVisual[] = [];
-  const wheelRoots: ProceduralDrive[] = [];
-  const wheelRadii: number[] = [];
+  const drives: DriveVisual[] = [];
+  // Counts every drive part in spec order, mesh or no mesh — see DriveVisual.
+  let fitted = 0;
+  // 段の高さは build.ts の levelRises が唯一の出典。1機ぶん一度だけ引く。
+  const geometry = botMountGeometry(spec, catalog);
   spec.parts.forEach((placed, index) => {
     const part = catalog.byId.get(placed.partId);
     if (!part || part.category === "chassis") return;
+    const fittedIndex = part.category === "drive" ? fitted++ : -1;
     const created = createIndustrialPart(part, placed.rot, spec.paint, false, placed.face);
-    mountPartObject(created.root, chassis, part, placed);
+    mountPartObject(created.root, chassis, part, placed, 0, geometry);
     root.add(created.root);
     const drive = part.category === "drive" ? part : null;
     const finishes: PartVisual["finishes"] = [];
@@ -222,15 +239,14 @@ function createBot(spec: BotSpec, name: string, seat: SeatIndex, catalog: Catalo
       finishes, detached: false, condition: 1, lastConditionByte: -1
     });
     if (created.drive && drive) {
-      wheelRoots.push(created.drive);
-      wheelRadii.push(drive.radius);
+      drives.push({ rig: created.drive, radius: drive.radius, fitted: fittedIndex, phase: 0 });
     }
   });
   const nameSprite = makeLabel(name || `BOT ${seat + 1}`, BOT_COLORS[seat]);
   root.add(nameSprite);
   return {
-    seat, root, parts, wheelRoots, wheelRadii, nameSprite,
-    hp: 0, burn: 0, detach: 0, lastX: 0, lastZ: 0, wheelPhase: 0, initialized: false
+    seat, root, parts, drives, nameSprite,
+    hp: 0, burn: 0, detach: 0, lastX: 0, lastZ: 0, initialized: false
   };
 }
 
@@ -257,7 +273,19 @@ function lerpBot(a: BotSnap, b: BotSnap, alpha: number): BotSnap {
     // The authoritative snapshot quaternion is applied directly. No Euler/yaw reconstruction.
     qx: b.qx, qy: b.qy, qz: b.qz, qw: b.qw,
     w: lerpWeapons(a.w, b.w, alpha),
-    wp: a.wp !== 0 || b.wp !== 0 ? THREE.MathUtils.lerp(a.wp, b.wp, alpha) : 0,
+    /*
+     * Per drive, because a machine turning on the spot has its left and right
+     * axles going opposite ways and one averaged number puts both sets of feet
+     * somewhere neither of them is. Plain lerp is safe: wp is accumulated, so
+     * consecutive values differ by the turn between snapshots and never fold.
+     */
+    /*
+     * A plain lerp, because wp is accumulated and never wraps. Taking the short
+     * arc here would be actively wrong: a drive really does advance more than
+     * PI between snapshots at 20 Hz, and folding that into (-PI, PI] is the
+     * aliasing drivePhaseSelftest rejects.
+     */
+    wp: b.wp.map((next, index) => THREE.MathUtils.lerp(a.wp[index] ?? next, next, alpha)),
     burn: THREE.MathUtils.lerp(a.burn, b.burn, alpha),
     detach: alpha < 0.5 ? a.detach : b.detach,
     pc: b.pc.map((value, index) => Math.round(THREE.MathUtils.lerp(a.pc[index] ?? value, value, alpha)))
@@ -726,11 +754,38 @@ export function createArenaScene(canvas: HTMLCanvasElement, catalog: Catalog, qu
       visual.burn = snap.burn;
       visual.detach = snap.detach;
       visual.nameSprite.material.opacity = snap.alive ? 1 : 0.38;
-      const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(visual.root.quaternion);
-      const forwardDistance = dx * forward.x + dz * forward.z;
-      if (snap.wp !== 0) visual.wheelPhase = snap.wp;
-      else if (dt > 0) visual.wheelPhase += forwardDistance / Math.max(visual.wheelRadii[0] ?? 0.12, 0.03);
-      visual.wheelRoots.forEach((drive) => drive.applyPhase(visual.wheelPhase));
+      /*
+       * +Z in chassis space, which is BACKWARD: sim/heading.ts is the one
+       * definition of forward and it returns -Z. The variable used to be
+       * called `forward`, and that name alone cost a round trip — someone read
+       * it, concluded the fallback below had its sign inverted, and inverted
+       * the one line that was right.
+       */
+      const chassisBack = new THREE.Vector3(0, 0, 1).applyQuaternion(visual.root.quaternion);
+      const backwardDistance = dx * chassisBack.x + dz * chassisBack.z;
+      for (const drive of visual.drives) {
+        /*
+         * The host's number when there is one. The fallback below re-derives a
+         * phase from how far the hull moved, which is only ever an estimate:
+         * it cannot know that the left and right axles turn opposite ways on
+         * the spot, and for a leg — whose phase IS its silhouette — it drew the
+         * foot up to 108 mm from where the physics had it. It survives solely
+         * so a snapshot from a peer that predates wp still turns the wheels.
+         */
+        const authoritative = snap.wp[drive.fitted];
+        if (authoritative !== undefined) drive.phase = authoritative;
+        /*
+         * Added, not subtracted. driver.ts commands -throttle * maxOmega about
+         * chassis-local +X, so driving forward turns a drive the negative way —
+         * and backwardDistance is also negative when driving forward, so the
+         * signs already agree. Measured over the first six presets: physics
+         * -155.4 rad against this estimate -77.9 (same sign, short by the
+         * slip); negating it gives +77.9, which is a drive visibly running the
+         * wrong way on a tread or a foot.
+         */
+        else if (dt > 0) drive.phase += backwardDistance / Math.max(drive.radius, 0.03);
+        drive.rig.applyPhase(drive.phase);
+      }
       for (const part of visual.parts) {
         const state = part.weapon ? snap.w.find((weapon) => weapon.idx === part.index) : null;
         if (part.weapon && state) {

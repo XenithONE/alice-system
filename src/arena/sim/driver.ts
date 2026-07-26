@@ -11,6 +11,7 @@ import {
   WEAPON_SPINUP_SEC,
   YAW_HOLD_ASSIST
 } from "./balance";
+import { sampleDrivePhases } from "./assemble";
 import type { AssembledBot, WeaponRuntime } from "./assemble";
 import { chassisForward } from "./heading";
 import { updateInternals, weaponChargeCostKj } from "./internals";
@@ -283,6 +284,14 @@ export function driveBot(
   events: SimEvent[],
   tuning: DriverTuning = DEFAULT_DRIVER_TUNING
 ): boolean {
+  /*
+   * Once per physics step, before anything else can return early. This is the
+   * sample that guarantees no drive can turn more than PI between two readings
+   * and alias its accumulated phase; stateFor takes a second, later sample for
+   * freshness. Countdown counts too — the wheels are unpowered but not held,
+   * and a machine dropped onto the floor does turn them.
+   */
+  sampleDrivePhases(bot);
   bot.selfRightCooldown = Math.max(0, bot.selfRightCooldown - FIXED_DT);
   const alive = frame.alive !== false;
   const enabled = phase === "live" && alive;
@@ -294,7 +303,15 @@ export function driveBot(
   const right = clamp(throttle - steer);
   let driveCommand = 0;
   let driveCount = 0;
-  let tractionAcceleration = 0;
+  /*
+   * Sum of (axle force x that drive's assist), NOT (sum of axle force) x one
+   * shared constant. A leg only touches the floor between footfalls, so it
+   * carries a much smaller DriveDef.tractionAssist than a wheel (0.12 against
+   * 0.35) — folding the factor in per drive is what lets a mixed machine be
+   * assisted by its wheels and not by its legs. With every drive on the default
+   * this is algebraically the old expression, so wheeled builds do not move.
+   */
+  let tractionAssistAcceleration = 0;
   let targetSpeed = Number.POSITIVE_INFINITY;
 
   for (const drive of bot.drives) {
@@ -302,7 +319,9 @@ export function driveBot(
     const command = drive.side < 0 ? left : right;
     driveCommand += command;
     driveCount += 1;
-    tractionAcceleration += drive.def.torque / Math.max(drive.def.radius, Number.EPSILON);
+    tractionAssistAcceleration +=
+      drive.def.torque / Math.max(drive.def.radius, Number.EPSILON) *
+      (drive.def.tractionAssist ?? DRIVE_TRACTION_ASSIST);
     targetSpeed = Math.min(targetSpeed, drive.def.maxOmega * drive.def.radius);
     drive.joint.configureMotorVelocity(
       -command * drive.def.maxOmega,
@@ -321,8 +340,8 @@ export function driveBot(
     // chassis.mass() excludes the separately simulated wheels and rotors.
     const mass = totalBotMass(bot);
     const maxDelta =
-      tractionAcceleration * bot.powerMul * alloc.driveScale /
-      mass * DRIVE_TRACTION_ASSIST * (frame.tractionMul ?? 1) * FIXED_DT;
+      tractionAssistAcceleration * bot.powerMul * alloc.driveScale /
+      mass * (frame.tractionMul ?? 1) * FIXED_DT;
     const delta = Math.max(-maxDelta, Math.min(maxDelta, desired - current));
     bot.chassis.applyImpulse(
       { x: dirX * delta * mass, y: 0, z: dirZ * delta * mass },

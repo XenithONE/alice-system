@@ -5,6 +5,7 @@ import { CELL } from "../sim/types";
 import { createRotorHousing, rotorLocalCenter } from "./industrialKit";
 import { partPlan } from "./partPlan";
 import { geometryCacheSize, triangleCount } from "./procedural/geometryCache";
+import { createLeg } from "./procedural/leg";
 import { createRotor, rotorExtent } from "./procedural/rotor";
 import { createTrack } from "./procedural/track";
 import { createTyre } from "./procedural/tyre";
@@ -52,12 +53,16 @@ for (const part of PARTS) {
   const face = part.faces[0] ?? "deck";
   const plan = partPlan(part, face);
   if (part.category === "drive") {
+    // Same dispatch industrialKit.ts uses. Legs measured as tyres would put a
+    // triangle budget on a mesh that is never built.
     const drive = part.kind === "track"
       ? createTrack(part as DriveDef, rubber, metal)
-      : createTyre(part as DriveDef, rubber, metal);
+      : part.kind === "leg"
+        ? createLeg(part as DriveDef, rubber, metal)
+        : createTyre(part as DriveDef, rubber, metal);
     drive.applyPhase(Math.PI * 0.75);
     const stats = objectStats(drive.root);
-    rows.push({ id: part.id, shape: plan.shape, ...stats });
+    rows.push({ id: part.id, shape: part.kind === "leg" ? "leg" : plan.shape, ...stats });
   } else if (part.category === "weapon" && plan.rotor) {
     const weapon = part as WeaponDef;
     const housing = createRotorHousing(

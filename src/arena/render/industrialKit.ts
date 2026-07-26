@@ -9,6 +9,7 @@ import {
   type WeaponDef
 } from "../sim/types";
 import { partPlan, type PartPlan } from "./partPlan";
+import { createLeg } from "./procedural/leg";
 import { createRotor, rotorExtent } from "./procedural/rotor";
 import { createTrack } from "./procedural/track";
 import { createTyre } from "./procedural/tyre";
@@ -353,7 +354,9 @@ export function createIndustrialPart(
   const w = (swap ? part.cells[1] : part.cells[0]) * CELL;
   const d = (swap ? part.cells[0] : part.cells[1]) * CELL;
   const h = Math.max(part.height, 0.025);
-  const baseColor = part.category === "armor" || part.category === "chassis" ? paint : part.color;
+  // 支柱は骨格の延長なので装甲・シャーシと同じくリバリー色で塗る（＝1台に見える）。
+  const baseColor = part.category === "armor" || part.category === "chassis" ||
+    part.category === "structure" ? paint : part.color;
   const material = industrialMaterial(part.material, baseColor, {
     transparent,
     opacity: transparent ? 0.44 : 1
@@ -388,6 +391,8 @@ export function createIndustrialPart(
   if (part.category === "drive") {
     if (part.kind === "track") {
       drive = createTrack(part, rubber, brightSteel);
+    } else if (part.kind === "leg") {
+      drive = createLeg(part, rubber, brightSteel);
     } else {
       drive = createTyre(part, rubber, brightSteel);
     }

@@ -27,7 +27,19 @@ export type SeatIndex = 0 | 1 | 2 | 3;
 /** Quarter turns on the build deck. */
 export type Rot4 = 0 | 1 | 2 | 3;
 
-export type PartCategory = "chassis" | "drive" | "weapon" | "armor" | "utility";
+export type PartCategory =
+  | "chassis"
+  | "drive"
+  | "weapon"
+  | "armor"
+  | "utility"
+  /*
+   * Risers, and nothing else. A riser is not a bolt-on: it changes where the
+   * parts above it live, so it has to be distinguishable from a utility that
+   * merely sits on the deck. It is a fixed collider on the chassis body, so
+   * it takes the same assemble path as armour.
+   */
+  | "structure";
 
 /** When the weapon does its work. */
 export type WeaponAction =
@@ -81,6 +93,7 @@ export type PartType =
   | "frame"
   | "wheel"
   | "track"
+  | "leg"
   | "spinner"
   | "drum"
   | "saw"
@@ -112,13 +125,16 @@ export type PartType =
   | "radiator"
   | "trap"
   | "netgun"
-  | "harpoon";
+  | "harpoon"
+  /* The only `category: "structure"` type. Makes the deck above it. */
+  | "riser";
 
 /** Japanese labels for the builder's type filter, in display order. */
 export const PART_TYPE_LABELS: readonly (readonly [PartType, string])[] = [
   ["frame", "フレーム"],
   ["wheel", "タイヤ系"],
   ["track", "ベルト系"],
+  ["leg", "脚系"],
   ["spinner", "スピナー系"],
   ["drum", "ドラム系"],
   ["saw", "のこぎり系"],
@@ -237,6 +253,13 @@ export interface ChassisDef extends PartDefBase {
   readonly heightCells: number;
   /** drive still works upside down (a real invertible design) */
   readonly invertible: boolean;
+  /*
+   * How many storeys this frame will carry, counting the hull deck as 1. The
+   * six original frames are 1 — they gain nothing and lose nothing. A frame
+   * that advertises 2 or 3 is making a promise about its structure, and pays
+   * for it in mass and cost.
+   */
+  readonly maxLevels: number;
 
   /** engine bay in cells, read (x, z) like the deck */
   readonly internalGrid: readonly [number, number];
@@ -257,7 +280,7 @@ export interface ChassisDef extends PartDefBase {
 
 export interface DriveDef extends PartDefBase {
   readonly category: "drive";
-  readonly kind: "wheel" | "track";
+  readonly kind: "wheel" | "track" | "leg";
   readonly radius: number;
   /** N·m delivered at the axle */
   readonly torque: number;
@@ -265,6 +288,35 @@ export interface DriveDef extends PartDefBase {
   readonly maxOmega: number;
   /** Coulomb friction against the floor */
   readonly friction: number;
+
+  /*
+   * Legs only: how many spokes radiate from the axle. Each is a capsule on the
+   * SAME rigid body as every other spoke, so a leg has the identical physical
+   * topology as a wheel — one body, one revolute joint, one motor speed — and
+   * driver.ts, damage.ts and the wire format need no leg-specific branch. The
+   * farthest point of every capsule is exactly `radius` from the axle, which is
+   * the same "outline equals radius" contract wheels already obey.
+   */
+  readonly feet?: number;
+  /*
+   * Legs touch the floor intermittently, so the linear traction assist that
+   * keeps wheels pointed has to be weaker or a leg skates through the air.
+   * Undefined means the shared constant. Legs run about 0.12 against 0.35.
+   */
+  readonly tractionAssist?: number;
+}
+
+/**
+ * A riser: the only thing that can lift a deck level. Its own `height` MUST
+ * equal `rise`, so the ordinary `y = base(level) + height / 2` placement puts
+ * its top exactly at the next level's base and no second formula is needed.
+ * catalogSelftest enforces the equality.
+ */
+export interface RiserDef extends PartDefBase {
+  readonly category: "structure";
+  readonly type: "riser";
+  /** metres to the deck this riser creates, 0.10..0.30 */
+  readonly rise: number;
 }
 
 export interface WeaponDef extends PartDefBase {
@@ -379,7 +431,13 @@ export interface UtilityDef extends PartDefBase {
   readonly coolingKw?: number;
 }
 
-export type PartDef = ChassisDef | DriveDef | WeaponDef | ArmorDef | UtilityDef;
+export type PartDef =
+  | ChassisDef
+  | DriveDef
+  | WeaponDef
+  | ArmorDef
+  | UtilityDef
+  | RiserDef;
 
 export interface Catalog {
   readonly parts: readonly PartDef[];
@@ -401,6 +459,13 @@ export interface PlacedPart {
   /** top-left cell of the footprint in the face's grid */
   readonly cell: readonly [number, number];
   readonly rot: Rot4;
+  /*
+   * Which deck storey this part stands on. 0 is the hull deck. Only meaningful
+   * when face is "deck"; every other face must leave it 0 or unset. Absent on
+   * builds saved before v4, which is why it is optional rather than required —
+   * an old share code must still load.
+   */
+  readonly level?: number;
 }
 
 /** Everything a player designs. Serialisable, shareable, untrusted over the wire. */
@@ -453,6 +518,19 @@ export interface BuildStats {
   readonly tertiaryId: string | null;
   readonly hasSelfRight: boolean;
   readonly invertible: boolean;
+
+  /*
+   * What height costs. comHeight is the mass-weighted centre of the whole
+   * machine above the floor; trackWidth is the widest span between contact
+   * patches on opposite sides. stability = trackWidth / (2 * comHeight), and
+   * below 1.0 the machine tips over when it is shoved. The builder shows this
+   * number because building tall has to be a decision, not a trap.
+   */
+  readonly comHeight: number;
+  readonly trackWidth: number;
+  readonly stability: number;
+  /** highest storey used, 0 when everything sits on the hull deck */
+  readonly topLevel: number;
 
   /*
    * The plant. Supply is chassis stock plus everything in the bay; demand is
@@ -582,6 +660,17 @@ export interface BotState {
   readonly burningFor: number;
   readonly selfRightCooldown: number;
   readonly plant: PlantState;
+  /*
+   * Accumulated rotation of each fitted drive about its own axle, relative to
+   * the chassis, in radians — indexed like the assembled drive list.
+   *
+   * The renderer used to re-derive this by integrating how far the hull had
+   * travelled, which for a wheel is invisible (a rim looks the same at any
+   * angle) and for a leg is a 108 mm error: the drawn foot punches through the
+   * floor while the physical one is in the air. A leg's phase IS its shape, so
+   * it has to come from the body that is actually turning.
+   */
+  readonly drivePhases: readonly number[];
 
   /*
    * Enemy effects that hold a machine. These freeze the immobility KO counter
