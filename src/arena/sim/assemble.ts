@@ -55,6 +55,8 @@ export interface WeaponRuntime extends RuntimePart {
   /** Chassis-local direction in which this mount attacks. */
   readonly mountDir: readonly [number, number, number];
   active: boolean;
+  /** Motor velocity command after applying the symmetric spin-up/down ramp. */
+  spinTarget: number;
   cooldownLeft: number;
   triggerGapLeft: number;
   strokeLeft: number;
@@ -271,6 +273,7 @@ export function assembleBot(
           spear: false,
           mountDir: faceNormal(placed.face),
           active: false,
+          spinTarget: 0,
           cooldownLeft: 0,
           triggerGapLeft: 0,
           strokeLeft: 0,
@@ -478,6 +481,7 @@ export function assembleBot(
       spear,
       mountDir,
       active: false,
+      spinTarget: 0,
       cooldownLeft: 0,
       triggerGapLeft: 0,
       strokeLeft: 0,

@@ -96,6 +96,19 @@ export const DRIVE_ANGULAR_DAMPING = 0.9;
  * contact patch and is still limited by fitted axle torque and top speed.
  */
 export const DRIVE_TRACTION_ASSIST = 0.35;
+/**
+ * Fraction of fitted tyre/track yaw grip reserved for cancelling unintended
+ * chassis rotation while the driver is not steering.
+ */
+export const YAW_HOLD_ASSIST = 0.55;
+
+/**
+ * Seconds for a rotary weapon's commanded speed to travel from zero to its
+ * configured maximum (and back to zero). R2 replaces this with a power-based
+ * calculation, so driver.ts must read this single value rather than embedding
+ * a ramp rate.
+ */
+export const WEAPON_SPINUP_SEC = 2.2;
 
 /** Bot-on-bot contacts should lose speed like heavy steel, not billiard balls. */
 export const BOT_COLLISION_RESTITUTION = 0.04;

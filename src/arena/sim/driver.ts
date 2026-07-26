@@ -5,7 +5,9 @@ import {
   FIXED_DT,
   MIN_TRIGGER_GAP,
   SELF_RIGHT_COOLDOWN,
-  SELF_RIGHT_IMPULSE
+  SELF_RIGHT_IMPULSE,
+  WEAPON_SPINUP_SEC,
+  YAW_HOLD_ASSIST
 } from "./balance";
 import type { AssembledBot, WeaponRuntime } from "./assemble";
 import { chassisForward } from "./heading";
@@ -14,6 +16,16 @@ import type { MatchInput, MatchPhase, SimEvent } from "./types";
 export interface DriverFrame {
   readonly inverted: boolean;
 }
+
+export interface DriverTuning {
+  readonly yawHoldAssist: number;
+  readonly weaponSpinupSec: number;
+}
+
+export const DEFAULT_DRIVER_TUNING: DriverTuning = {
+  yawHoldAssist: YAW_HOLD_ASSIST,
+  weaponSpinupSec: WEAPON_SPINUP_SEC
+};
 
 function clamp(value: number): number {
   return Math.max(-1, Math.min(1, Number.isFinite(value) ? value : 0));
@@ -38,7 +50,8 @@ function updateWeapon(
   weapon: WeaponRuntime,
   input: MatchInput,
   enabled: boolean,
-  events: SimEvent[]
+  events: SimEvent[],
+  tuning: DriverTuning
 ): void {
   weapon.cooldownLeft = Math.max(0, weapon.cooldownLeft - FIXED_DT);
   weapon.triggerGapLeft = Math.max(0, weapon.triggerGapLeft - FIXED_DT);
@@ -47,6 +60,7 @@ function updateWeapon(
 
   if (weapon.detached) {
     weapon.active = false;
+    weapon.spinTarget = 0;
     weapon.wasPressed = pressed;
     return;
   }
@@ -98,9 +112,44 @@ function updateWeapon(
 
   if (weapon.joint && (weapon.def.effect === "spin" || weapon.def.effect === "grind")) {
     const torque = (weapon.def.spinUpTorque ?? 0) * bot.weaponPowerMul;
-    weapon.joint.configureMotorVelocity(weapon.active ? weapon.def.maxOmega ?? 0 : 0, torque);
+    const maxOmega = weapon.def.maxOmega ?? 0;
+    const desired = weapon.active ? maxOmega : 0;
+    if (tuning.weaponSpinupSec <= 0) {
+      weapon.spinTarget = desired;
+    } else {
+      const delta = maxOmega * FIXED_DT / tuning.weaponSpinupSec;
+      weapon.spinTarget =
+        desired > weapon.spinTarget
+          ? Math.min(desired, weapon.spinTarget + delta)
+          : Math.max(desired, weapon.spinTarget - delta);
+    }
+    weapon.joint.configureMotorVelocity(weapon.spinTarget, torque);
   }
   weapon.wasPressed = pressed;
+}
+
+function applyYawHold(bot: AssembledBot, steer: number, tuning: DriverTuning): void {
+  if (Math.abs(steer) >= 0.05 || tuning.yawHoldAssist <= 0) return;
+  const drives = bot.drives.filter((drive) => !drive.detached);
+  if (drives.length < 2) return;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let tractionForce = 0;
+  for (const drive of drives) {
+    minX = Math.min(minX, drive.local[0]);
+    maxX = Math.max(maxX, drive.local[0]);
+    tractionForce +=
+      drive.def.torque * bot.powerMul /
+      Math.max(drive.def.radius, Number.EPSILON);
+  }
+  const contactSpan = Math.max(0, maxX - minX);
+  const maxTorque = tractionForce * contactSpan / 2 * tuning.yawHoldAssist;
+  if (maxTorque <= 0) return;
+  const yawRate = bot.chassis.angvel().y;
+  const yawInertia = Math.max(bot.chassis.principalInertia().y, Number.EPSILON);
+  const requestedTorque = -yawRate * yawInertia / FIXED_DT;
+  const torque = Math.max(-maxTorque, Math.min(maxTorque, requestedTorque));
+  bot.chassis.addTorque({ x: 0, y: torque, z: 0 }, true);
 }
 
 export function driveBot(
@@ -108,7 +157,8 @@ export function driveBot(
   input: MatchInput,
   phase: MatchPhase,
   frame: DriverFrame,
-  events: SimEvent[]
+  events: SimEvent[],
+  tuning: DriverTuning = DEFAULT_DRIVER_TUNING
 ): boolean {
   bot.selfRightCooldown = Math.max(0, bot.selfRightCooldown - FIXED_DT);
   const enabled = phase === "live";
@@ -151,7 +201,10 @@ export function driveBot(
       true
     );
   }
-  for (const weapon of bot.weapons) updateWeapon(bot, weapon, input, enabled, events);
+  applyYawHold(bot, steer, tuning);
+  for (const weapon of bot.weapons) {
+    updateWeapon(bot, weapon, input, enabled, events, tuning);
+  }
 
   if (
     enabled &&
