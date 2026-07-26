@@ -4,6 +4,8 @@
  * fix has to be findable in one file, and the headless gate sweeps these.
  */
 
+import type { TrapKind } from "./types";
+
 /** Physics runs at a fixed step. Never pass a wall-clock delta to the sim. */
 export const FIXED_DT = 1 / 60;
 export const SNAPSHOT_HZ = 20;
@@ -83,6 +85,18 @@ export const CONTROL_RANGE = 1.4;
 /* ---------------- deployables and projectiles (v5) ---------------- */
 
 export const DEPLOY_PAD_HALF_HEIGHT = 0.012;
+/**
+ * Footprint of each trap, in metres. The collider and the mesh both read this
+ * table, and entityVisualSelftest fails if they ever disagree by more than a
+ * millimetre: a trap the player can see but not the size of is a trap that
+ * punishes them for reading the screen correctly.
+ */
+export const TRAP_RADIUS: Record<TrapKind, number> = {
+  caltrop: 0.22,
+  mine: 0.3,
+  oil: 0.55,
+  glue: 0.42
+};
 export const DEPLOY_CAP_PER_SEAT = 5;
 export const DEPLOY_CAP_GLOBAL = 20;
 export const DEPLOY_TTL = 25;

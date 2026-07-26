@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import type { EntSnap } from "../net/protocol";
 import { industrialMaterial } from "./industrialKit";
+import { DEPLOY_PAD_HALF_HEIGHT, TRAP_RADIUS } from "../sim/balance";
+import type { TrapKind } from "../sim/types";
 
 export const BOT_COLORS = [0xc73c32, 0x2878a9, 0x3a8b68, 0xd69a24] as const;
 
@@ -9,14 +11,33 @@ const shared = <T extends THREE.BufferGeometry>(geometry: T): T => {
   return geometry;
 };
 
-const padGeometry = shared(new THREE.CylinderGeometry(0.28, 0.3, 0.024, 16));
-const widePadGeometry = shared(new THREE.CylinderGeometry(0.5, 0.52, 0.02, 24));
+/**
+ * One pad per trap kind, sized from the same table the collider is built from.
+ * Drawing a footprint that is not the footprint teaches the player the wrong
+ * thing about where it is safe to drive, so these are derived, never typed in.
+ * The rim tapers inward by 6% so the pad reads as a plate rather than a decal;
+ * the outer radius — the one that matters — is exact.
+ */
+const PAD_HEIGHT = DEPLOY_PAD_HALF_HEIGHT * 2;
+const trapPad = (kind: TrapKind): THREE.CylinderGeometry =>
+  shared(
+    new THREE.CylinderGeometry(
+      TRAP_RADIUS[kind] * 0.94,
+      TRAP_RADIUS[kind],
+      PAD_HEIGHT,
+      kind === "caltrop" || kind === "mine" ? 16 : 24
+    )
+  );
+const caltropPadGeometry = trapPad("caltrop");
+const minePadGeometry = trapPad("mine");
+const oilPadGeometry = trapPad("oil");
+const gluePadGeometry = trapPad("glue");
 const spikeGeometry = shared(new THREE.ConeGeometry(0.09, 0.18, 4));
 const projectileGeometry = shared(new THREE.IcosahedronGeometry(0.16, 1));
 const harpoonGeometry = shared(new THREE.ConeGeometry(0.09, 0.42, 8));
 const mineCapGeometry = shared(new THREE.CylinderGeometry(0.13, 0.16, 0.07, 12));
-const oilStripeGeometry = shared(new THREE.BoxGeometry(0.62, 0.012, 0.055));
-const glueStripeGeometry = shared(new THREE.TorusGeometry(0.31, 0.025, 6, 20));
+const oilStripeGeometry = shared(new THREE.BoxGeometry(TRAP_RADIUS.oil * 1.13, 0.012, 0.055));
+const glueStripeGeometry = shared(new THREE.TorusGeometry(TRAP_RADIUS.glue * 0.74, 0.025, 6, 20));
 const netWireGeometry = shared(new THREE.WireframeGeometry(projectileGeometry));
 
 export interface EntityVisual {
@@ -33,16 +54,17 @@ export function createEntityVisual(entity: EntSnap): EntityVisual {
   const ownerMaterial = industrialMaterial("steel", BOT_COLORS[owner as 0 | 1 | 2 | 3]);
 
   if (kind === 0) {
-    const plate = new THREE.Mesh(padGeometry, dark);
+    const plate = new THREE.Mesh(caltropPadGeometry, dark);
     root.add(plate);
     for (let index = 0; index < 4; index += 1) {
       const spike = new THREE.Mesh(spikeGeometry, ownerMaterial);
       const angle = index * Math.PI / 2;
-      spike.position.set(Math.cos(angle) * 0.13, 0.1, Math.sin(angle) * 0.13);
+      const ring = TRAP_RADIUS.caltrop * 0.59;
+      spike.position.set(Math.cos(angle) * ring, 0.1, Math.sin(angle) * ring);
       root.add(spike);
     }
   } else if (kind === 1) {
-    root.add(new THREE.Mesh(padGeometry, dark));
+    root.add(new THREE.Mesh(minePadGeometry, dark));
     const cap = new THREE.Mesh(
       mineCapGeometry,
       ownerMaterial
@@ -51,7 +73,7 @@ export function createEntityVisual(entity: EntSnap): EntityVisual {
     root.add(cap);
   } else if (kind === 2) {
     const slick = new THREE.Mesh(
-      widePadGeometry,
+      oilPadGeometry,
       new THREE.MeshStandardMaterial({
         color: 0x101713,
         metalness: 0.05,
@@ -68,7 +90,7 @@ export function createEntityVisual(entity: EntSnap): EntityVisual {
     stripe.position.y = 0.018;
     root.add(stripe);
   } else if (kind === 3) {
-    root.add(new THREE.Mesh(widePadGeometry, industrialMaterial("polymer", 0x8a7b32)));
+    root.add(new THREE.Mesh(gluePadGeometry, industrialMaterial("polymer", 0x8a7b32)));
     const stripe = new THREE.Mesh(
       glueStripeGeometry,
       ownerMaterial

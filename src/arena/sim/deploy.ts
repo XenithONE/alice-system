@@ -7,6 +7,7 @@ import {
   DEPLOY_CAP_PER_SEAT,
   DEPLOY_MIN_SPACING,
   DEPLOY_PAD_HALF_HEIGHT,
+  TRAP_RADIUS,
   DEPLOY_TTL,
   FIXED_DT,
   GLUE_SEC,
@@ -110,8 +111,7 @@ export class DeploySystem {
     if (owned.length >= DEPLOY_CAP_PER_SEAT) this.remove(owned[0]!);
     while (this.traps.length >= DEPLOY_CAP_GLOBAL) this.remove(this.traps[0]!);
 
-    const radius =
-      kind === "oil" ? 0.55 : kind === "mine" ? 0.3 : kind === "glue" ? 0.42 : 0.22;
+    const radius = TRAP_RADIUS[kind];
     const desc = RAPIER.ColliderDesc.cylinder(DEPLOY_PAD_HALF_HEIGHT, radius)
       .setTranslation(x, DEPLOY_PAD_HALF_HEIGHT, z)
       .setCollisionGroups(DEBRIS_COLLISION_GROUPS)
