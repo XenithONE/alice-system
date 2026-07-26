@@ -4,6 +4,7 @@ import {
   DRIVE_LINEAR_DAMPING,
   BOT_COLLISION_FRICTION,
   BOT_COLLISION_RESTITUTION,
+  FUEL_L_PER_SEC,
   FIXED_DT,
   MIN_HIT_IMPULSE
 } from "./balance";
@@ -19,6 +20,7 @@ import {
   type SeatIndex,
   type WeaponDef
 } from "./types";
+import { isInternalPart } from "./types";
 
 export interface ColliderOwner {
   seat: SeatIndex;
@@ -83,6 +85,16 @@ export interface AssembledBot {
   readonly hasSelfRight: boolean;
   readonly spinnerResist: number;
   readonly flameResist: number;
+  readonly powerKw: number;
+  readonly alternatorKw: number;
+  readonly chargeCapacityKj: number;
+  readonly fuelCapacityL: number;
+  readonly coolingKw: number;
+  readonly heatMul: number;
+  heatJ: number;
+  chargeKj: number;
+  fuelL: number;
+  usedW: number;
   selfRightCooldown: number;
 }
 
@@ -228,6 +240,12 @@ export function assembleBot(
   let hasSelfRight = false;
   let spinnerResist = 1;
   let flameResist = 1;
+  let powerKw = chassisDef.stockPowerKw;
+  let alternatorKw = chassisDef.stockAlternatorKw;
+  let chargeCapacityKj = chassisDef.stockChargeKj;
+  let fuelCapacityL = chassisDef.stockFuelL;
+  let coolingKw = chassisDef.stockCoolingKw;
+  let heatWeightedKw = chassisDef.stockPowerKw;
 
   for (const [idx, placed] of spec.parts.entries()) {
     const def = catalog.byId.get(placed.partId);
@@ -266,6 +284,15 @@ export function assembleBot(
         powerMul *= def.powerMul ?? 1;
         weaponPowerMul *= def.weaponPowerMul ?? 1;
         hasSelfRight ||= def.selfRight === true;
+        if (isInternalPart(def)) {
+          const addedPowerKw = def.powerKw ?? 0;
+          powerKw += addedPowerKw;
+          alternatorKw += def.alternatorKw ?? 0;
+          chargeCapacityKj += def.chargeKj ?? 0;
+          fuelCapacityL += def.fuelL ?? 0;
+          coolingKw += def.coolingKw ?? 0;
+          heatWeightedKw += addedPowerKw * (def.heatMul ?? 1);
+        }
       } else {
         weapons.push({
           ...runtime,
@@ -498,6 +525,16 @@ export function assembleBot(
     colliderOwners.set(collider.handle, { seat, partIdx: idx });
   }
 
+  const initialFuelInLinesL = weapons.reduce(
+    (sum, weapon) => sum + Math.max(0, weapon.fuelLeft) * FUEL_L_PER_SEC,
+    0
+  );
+  if (initialFuelInLinesL > fuelCapacityL && initialFuelInLinesL > 0) {
+    const fillScale = fuelCapacityL / initialFuelInLinesL;
+    for (const weapon of weapons) weapon.fuelLeft *= fillScale;
+  }
+  const fuelL = Math.max(0, fuelCapacityL - initialFuelInLinesL);
+
   return {
     seat,
     spec,
@@ -513,6 +550,16 @@ export function assembleBot(
     hasSelfRight,
     spinnerResist,
     flameResist,
+    powerKw,
+    alternatorKw,
+    chargeCapacityKj,
+    fuelCapacityL,
+    coolingKw,
+    heatMul: powerKw > 0 ? heatWeightedKw / powerKw : 1,
+    heatJ: 0,
+    chargeKj: chargeCapacityKj,
+    fuelL,
+    usedW: 0,
     selfRightCooldown: 0
   };
 }

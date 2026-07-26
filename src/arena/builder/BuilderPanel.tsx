@@ -270,6 +270,14 @@ export function BuilderPanel({ initialSpec, settings, onLaunch }: BuilderPanelPr
           <div className="sc-stat"><span>トルク</span><b>{validation.stats.torque.toFixed(0)} N·m</b></div>
           <div className="sc-stat"><span>一撃威力</span><b>{validation.stats.hitPower.toFixed(0)}</b></div>
           <div className="sc-stat"><span>継続火力</span><b>{validation.stats.sustainedDps.toFixed(0)} DPS</b></div>
+          <div className="sc-stat"><span>機関出力</span><b>{validation.stats.powerKw.toFixed(1)} / {validation.stats.powerDemandKw.toFixed(1)} kW</b></div>
+          <div className="sc-stat"><span>蓄電</span><b>{validation.stats.chargeKj.toFixed(1)} / {validation.stats.chargeDemandKj.toFixed(1)} kJ</b></div>
+          <div className="sc-stat"><span>燃料</span><b>{validation.stats.fuelL.toFixed(1)} L</b></div>
+          <div className="sc-stat"><span>冷却</span><b>{validation.stats.coolingKw.toFixed(1)} / {validation.stats.heatKw.toFixed(1)} kW</b></div>
+          <div className="sc-stat"><span>機関室セル</span><b>{validation.stats.internalCells} / {validation.stats.internalCellsMax}</b></div>
+          <div className="sc-stat"><span>加速時間</span><b>{Number.isFinite(validation.stats.spinUpSec) ? `${validation.stats.spinUpSec.toFixed(1)} 秒` : "∞"}</b></div>
+          {validation.warnings.length > 0 &&
+            <div className="sc-errors" role="status"><strong>注意</strong><ul>{validation.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul></div>}
           {validation.ok ? <p className="sc-valid">出撃条件を満たしています。</p> :
             <div className="sc-errors" role="alert"><strong>出撃不可</strong><ul>{validation.errors.map((error, index) => <li key={`${error}-${index}`}>{error}</li>)}</ul></div>}
           <button className="sc-launch" type="button" disabled={!validation.ok} onClick={() => onLaunch?.(copySpec(spec))}>出撃する</button>

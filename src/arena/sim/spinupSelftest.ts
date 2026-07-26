@@ -1,7 +1,12 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { buildCatalog, PRESETS } from "../parts/catalog";
 import { assembleBot, type AssembledBot } from "./assemble";
-import { FIXED_DT, WEAPON_SPINUP_SEC, YAW_HOLD_ASSIST } from "./balance";
+import {
+  FIXED_DT,
+  MAX_SPINUP_SEC,
+  WEAPON_SPINUP_SEC,
+  YAW_HOLD_ASSIST
+} from "./balance";
 import {
   DEFAULT_DRIVER_TUNING,
   driveBot,
@@ -20,7 +25,6 @@ const LIVE_STEPS = Math.round(3 / FIXED_DT);
 const STEER_STEPS = Math.round(2 / FIXED_DT);
 const MAX_NEUTRAL_YAW_DEG = 25;
 const MIN_STEER_YAW_DEG = 90;
-const SPIN_TIME_TOLERANCE = 0.15;
 const LEGACY_TUNING: DriverTuning = {
   yawHoldAssist: 0,
   weaponSpinupSec: 0
@@ -109,7 +113,7 @@ function measureSpinTargets(): {
         (weapon.def.effect === "spin" || weapon.def.effect === "grind")
     );
     const reached = new Map<number, number>();
-    for (let step = 1; step <= Math.ceil(WEAPON_SPINUP_SEC * 2 / FIXED_DT); step += 1) {
+    for (let step = 1; step <= Math.ceil(MAX_SPINUP_SEC / FIXED_DT); step += 1) {
       stepHarness(harness, NEUTRAL_INPUT, DEFAULT_DRIVER_TUNING);
       for (const weapon of passive) {
         const maxOmega = weapon.def.maxOmega ?? 0;
@@ -120,7 +124,7 @@ function measureSpinTargets(): {
     }
     const downStart = passive.map((weapon) => weapon.spinTarget);
     const downReached = new Map<number, number>();
-    for (let step = 1; step <= Math.ceil(WEAPON_SPINUP_SEC * 2 / FIXED_DT); step += 1) {
+    for (let step = 1; step <= Math.ceil(MAX_SPINUP_SEC / FIXED_DT); step += 1) {
       stepHarness(harness, NEUTRAL_INPUT, DEFAULT_DRIVER_TUNING, "countdown");
       for (const weapon of passive) {
         if (
@@ -131,9 +135,6 @@ function measureSpinTargets(): {
         }
       }
     }
-    const expected95 = WEAPON_SPINUP_SEC * 0.95;
-    const minTime = expected95 * (1 - SPIN_TIME_TOLERANCE);
-    const maxTime = expected95 * (1 + SPIN_TIME_TOLERANCE);
     const presetRows = passive.map((weapon) => {
       const spin95Sec = reached.get(weapon.idx) ?? null;
       const spinDown95Sec = downReached.get(weapon.idx) ?? null;
@@ -144,11 +145,11 @@ function measureSpinTargets(): {
         spinDown95Sec,
         pass:
           spin95Sec !== null &&
-          spin95Sec >= minTime &&
-          spin95Sec <= maxTime &&
+          spin95Sec > FIXED_DT &&
+          spin95Sec <= MAX_SPINUP_SEC &&
           spinDown95Sec !== null &&
-          spinDown95Sec >= minTime &&
-          spinDown95Sec <= maxTime
+          spinDown95Sec > FIXED_DT &&
+          spinDown95Sec <= MAX_SPINUP_SEC
       };
     });
     harness.world.free();
@@ -196,12 +197,11 @@ async function main(): Promise<void> {
   });
 
   const spinTargets = measureSpinTargets();
-  console.log("3 SPIN TARGET RAMP");
+  console.log("3 POWER-LIMITED SPIN TARGET");
   console.table(spinTargets.rows);
-  console.log("SPIN RAMP GATE", {
-    weaponSpinupSec: WEAPON_SPINUP_SEC,
-    expected95Sec: Number((WEAPON_SPINUP_SEC * 0.95).toFixed(3)),
-    tolerancePercent: SPIN_TIME_TOLERANCE * 100,
+  console.log("POWER SPIN GATE", {
+    legacyWeaponSpinupSec: WEAPON_SPINUP_SEC,
+    maximumSec: MAX_SPINUP_SEC,
     pass: spinTargets.pass
   });
 

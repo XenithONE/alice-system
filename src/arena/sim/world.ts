@@ -1,9 +1,17 @@
 import RAPIER from "@dimforge/rapier3d-compat";
-import { ARENA_COLLISION_GROUPS, assembleBot } from "./assemble";
+import {
+  ARENA_COLLISION_GROUPS,
+  assembleBot,
+  type AssembledBot
+} from "./assemble";
 import { validateBuild } from "./build";
 import { COUNTDOWN_SEC, FIXED_DT, SAW_OMEGA, WALL_RESTITUTION } from "./balance";
 import { DamageSystem, type DamageBot } from "./damage";
 import { driveBot } from "./driver";
+import {
+  internalTelemetry,
+  type InternalTelemetry
+} from "./internals";
 import { mulberry32 } from "./rng";
 import {
   CELL,
@@ -31,6 +39,7 @@ export async function initPhysics(): Promise<void> {
 interface SimMetadata {
   readonly arena: ArenaDef;
   readonly weaponsBySeat: ReadonlyMap<SeatIndex, readonly WeaponDef[]>;
+  readonly botsBySeat: ReadonlyMap<SeatIndex, AssembledBot>;
 }
 
 const metadata = new WeakMap<ArenaSim, SimMetadata>();
@@ -41,6 +50,14 @@ export function arenaForSim(sim: ArenaSim): ArenaDef | null {
 
 export function weaponsForSim(sim: ArenaSim, seat: SeatIndex): readonly WeaponDef[] {
   return metadata.get(sim)?.weaponsBySeat.get(seat) ?? [];
+}
+
+export function internalsForSim(
+  sim: ArenaSim,
+  seat: SeatIndex
+): InternalTelemetry | null {
+  const bot = metadata.get(sim)?.botsBySeat.get(seat);
+  return bot ? internalTelemetry(bot) : null;
 }
 
 function addFixedBox(
@@ -245,7 +262,7 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
           bot.assembled,
           input,
           phase,
-          { inverted: state.inverted },
+          { inverted: state.inverted, alive: bot.alive },
           events
         );
         if (flipped) events.push({ t: "flip", seat: bot.assembled.seat });
@@ -304,6 +321,9 @@ export function createArenaSim(opts: CreateSimOptions): ArenaSim {
         bot.assembled.seat,
         bot.assembled.weapons.map((weapon) => weapon.def)
       ])
+    ),
+    botsBySeat: new Map(
+      bots.map((bot) => [bot.assembled.seat, bot.assembled])
     )
   });
   return sim;

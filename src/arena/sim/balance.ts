@@ -96,6 +96,22 @@ export const DRIVE_ANGULAR_DAMPING = 0.9;
  * contact patch and is still limited by fitted axle torque and top speed.
  */
 export const DRIVE_TRACTION_ASSIST = 0.35;
+/** DC motors deliver peak mechanical output at one quarter stall torque × free speed. */
+export const DRIVE_POWER_DUTY = 0.25;
+/** Even under a spinner load, this fraction of plant output remains available to drive. */
+export const POWER_DRIVE_RESERVE = 0.45;
+/** Avoid the P/omega singularity while a rotary weapon is starting from rest. */
+export const OMEGA_KNEE_MIN = 1.0;
+/** Builder limit for the energy-based rotary-weapon acceleration estimate. */
+export const MAX_SPINUP_SEC = 12;
+export const SELF_RIGHT_CHARGE_KJ = 6;
+export const IMPULSE_KJ_DIVISOR = 200;
+export const FUEL_L_PER_SEC = 0.25;
+export const HEAT_FRACTION = 0.30;
+export const FLAME_HEAT_W_PER_DPS = 25;
+export const HEAT_CAP_J = 45_000;
+export const HEAT_DERATE_START = 0.60;
+export const HEAT_DERATE_MAX = 0.55;
 /**
  * Fraction of fitted tyre/track yaw grip reserved for cancelling unintended
  * chassis rotation while the driver is not steering.

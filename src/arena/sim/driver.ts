@@ -3,7 +3,9 @@ import {
   DRY_LOCKOUT,
   DRIVE_TRACTION_ASSIST,
   FIXED_DT,
+  FUEL_L_PER_SEC,
   MIN_TRIGGER_GAP,
+  SELF_RIGHT_CHARGE_KJ,
   SELF_RIGHT_COOLDOWN,
   SELF_RIGHT_IMPULSE,
   WEAPON_SPINUP_SEC,
@@ -11,10 +13,13 @@ import {
 } from "./balance";
 import type { AssembledBot, WeaponRuntime } from "./assemble";
 import { chassisForward } from "./heading";
+import { updateInternals, weaponChargeCostKj } from "./internals";
+import { allocatePower, rotaryTorqueLimit } from "./power";
 import type { MatchInput, MatchPhase, SimEvent } from "./types";
 
 export interface DriverFrame {
   readonly inverted: boolean;
+  readonly alive?: boolean;
 }
 
 export interface DriverTuning {
@@ -51,7 +56,8 @@ function updateWeapon(
   input: MatchInput,
   enabled: boolean,
   events: SimEvent[],
-  tuning: DriverTuning
+  tuning: DriverTuning,
+  allocatedW: number
 ): void {
   weapon.cooldownLeft = Math.max(0, weapon.cooldownLeft - FIXED_DT);
   weapon.triggerGapLeft = Math.max(0, weapon.triggerGapLeft - FIXED_DT);
@@ -78,13 +84,17 @@ function updateWeapon(
         weapon.active = false;
         weapon.dryLockoutLeft = DRY_LOCKOUT;
       }
-    } else if (!pressed && !unlimited) {
-      const refillSecondsPerSecond = Math.max(weapon.def.refuelRate ?? 1, FIXED_DT);
-      weapon.fuelLeft = Math.min(capacity, weapon.fuelLeft + FIXED_DT / refillSecondsPerSecond);
     }
   } else {
     const rising = pressed && !weapon.wasPressed;
-    if (rising && weapon.cooldownLeft === 0 && weapon.triggerGapLeft === 0) {
+    const chargeCostKj = weaponChargeCostKj(weapon.def);
+    if (
+      rising &&
+      weapon.cooldownLeft === 0 &&
+      weapon.triggerGapLeft === 0 &&
+      bot.chargeKj >= chargeCostKj
+    ) {
+      bot.chargeKj -= chargeCostKj;
       weapon.active = true;
       weapon.cooldownLeft = Math.max(weapon.def.cooldown ?? 0, MIN_TRIGGER_GAP);
       weapon.triggerGapLeft = MIN_TRIGGER_GAP;
@@ -111,21 +121,73 @@ function updateWeapon(
   }
 
   if (weapon.joint && (weapon.def.effect === "spin" || weapon.def.effect === "grind")) {
-    const torque = (weapon.def.spinUpTorque ?? 0) * bot.weaponPowerMul;
     const maxOmega = weapon.def.maxOmega ?? 0;
     const desired = weapon.active ? maxOmega : 0;
-    if (tuning.weaponSpinupSec <= 0) {
-      weapon.spinTarget = desired;
-    } else {
-      const delta = maxOmega * FIXED_DT / tuning.weaponSpinupSec;
-      weapon.spinTarget =
-        desired > weapon.spinTarget
-          ? Math.min(desired, weapon.spinTarget + delta)
-          : Math.max(desired, weapon.spinTarget - delta);
-    }
+    const torque =
+      desired > 0
+        ? rotaryTorqueLimit(weapon, allocatedW, bot.weaponPowerMul)
+        : (weapon.def.spinUpTorque ?? 0) * bot.weaponPowerMul;
+    const inertia = Math.max(weapon.def.inertia ?? 0, Number.EPSILON);
+    const delta = torque / inertia * FIXED_DT;
+    weapon.spinTarget =
+      desired > weapon.spinTarget
+        ? Math.min(desired, weapon.spinTarget + delta)
+        : Math.max(desired, weapon.spinTarget - delta);
     weapon.joint.configureMotorVelocity(weapon.spinTarget, torque);
   }
   weapon.wasPressed = pressed;
+}
+
+function refillHeldWeapons(
+  bot: AssembledBot,
+  input: MatchInput,
+  enabled: boolean
+): void {
+  if (!enabled || bot.fuelL <= 0) return;
+  const demands = bot.weapons.map((weapon) => {
+    const capacity = weapon.def.fuel ?? 0;
+    if (
+      weapon.detached ||
+      weapon.def.action !== "held" ||
+      capacity <= 0 ||
+      buttonFor(input, weapon)
+    ) {
+      return 0;
+    }
+    const refillSecondsPerSecond = Math.max(
+      weapon.def.refuelRate ?? 1,
+      FIXED_DT
+    );
+    const recoverSec = Math.min(
+      capacity - weapon.fuelLeft,
+      FIXED_DT / refillSecondsPerSecond
+    );
+    return Math.max(0, recoverSec) * FUEL_L_PER_SEC;
+  });
+  const totalNeedL = demands.reduce((sum, value) => sum + value, 0);
+  if (totalNeedL <= 0) return;
+  let spentL = 0;
+  for (const [index, needL] of demands.entries()) {
+    if (needL <= 0) continue;
+    const allocatedL = Math.min(
+      needL,
+      bot.fuelL * needL / totalNeedL
+    );
+    bot.weapons[index]!.fuelLeft += allocatedL / FUEL_L_PER_SEC;
+    spentL += allocatedL;
+  }
+  bot.fuelL = Math.max(0, bot.fuelL - spentL);
+}
+
+function totalBotMass(bot: AssembledBot): number {
+  let mass = bot.chassis.mass();
+  const bodies = new Set<number>([bot.chassis.handle]);
+  for (const part of [...bot.drives, ...bot.weapons]) {
+    if (part.detached || !part.body.isValid() || bodies.has(part.body.handle)) continue;
+    bodies.add(part.body.handle);
+    mass += part.body.mass();
+  }
+  return Math.max(mass, Number.EPSILON);
 }
 
 function applyYawHold(bot: AssembledBot, steer: number, tuning: DriverTuning): void {
@@ -161,7 +223,9 @@ export function driveBot(
   tuning: DriverTuning = DEFAULT_DRIVER_TUNING
 ): boolean {
   bot.selfRightCooldown = Math.max(0, bot.selfRightCooldown - FIXED_DT);
-  const enabled = phase === "live";
+  const alive = frame.alive !== false;
+  const enabled = phase === "live" && alive;
+  const alloc = allocatePower(bot, input, phase, alive);
   const throttle = enabled ? clamp(input.throttle) : 0;
   const steer = enabled ? clamp(input.steer) : 0;
   const left = clamp(throttle + steer);
@@ -180,7 +244,7 @@ export function driveBot(
     targetSpeed = Math.min(targetSpeed, drive.def.maxOmega * drive.def.radius);
     drive.joint.configureMotorVelocity(
       -command * drive.def.maxOmega,
-      drive.def.torque * bot.powerMul
+      drive.def.torque * bot.powerMul * alloc.driveScale
     );
   }
   if (driveCount > 0 && Math.abs(driveCommand) > Number.EPSILON) {
@@ -192,9 +256,11 @@ export function driveBot(
     const velocity = bot.chassis.linvel();
     const current = velocity.x * dirX + velocity.z * dirZ;
     const desired = averageCommand * targetSpeed;
-    const mass = Math.max(bot.chassis.mass(), Number.EPSILON);
+    // chassis.mass() excludes the separately simulated wheels and rotors.
+    const mass = totalBotMass(bot);
     const maxDelta =
-      tractionAcceleration * bot.powerMul / mass * DRIVE_TRACTION_ASSIST * FIXED_DT;
+      tractionAcceleration * bot.powerMul * alloc.driveScale /
+      mass * DRIVE_TRACTION_ASSIST * FIXED_DT;
     const delta = Math.max(-maxDelta, Math.min(maxDelta, desired - current));
     bot.chassis.applyImpulse(
       { x: dirX * delta * mass, y: 0, z: dirZ * delta * mass },
@@ -202,20 +268,25 @@ export function driveBot(
     );
   }
   applyYawHold(bot, steer, tuning);
-  for (const weapon of bot.weapons) {
-    updateWeapon(bot, weapon, input, enabled, events, tuning);
+  refillHeldWeapons(bot, input, enabled);
+  for (const [index, weapon] of bot.weapons.entries()) {
+    updateWeapon(bot, weapon, input, enabled, events, tuning, alloc.weaponW[index] ?? 0);
   }
 
+  let flipped = false;
   if (
     enabled &&
     input.selfRight &&
     frame.inverted &&
     bot.hasSelfRight &&
-    bot.selfRightCooldown === 0
+    bot.selfRightCooldown === 0 &&
+    bot.chargeKj >= SELF_RIGHT_CHARGE_KJ
   ) {
+    bot.chargeKj -= SELF_RIGHT_CHARGE_KJ;
     bot.chassis.applyImpulse({ x: 0, y: SELF_RIGHT_IMPULSE, z: 0 }, true);
     bot.selfRightCooldown = SELF_RIGHT_COOLDOWN;
-    return true;
+    flipped = true;
   }
-  return false;
+  updateInternals(bot, alloc.usedW, alloc.surplusW, enabled);
+  return flipped;
 }

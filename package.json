@@ -9,7 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "arena:render-gates": "npx tsx src/arena/render/renderPlanSelftest.ts && npx tsx src/arena/render/proceduralGeometrySelftest.ts && npx tsx src/arena/render/driveGeometrySelftest.ts && npx tsx src/arena/render/rotorPositionSelftest.ts && npx tsx src/arena/render/resourceDisposalSelftest.ts",
-    "arena:gates": "npx tsx src/arena/sim/catalogSelftest.ts && npx tsx src/arena/sim/buildSelftest.ts && npx tsx src/arena/sim/driveSelftest.ts && npx tsx src/arena/sim/headless.ts && npx tsx src/arena/sim/headingSelftest.ts && npx tsx src/arena/sim/spinupSelftest.ts && npm run arena:render-gates"
+    "arena:gates": "npx tsx src/arena/sim/catalogSelftest.ts && npx tsx src/arena/sim/buildSelftest.ts && npx tsx src/arena/sim/driveSelftest.ts && npx tsx src/arena/sim/headless.ts && npx tsx src/arena/sim/headingSelftest.ts && npx tsx src/arena/sim/spinupSelftest.ts && npx tsx src/arena/sim/internalsSelftest.ts && npm run arena:render-gates"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

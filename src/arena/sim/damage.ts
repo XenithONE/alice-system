@@ -38,6 +38,7 @@ import {
   SPIN_DAMAGE_FLOOR,
   SUSTAINED_TICK
 } from "./balance";
+import { plantState, weaponChargeCostKj } from "./internals";
 import {
   CELL,
   type ArenaDef,
@@ -745,6 +746,7 @@ export class DamageSystem {
           rotation.w
         );
       const cooldown = Math.max(weapon.def.cooldown ?? 0, Number.EPSILON);
+      const chargeCostKj = weaponChargeCostKj(weapon.def);
       const capacity = weapon.def.fuel ?? 0;
       return {
         partIdx: weapon.idx,
@@ -755,9 +757,19 @@ export class DamageSystem {
             ? this.weaponOmega(weapon)
             : 0,
         angle,
+        // WeaponSnap.c remains a 0..1 "ready to fire" meter. It used to mean
+        // cooldown only; electrical readiness is now the other arm of min().
         charge:
           weapon.def.action === "triggered"
-            ? Math.max(0, Math.min(1, 1 - weapon.cooldownLeft / cooldown))
+            ? Math.min(
+                Math.max(0, Math.min(1, 1 - weapon.cooldownLeft / cooldown)),
+                chargeCostKj > 0
+                  ? Math.max(
+                      0,
+                      Math.min(1, bot.assembled.chargeKj / chargeCostKj)
+                    )
+                  : 1
+              )
             : 1,
         fuel: capacity > 0 ? Math.max(0, Math.min(1, weapon.fuelLeft / capacity)) : 1,
         clamping: weapon.clamping
@@ -785,7 +797,7 @@ export class DamageSystem {
       inverted: upDot < INVERTED_DOT,
       burningFor: bot.burningFor,
       selfRightCooldown: bot.assembled.selfRightCooldown,
-      plant: { heat: 0, charge: 1, fuel: 1, load: 0 }
+      plant: plantState(bot.assembled)
     };
   }
 

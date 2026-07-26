@@ -1,4 +1,16 @@
-import { IMPACT_SCALE } from "./balance";
+import {
+  DRIVE_POWER_DUTY,
+  FLAME_HEAT_W_PER_DPS,
+  FUEL_L_PER_SEC,
+  HEAT_CAP_J,
+  HEAT_DERATE_MAX,
+  HEAT_DERATE_START,
+  HEAT_FRACTION,
+  IMPACT_SCALE,
+  MAX_SPINUP_SEC,
+  SELF_RIGHT_CHARGE_KJ
+} from "./balance";
+import { weaponChargeCostKj } from "./internals";
 import {
   CELL,
   type BotSpec,
@@ -10,7 +22,8 @@ import {
   type MountFace,
   type PartDef,
   type RoomSettings,
-  type Rot4
+  type Rot4,
+  type WeaponDef
 } from "./types";
 
 const VALID_FACES: readonly MountFace[] = [
@@ -57,12 +70,23 @@ export function computeStats(
   let topSpeed = Number.POSITIVE_INFINITY;
   let baseTorque = 0;
   let powerMul = 1;
+  let weaponPowerMul = 1;
   let hitPower = 0;
   let sustainedDps = 0;
   let primaryId: string | null = null;
   let secondaryId: string | null = null;
   let tertiaryId: string | null = null;
   let hasSelfRight = false;
+  let powerKw = chassis?.stockPowerKw ?? 0;
+  let chargeKj = chassis?.stockChargeKj ?? 0;
+  let fuelL = chassis?.stockFuelL ?? 0;
+  let coolingKw = chassis?.stockCoolingKw ?? 0;
+  let heatWeightedKw = powerKw;
+  let internalCells = 0;
+  let drivePowerKw = 0;
+  let flameHeatKw = 0;
+  let chargeDemandKj = 0;
+  const rotaryWeapons: WeaponDef[] = [];
 
   for (const placed of spec.parts) {
     const part = catalog.byId.get(placed.partId);
@@ -75,6 +99,8 @@ export function computeStats(
       driveCount += 1;
       topSpeed = Math.min(topSpeed, part.maxOmega * part.radius);
       baseTorque += part.torque;
+      drivePowerKw +=
+        DRIVE_POWER_DUTY * part.torque * part.maxOmega / 1000;
     } else if (part.category === "weapon") {
       if (part.slot === "primary") primaryId ??= part.id;
       else if (part.slot === "secondary") secondaryId ??= part.id;
@@ -83,11 +109,58 @@ export function computeStats(
       if (part.effect === "grind" || part.effect === "clamp" || part.effect === "flame") {
         sustainedDps += part.dps ?? 0;
       }
+      if (part.effect === "spin" || part.effect === "grind") {
+        rotaryWeapons.push(part);
+      }
+      if (part.effect === "flame") {
+        flameHeatKw += (part.dps ?? 0) * FLAME_HEAT_W_PER_DPS / 1000;
+      }
+      if (part.action === "triggered") {
+        chargeDemandKj = Math.max(chargeDemandKj, weaponChargeCostKj(part));
+      }
     } else if (part.category === "utility") {
       powerMul *= part.powerMul ?? 1;
+      weaponPowerMul *= part.weaponPowerMul ?? 1;
       hasSelfRight ||= part.selfRight === true;
+      if (isInternalPart(part)) {
+        const addedPowerKw = part.powerKw ?? 0;
+        powerKw += addedPowerKw;
+        chargeKj += part.chargeKj ?? 0;
+        fuelL += part.fuelL ?? 0;
+        coolingKw += part.coolingKw ?? 0;
+        heatWeightedKw += addedPowerKw * (part.heatMul ?? 1);
+        internalCells += occupiedCells(part, placed.cell, placed.rot).length;
+      }
     }
   }
+
+  drivePowerKw *= powerMul;
+  if (hasSelfRight) {
+    chargeDemandKj = Math.max(chargeDemandKj, SELF_RIGHT_CHARGE_KJ);
+  }
+  const rotaryEnergyJ = rotaryWeapons.reduce(
+    (sum, weapon) =>
+      sum + 0.5 * (weapon.inertia ?? 0) * (weapon.maxOmega ?? 0) ** 2,
+    0
+  );
+  const rotaryTorquePowerW = rotaryWeapons.reduce(
+    (sum, weapon) =>
+      sum +
+      (weapon.spinUpTorque ?? 0) *
+        weaponPowerMul *
+        (weapon.maxOmega ?? 0),
+    0
+  );
+  const effectiveSpinPowerW = Math.min(powerKw * 1000, rotaryTorquePowerW);
+  const spinUpSec =
+    rotaryEnergyJ > 0 && effectiveSpinPowerW > 0
+      ? rotaryEnergyJ / effectiveSpinPowerW
+      : rotaryEnergyJ > 0
+        ? Number.POSITIVE_INFINITY
+        : 0;
+  const rotaryDemandKw = rotaryEnergyJ / MAX_SPINUP_SEC / 1000;
+  const heatMul = powerKw > 0 ? heatWeightedKw / powerKw : 1;
+  const heatKw = drivePowerKw * HEAT_FRACTION * heatMul + flameHeatKw;
 
   return {
     cost,
@@ -105,17 +178,17 @@ export function computeStats(
     tertiaryId,
     hasSelfRight,
     invertible: chassis?.invertible ?? false,
-    powerKw: 0,
-    powerDemandKw: 0,
-    chargeKj: 0,
-    chargeDemandKj: 0,
-    fuelL: 0,
-    fuelBurnSec: 0,
-    coolingKw: 0,
-    heatKw: 0,
-    spinUpSec: 0,
-    internalCells: 0,
-    internalCellsMax: 0
+    powerKw,
+    powerDemandKw: drivePowerKw + rotaryDemandKw,
+    chargeKj,
+    chargeDemandKj,
+    fuelL,
+    fuelBurnSec: fuelL / FUEL_L_PER_SEC,
+    coolingKw,
+    heatKw,
+    spinUpSec,
+    internalCells,
+    internalCellsMax: chassis ? chassis.internalGrid[0] * chassis.internalGrid[1] : 0
   };
 }
 
@@ -136,6 +209,7 @@ export function validateBuild(
   settings: RoomSettings
 ): BuildValidation {
   const errors: string[] = [];
+  const warnings: string[] = [];
   const stats = computeStats(spec, catalog, settings);
   const chassis = chassisFor(spec, catalog);
   if (!chassis) errors.push("有効なシャーシが必要です。");
@@ -227,7 +301,90 @@ export function validateBuild(
   if (secondaryCount > 1) errors.push("secondary武装は1個までです。");
   if (tertiaryCount > 1) errors.push("tertiary武装は1個までです。");
 
-  return { ok: errors.length === 0, errors, warnings: [], stats };
+  if (chassis) {
+    const driveNeedKw = spec.parts.reduce((sum, placed) => {
+      const part = catalog.byId.get(placed.partId);
+      return part?.category === "drive"
+        ? sum + DRIVE_POWER_DUTY * part.torque * part.maxOmega / 1000
+        : sum;
+    }, 0) * spec.parts.reduce((mul, placed) => {
+      const part = catalog.byId.get(placed.partId);
+      return part?.category === "utility" ? mul * (part.powerMul ?? 1) : mul;
+    }, 1);
+    if (driveNeedKw > stats.powerKw) {
+      errors.push(
+        `駆動に ${formatNumber(driveNeedKw)} kW 必要ですが、機関出力は ${formatNumber(stats.powerKw)} kW しかありません。（${formatNumber(driveNeedKw - stats.powerKw)} kW 不足）`
+      );
+    }
+
+    for (const placed of spec.parts) {
+      const part = catalog.byId.get(placed.partId);
+      if (part?.category !== "weapon") continue;
+      if (part.effect === "spin" || part.effect === "grind") {
+        const energyJ = 0.5 * (part.inertia ?? 0) * (part.maxOmega ?? 0) ** 2;
+        const torquePowerW =
+          (part.spinUpTorque ?? 0) *
+          spec.parts.reduce((mul, candidate) => {
+            const utility = catalog.byId.get(candidate.partId);
+            return utility?.category === "utility"
+              ? mul * (utility.weaponPowerMul ?? 1)
+              : mul;
+          }, 1) *
+          (part.maxOmega ?? 0);
+        const availableW = Math.min(stats.powerKw * 1000, torquePowerW);
+        const spinSec =
+          energyJ > 0 && availableW > 0
+            ? energyJ / availableW
+            : Number.POSITIVE_INFINITY;
+        if (spinSec > MAX_SPINUP_SEC) {
+          const needKw = energyJ / MAX_SPINUP_SEC / 1000;
+          errors.push(
+            `「${part.nameJa}」の加速に ${formatNumber(spinSec)} 秒かかります（上限 ${MAX_SPINUP_SEC} 秒）。約 ${formatNumber(needKw)} kW のエンジンが必要です。（現在 ${formatNumber(stats.powerKw)} kW）`
+          );
+        }
+      }
+      if (part.action === "triggered") {
+        const need = weaponChargeCostKj(part);
+        if (need > stats.chargeKj) {
+          errors.push(
+            `「${part.nameJa}」の作動に ${formatNumber(need)} kJ 必要ですが、蓄電容量は ${formatNumber(stats.chargeKj)} kJ です。バッテリーを追加してください。`
+          );
+        }
+      }
+      if ((part.fuel ?? 0) > 0 && stats.fuelL <= 0) {
+        errors.push(
+          `「${part.nameJa}」は燃料を必要とします。燃料タンクを機関室に搭載してください。`
+        );
+      }
+    }
+    if (stats.hasSelfRight && stats.chargeKj < SELF_RIGHT_CHARGE_KJ) {
+      errors.push(
+        `自立機構の作動に ${SELF_RIGHT_CHARGE_KJ} kJ 必要ですが、蓄電容量は ${formatNumber(stats.chargeKj)} kJ です。`
+      );
+    }
+    if (stats.internalCells > stats.internalCellsMax) {
+      const [w, h] = chassis.internalGrid;
+      errors.push(
+        `機関室が満杯です。機関室は ${w}×${h} セル（${stats.internalCellsMax}）ですが、${stats.internalCells} セル使っています。`
+      );
+    }
+    if (stats.heatKw > stats.coolingKw) {
+      const derateSec =
+        HEAT_CAP_J * HEAT_DERATE_START /
+        ((stats.heatKw - stats.coolingKw) * 1000);
+      const pct = Math.round((1 - HEAT_DERATE_MAX) * 100);
+      warnings.push(
+        `冷却が不足しています。連続出力 ${formatNumber(stats.heatKw)} kW に対し冷却 ${formatNumber(stats.coolingKw)} kW — 約 ${formatNumber(derateSec)} 秒で出力が ${pct}% まで低下します。`
+      );
+    }
+  }
+
+  return { ok: errors.length === 0, errors, warnings, stats };
+}
+
+function formatNumber(value: number): string {
+  if (!Number.isFinite(value)) return "∞";
+  return Number(value.toFixed(1)).toString();
 }
 
 function faceLabel(face: MountFace): string {
