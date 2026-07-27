@@ -4,6 +4,8 @@ import { createHouses, type HouseSpec } from "./harborHouses";
 import { createTown } from "./harborTown";
 import {
   createBlockFigure,
+  CASTLE_TOWER_OFFSET_X,
+  CASTLE_TOWER_RADIUS,
   createCastleGate,
   createCityBackdrop,
   createFloatingIslands,
@@ -579,9 +581,9 @@ function initHarbor(
   const CASTLE_SCALE = 1.55;
   castle.scale.setScalar(CASTLE_SCALE);
   const castleWestTowerCollider: CircleCollider = {
-    x: -8.5 - 3.4 * CASTLE_SCALE,
-    z: -27.5,
-    r: 2.1 * CASTLE_SCALE
+    x: castle.position.x - CASTLE_TOWER_OFFSET_X * CASTLE_SCALE,
+    z: castle.position.z,
+    r: CASTLE_TOWER_RADIUS * CASTLE_SCALE
   };
   scene.add(castle);
   const lighthouse = createLighthouse(materials, quality.tier);
@@ -708,12 +710,15 @@ function initHarbor(
       z: -35.4 + index * (34 / Math.max(1, lanternCount - 1)),
       r: 0.24
     })),
-    // The scaled castle's west tower and gate-side masonry reach the walkway.
-    // The west tower's local radius is 2.1 (createTower in harborModels), so its
-    // real world footprint is 2.1 * CASTLE_SCALE = 3.255 — the old 2.05 let the
-    // walker stand 0.75 inside visible masonry.
-    castleWestTowerCollider,
-    { x: -10.55, z: -28.15, r: 1.35 }
+    // The castle's only walkway-side footprint is the west tower, and its
+    // collider is derived from CASTLE_TOWER_* so it cannot drift from the
+    // model. A second hand-written circle used to sit at (-10.55, -28.15) for
+    // the OLD castle's gate-side masonry; the rebuilt castle has no stone
+    // there at body height (measured by two independent harnesses: zero
+    // triangles in the band, removal opens 4.07 m² of promenade, and the
+    // walk-through test stays at 0.0000 m penetration). An invisible wall two
+    // metres from the nearest stone is worse than no wall.
+    castleWestTowerCollider
   ];
 
   // Water hazards use the same circle resolver. The island values come from
