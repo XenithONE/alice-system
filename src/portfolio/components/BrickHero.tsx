@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HeroRoot } from "../HeroRoot";
-import { ArcadeOverlay } from "./ArcadeOverlay";
+import { ArcadeOverlay, type ArcadeHouse } from "./ArcadeOverlay";
 import type {
   HarborLandmark,
   HarborScene,
@@ -188,7 +188,7 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [glLive, setGlLive] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  const [arcadeHouse, setArcadeHouse] = useState<Work | null>(null);
+  const [arcadeHouse, setArcadeHouse] = useState<ArcadeHouse | null>(null);
 
   const harborWorks = useMemo<HarborWorkItem[]>(
     () =>
@@ -224,26 +224,21 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
     setArcadeHouse(work.id === "scrap-crown" ? { ...work, status: "in-dev" } : work);
   }, []);
 
-  // The arena is a secret: it is deliberately absent from the works gallery, so
-  // it cannot look itself up there. Everything it needs is stated here.
+  // Arena titles stay separate from WORKS so they do not affect the portfolio
+  // catalog, LIVE count, or sitemap.
   const enterArena = useCallback((): void => {
     sceneRef.current?.pause();
     setMapOpen(false);
     setArcadeHouse({
-      id: "scrap-crown",
-      title: "SCRAP CROWN",
-      titleJa: "闘技場",
-      href: "scrap-crown.html",
-      cover: "assets/scrap-crown-cover.webp",
+      id: "arena-lobby",
+      title: "GRAND ARENA",
+      titleJa: "闘技場ゲームロビー",
+      href: "#arena",
+      cover: "assets/vortex-crown-cover.webp",
       status: "playable",
       description:
-        "鋼板とチタンで競技ロボットを組み、ポイント予算の中で武装を選んで戦わせる。2〜4人対戦。この闘技場からしか入れない。",
-      year: "2026",
-      kind: "game",
-      engine: "Three.js + Rapier",
-      platform: ["web"],
-      tags: ["2–4P Multi", "Physics", "Robot Combat"],
-      aiTools: ["Claude", "ChatGPT", "Grok"]
+        "SCRAP CROWNとVORTEX CROWN、二つの物理演算バトルを選べる港の闘技場。",
+      arcadeMode: "arena"
     });
   }, []);
 
@@ -428,6 +423,9 @@ export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void
             </button>
             <button type="button" onClick={() => sceneRef.current?.interact()}>
               港に降りる
+            </button>
+            <button type="button" onClick={enterArena}>
+              闘技場へ直行
             </button>
             <span aria-hidden="true">左右にスワイプ</span>
           </div>

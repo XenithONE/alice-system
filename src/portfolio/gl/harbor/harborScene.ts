@@ -1397,6 +1397,10 @@ function initHarbor(
       startVoyage();
       return;
     }
+    if (mutable.mode === "cinematic") {
+      dock();
+      return;
+    }
     if (mutable.mode === "sailing" && mutable.nearDock) {
       dock();
       return;

@@ -11,3 +11,11 @@
 - Runtime dependencies: Three.js (MIT) and SparkJS `@sparkjsdev/spark` (Apache-2.0) are installed through npm. The in-game dust/fog atmosphere is built procedurally at runtime via SparkJS Gaussian splats — no external `.spz`/`.ply` splat file is used.
 - Fonts: Space Grotesk and Cormorant Garamond are loaded from Google Fonts.
 - All maze geometry, props (lockers, case files, exit sign), and the monster ("The Warden") are procedurally generated Three.js geometry/materials — no external 3D models are used.
+
+## VORTEX CROWN (game page assets)
+
+- `public/assets/vortex-crown-cover.webp`: Project-original AI-generated key artwork created for VORTEX CROWN. No third-party character, product, logo, or franchise artwork is used.
+- The seven-part tops, part-family variants, materials, arenas, and collision shapes are generated procedurally at runtime from project-local TypeScript definitions; the game does not distribute third-party GLB/GLTF models.
+- The procedural hard-surface workflow was informed by [img2threejs](https://github.com/img2threejs/img2threejs) (Apache-2.0). It is a development/reference workflow only and is not loaded by the published game at runtime.
+- Runtime dependencies include Three.js (MIT), Rapier (`@dimforge/rapier3d-compat`, Apache-2.0), React (MIT), and PeerJS (MIT), installed through npm.
+- Fonts: Barlow Condensed, Noto Sans JP, and Space Mono are loaded from Google Fonts.
