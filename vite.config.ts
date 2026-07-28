@@ -20,7 +20,8 @@ export default defineConfig({
         "relic-road": fileURLToPath(new URL("./relic-road.html", import.meta.url)),
         "scrap-crown": fileURLToPath(new URL("./scrap-crown.html", import.meta.url)),
         "vortex-crown": fileURLToPath(new URL("./vortex-crown.html", import.meta.url)),
-        atelier: fileURLToPath(new URL("./atelier.html", import.meta.url))
+        atelier: fileURLToPath(new URL("./atelier.html", import.meta.url)),
+        harbor: fileURLToPath(new URL("./harbor.html", import.meta.url))
       },
       // NOTE: no manualChunks here on purpose. rolldown-vite's manualChunks compat
       // folded three's core into the spark group even when the function returned

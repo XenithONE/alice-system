@@ -6,48 +6,16 @@
    childish. Colour law: --live green means browser "play now" only.
    ========================================================================== */
 
-:root {
-  /* surfaces (light) */
-  --bg: #eef1f5;
-  --bg-warm: #f4f2ec;
-  --surface: #ffffff;
-  --raised: #f5f7fa;
-  --panel: rgba(255, 255, 255, 0.82);
-  --hairline: rgba(23, 27, 33, 0.1);
-  --hairline-strong: rgba(23, 27, 33, 0.18);
-  /* ink / text */
-  --ink: #14181e;
-  --text: #2a2f37;
-  --text-dim: #5b636d;
-  --text-faint: #646b75; /* ≥4.5:1 on all light surfaces (WCAG AA) */
-  /* brand + toy accents (darkened so small text/labels clear AA on white) */
-  --red: #c91a09;
-  --red-shadow: #9a1206;
-  --amber: #9c6410; /* text-safe caramel; bright toy amber lives on the brick hero */
-  --blue: #0055bf;
-  --azure: #078bc9;
-  --yellow: #f2cd37;
-  /* status ramp (badge + CTA) — AA as label text on light and white-on-fill */
-  --live: #2b7a37; /* browser play-now ONLY */
-  --live-shadow: #1f5a28;
-  --live-ink: #ffffff;
-  --wishlist: #9a6410; /* store */
-  --download: #0c6ba0; /* itch / direct */
-  --dev: #6849bf; /* coming / in-dev */
-  --rec: #c91a09;
-  /* type */
-  --display: "Oswald", "Arial Narrow", "Hiragino Kaku Gothic ProN", sans-serif;
-  --sans: "Space Grotesk", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-  --jp: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-  --mono: "Space Mono", ui-monospace, "SFMono-Regular", monospace;
-  /* layout */
-  --gutter: clamp(18px, 5vw, 92px);
-  --page-max: 1400px;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  /* stud baseplate texture */
-  --studs: radial-gradient(circle at 50% 42%, rgba(23, 27, 33, 0.05) 20%, transparent 22%);
-  color-scheme: light;
-}
+/*
+ * Design tokens live in theme.css, which is the single :root for the site.
+ *
+ * There used to be a second, light-palette :root here. It had not been what
+ * shipped for months — harbor.css loaded afterwards and overrode all of it —
+ * and once theme.css became a chunk shared by two pages the bundler started
+ * emitting it FIRST, which handed the cascade back to this file and would
+ * have turned the whole site light. Two :root blocks racing on chunk order
+ * is not a theme system. There is one now.
+ */
 
 *, *::before, *::after { box-sizing: border-box; }
 * { margin: 0; padding: 0; }

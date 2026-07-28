@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { hasWebGL } from "../lib/webgl";
-import { detectHeroQuality } from "./quality";
+import { detectHeroQuality } from "../portfolio/quality";
 import type {
   HarborScene,
   HarborSceneState,
   HarborWorkItem
-} from "./gl/harbor/harborScene";
+} from "./gl/harborScene";
 
 export interface HeroRootProps {
   poster?: string;
@@ -90,7 +90,7 @@ export function HeroRoot({
       booting = true;
       const version = ++bootVersion;
       try {
-        const { createHarborScene } = await import("./gl/harbor/harborScene");
+        const { createHarborScene } = await import("./gl/harborScene");
         if (disposed || version !== bootVersion) return;
 
         const next = createHarborScene(canvas, quality, worksRef.current, {

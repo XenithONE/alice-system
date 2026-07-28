@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { HeroQuality } from "../../quality";
+import type { HeroQuality } from "../../portfolio/quality";
 import { createHouses, type HouseSpec } from "./harborHouses";
 import { createTown } from "./harborTown";
 import {

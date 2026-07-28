@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { BrickHero } from "./components/BrickHero";
+import { SiteNav } from "./components/SiteNav";
+import { EditorialHero } from "./components/EditorialHero";
 import { GamesSection } from "./components/GamesSection";
 import { GameDetail } from "./components/GameDetail";
 import { AiLab } from "./components/AiLab";
@@ -47,6 +48,16 @@ export default function PortfolioApp() {
     const targetId = window.location.hash.slice(1);
     if (!targetId) return;
 
+    /*
+     * The walkable harbour lives on its own page now and is deliberately not
+     * linked from anywhere — noindex, absent from the sitemap. #harbor is the
+     * way in for someone who knows it is there.
+     */
+    if (targetId === "harbor") {
+      window.location.replace(`${import.meta.env.BASE_URL}harbor.html`);
+      return;
+    }
+
     const frame = window.requestAnimationFrame(() => {
       const target = document.getElementById(targetId);
       if (!target) return;
@@ -67,8 +78,9 @@ export default function PortfolioApp() {
       </a>
       <CursorFX />
       <ScrollProgress />
+      <SiteNav />
       <main id="main-content">
-        <BrickHero onOpenDetail={setDetail} />
+        <EditorialHero />
         <GamesSection onOpenDetail={setDetail} />
         <AiLab />
         <Prompts />

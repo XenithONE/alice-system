@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HeroRoot } from "../HeroRoot";
+import { HeroRoot } from "./HeroRoot";
 import { ArcadeOverlay, type ArcadeHouse } from "./ArcadeOverlay";
 import type {
   HarborLandmark,
   HarborScene,
   HarborSceneState,
   HarborWorkItem
-} from "../gl/harbor/harborScene";
-import { WORKS } from "../../data/works";
-import type { Work } from "../../data/works";
+} from "./gl/harborScene";
+import { WORKS } from "../data/works";
+import type { Work } from "../data/works";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -180,7 +180,7 @@ function HarborTouchStick() {
   );
 }
 
-export function BrickHero({ onOpenDetail }: { onOpenDetail: (work: Work) => void }) {
+export function HarborPage({ onOpenDetail }: { onOpenDetail: (work: Work) => void }) {
   const isolatedSkiffReview =
     new URLSearchParams(window.location.search).get("skiff-review") === "1";
   const sceneRef = useRef<HarborScene | null>(null);

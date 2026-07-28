@@ -3,7 +3,7 @@ import {
   ARENA_GAMES,
   type ArenaGame,
   type ArenaGameId
-} from "../../data/arenaGames";
+} from "../data/arenaGames";
 
 const BASE = import.meta.env.BASE_URL;
 

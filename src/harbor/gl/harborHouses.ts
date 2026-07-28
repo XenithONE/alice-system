@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import type { HeroQuality } from "../../quality";
+import type { HeroQuality } from "../../portfolio/quality";
 import type { HarborMaterials } from "./harborModels";
 
 export interface HouseSpec {

@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import type { HeroQuality } from "../../quality";
-import { BRICK, BRICK_H, BrickBatcher, PLATE_H, type BrickKind } from "../brick/brickKit";
+import type { HeroQuality } from "../../portfolio/quality";
+import { BRICK, BRICK_H, BrickBatcher, PLATE_H, type BrickKind } from "./brickKit";
 import type { HarborMaterials } from "./harborModels";
 
 /**

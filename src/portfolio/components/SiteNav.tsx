@@ -4,7 +4,7 @@ export function SiteNav() {
   return (
     <header className="site-nav">
       <div className="site-nav-shell">
-        <a className="site-brand" href="#top" data-magnetic aria-label="AlicE sYsTeM ホーム">
+        <a className="site-brand" href="#hero" data-magnetic aria-label="AlicE sYsTeM ホーム">
           AlicE sYsTeM
           <span className="site-brand-tag">INDIE GAME STUDIO</span>
         </a>
@@ -21,8 +21,7 @@ export function SiteNav() {
         </p>
 
         <nav className="site-primary-nav" aria-label="主要セクション">
-          <a href="#top" data-magnetic>NOW SHOWING</a>
-          <a href="#games" data-magnetic>GAMES</a>
+          <a href="#games" data-magnetic>WORKS</a>
           <a href="#ai-lab" data-magnetic>LAB</a>
           <a href="#prompts" data-magnetic>PROMPTS</a>
         </nav>
