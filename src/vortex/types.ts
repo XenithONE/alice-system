@@ -204,6 +204,20 @@ export interface TopBuildSpec {
   parts: Record<TopSlot, PartId>;
 }
 
+/**
+ * Endless co-op build format.
+ *
+ * This deliberately stays separate from `TopBuildSpec`: the first entry in
+ * each slot is the visual/collider representative while later entries are
+ * roguelike stacks. Repeated part IDs are legal, including within one slot.
+ */
+export interface RogueBuildSpec {
+  v: 1;
+  name: string;
+  paint: number;
+  parts: Record<TopSlot, readonly PartId[]>;
+}
+
 export type BuildCostLimit = 700 | 1000 | 1300 | number;
 
 export interface BuildModifierDef {
@@ -293,7 +307,7 @@ export interface RingArenaDef {
   descriptionJa: string;
 }
 
-export type VortexGameMode = "custom" | "draft";
+export type VortexGameMode = "custom" | "draft" | "endless";
 export type VortexPlayerCount = 2 | 3 | 4;
 
 export interface VortexRoomSettings {

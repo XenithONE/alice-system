@@ -76,6 +76,18 @@ import {
 } from "./render/battleScene";
 import type { TopVisualPart, TopVisualSpec } from "./render/topFactory";
 import {
+  createLaunchMeter,
+  type LaunchMeterSpec,
+  type LaunchStopResult
+} from "./launch";
+import { LaunchMeterScreen } from "./ui/LaunchMeterScreen";
+import {
+  EndlessGameOverScreen,
+  EndlessRewardScreen,
+  EndlessWaveBadge
+} from "./ui/EndlessScreens";
+import { generateEndlessEnemy } from "./endless";
+import {
   createBroadcastChannelWire,
   createGuestSession,
   createHostSession,
@@ -83,7 +95,10 @@ import {
   type VortexLobby,
   type VortexResult,
   type VortexSession,
-  type VortexSnapshot
+  type VortexSnapshot,
+  type VortexStartPayload,
+  type LaunchPhaseView,
+  type EndlessStateView
 } from "./net";
 
 type Screen =
@@ -92,6 +107,7 @@ type Screen =
   | "builder"
   | "draft"
   | "room"
+  | "launch"
   | "match"
   | "result";
 type NetworkRole = "solo" | "host" | "guest";
@@ -107,6 +123,21 @@ interface FinishedMatch {
   result: MatchResult;
   state: MatchState;
   builds: readonly TopBuildSpec[];
+}
+
+interface NetworkDraftSnapshot {
+  draft: DraftState;
+  deadlineAt: number;
+}
+
+interface LocalLaunchState {
+  readonly builds: readonly TopBuildSpec[];
+  readonly spec: LaunchMeterSpec;
+  readonly cpuPowers: readonly number[];
+}
+
+interface NetworkStartInfo extends Omit<VortexStartPayload, "settings"> {
+  readonly settings: GameSettings;
 }
 
 const BASE_URL = import.meta.env.BASE_URL;
@@ -278,6 +309,14 @@ function createRoomCode(): string {
   return Array.from(bytes, (value) => alphabet[value % alphabet.length]!).join("");
 }
 
+function cpuLaunchPower(seed: number, seat: number): number {
+  let value = (seed ^ Math.imul(seat + 1, 0x9e3779b1)) >>> 0;
+  value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
+  value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
+  const normalized = ((value ^ (value >>> 16)) >>> 0) / 4_294_967_296;
+  return 0.68 + normalized * 0.49;
+}
+
 function useBroadcastTransport(): boolean {
   return new URLSearchParams(window.location.search).get("transport") === "broadcast";
 }
@@ -288,7 +327,7 @@ function toRoomSettings(settings: GameSettings): VortexRoomSettings {
     arenaId: settings.arenaId,
     mode: settings.mode,
     playerCount: settings.playerCount,
-    cpuCount: settings.playerCount - 1,
+    cpuCount: settings.mode === "endless" ? 0 : settings.playerCount - 1,
     seed: Date.now() >>> 0,
     draftTurnSec: 12
   };
@@ -322,7 +361,9 @@ function snapshotToMatchState(
         cooldownRemaining: skill.cooldown,
         chargesRemaining: skill.charges,
         ready: skill.ready,
-        blockedReason: skill.blocked
+        blockedReason: skill.blocked,
+        groupSize: skill.groupSize,
+        readyCount: skill.readyCount
       })),
       lastHitAt: Number.NEGATIVE_INFINITY,
       cpu: lobby?.seats[top.seat]?.occupant === "cpu"
@@ -477,6 +518,7 @@ function ModeScreen({
   onBack,
   onCustom,
   onDraft,
+  onEndless,
   onQuick
 }: {
   role: NetworkRole;
@@ -485,6 +527,7 @@ function ModeScreen({
   onBack: () => void;
   onCustom: () => void;
   onDraft: () => void;
+  onEndless: () => void;
   onQuick: () => void;
 }) {
   const online = role !== "solo";
@@ -513,6 +556,20 @@ function ModeScreen({
             <small>7-ROUND SNAKE PICK</small>
             <p>部位ごとに順番を反転。取得済みパーツと予算予約をホストが厳密に検証します。</p>
           </button>
+          {role === "host" && (
+            <button
+              className="vc-mode-card vc-mode-card--endless"
+              onClick={onEndless}
+              data-testid="mode-endless"
+            >
+              <b>ENDLESS CO-OP</b>
+              <small>2–4 PILOTS / ROGUELIKE WAVES</small>
+              <p>
+                人数分の仲間だけで共闘。各WAVE後に3択でパーツを重ね、
+                同部位Activeを一斉発動して無限強化の敵へ挑みます。
+              </p>
+            </button>
+          )}
           <button className="vc-mode-card" onClick={onQuick}>
             <b>QUICK LAUNCH</b>
             <small>INSTANT PHYSICS MATCH</small>
@@ -576,13 +633,15 @@ function BuilderScreen({
   settings,
   onBuild,
   onBack,
-  onLaunch
+  onLaunch,
+  launchLabel = "LAUNCH MATCH"
 }: {
   build: TopBuildSpec;
   settings: GameSettings;
   onBuild: (build: TopBuildSpec) => void;
   onBack: () => void;
   onLaunch: () => void;
+  launchLabel?: string;
 }) {
   const [slot, setSlot] = useState<TopSlot>("crest");
   const [query, setQuery] = useState("");
@@ -907,7 +966,7 @@ function BuilderScreen({
               onClick={onLaunch}
               data-testid="builder-launch"
             >
-              LAUNCH MATCH
+              {launchLabel}
             </button>
           </div>
         </aside>
@@ -1040,6 +1099,130 @@ function DraftScreen({
   );
 }
 
+function NetworkDraftScreen({
+  snapshot,
+  seat,
+  session,
+  onExit
+}: {
+  snapshot: NetworkDraftSnapshot;
+  seat: SeatIndex | null;
+  session: VortexSession;
+  onExit: () => void;
+}) {
+  const { draft, deadlineAt } = snapshot;
+  const [now, setNow] = useState(() => performance.now());
+  const slot = currentDraftSlot(draft);
+  const playerIndex = currentDraftPlayerIndex(draft);
+  const legal = useMemo(() => legalDraftPicks(draft), [draft]);
+  const myTurn = seat !== null && playerIndex === seat;
+  const remaining = draft.completed
+    ? 0
+    : Math.max(0, Math.ceil((deadlineAt - now) / 1000));
+
+  useEffect(() => {
+    setNow(performance.now());
+    const timer = window.setInterval(() => setNow(performance.now()), 100);
+    return () => window.clearInterval(timer);
+  }, [deadlineAt]);
+
+  return (
+    <main className="vc-screen">
+      <TopBar onLogo={onExit} status="P2P DRAFT / HOST VERIFIED / 12 SEC" />
+      <div className="vc-draft">
+        <aside>
+          <div>
+            <small style={{ color: "var(--vc-muted)" }}>HOST TURN TIMER</small>
+            <div className="vc-draft__timer">{remaining.toString().padStart(2, "0")}</div>
+          </div>
+          <div className="vc-draft__order">
+            {draft.players.map((player, index) => (
+              <div
+                className={`vc-draft__seat${index === playerIndex ? " is-turn" : ""}`}
+                key={player.id}
+              >
+                <strong>{player.name}</strong><br />
+                <small>
+                  {index === seat ? "YOU" : player.isCpu ? "CPU AUTO" : `P${index + 1}`}
+                </small>
+              </div>
+            ))}
+          </div>
+        </aside>
+        <section className="vc-draft__pool">
+          <div className="vc-section-head">
+            <div>
+              <div className="vc-kicker">
+                NETWORK ROUND {Math.min(7, draft.slotIndex + 1).toString().padStart(2, "0")} / 07
+              </div>
+              <h2>
+                {slot
+                  ? `${SLOT_META[slot].name} // ${SLOT_META[slot].nameJa}`
+                  : "HOST ASSEMBLING BUILDS"}
+              </h2>
+              <p>
+                {draft.completed
+                  ? "7部位を検証し、物理戦を同期しています…"
+                  : myTurn
+                    ? "あなたの手番です。ホストが合法候補・取得済みID・残予算を再検証します。"
+                    : `${draft.players[playerIndex ?? 0]?.name ?? "PLAYER"} の選択を待っています。`}
+              </p>
+            </div>
+            <button className="vc-btn" onClick={onExit}>ルーム退出</button>
+          </div>
+          <div
+            className="vc-part-list"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))"
+            }}
+          >
+            {legal.map((part) => (
+              <button
+                className="vc-part"
+                key={part.id}
+                disabled={!myTurn || draft.completed}
+                onClick={() => session.submitDraftPick(part.id)}
+              >
+                <span
+                  className="vc-part__glyph"
+                  style={{
+                    "--part-color": `#${part.visual.primaryColor.toString(16).padStart(6, "0")}`
+                  } as CSSProperties}
+                >
+                  {part.visual.bladeCount}
+                </span>
+                <span>
+                  <strong>{part.nameJa}</strong>
+                  <small>{part.lineage} / {part.role} / {part.kind}</small>
+                </span>
+                <span className="vc-part__cost">{part.cost}C</span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <aside>
+          <div className="vc-kicker">CANONICAL PICK LOG</div>
+          {draft.players.map((player, playerSeat) => (
+            <div className="vc-stat-block" key={player.id}>
+              <strong>{player.name}</strong>
+              <div style={{ marginTop: 7, color: "var(--vc-muted)", fontSize: 9, lineHeight: 1.8 }}>
+                {TOP_SLOTS.map((partSlot) => (
+                  <div key={partSlot}>
+                    {SLOT_META[partSlot].number}. {draft.picks[playerSeat]?.[partSlot]
+                      ? getPart(draft.picks[playerSeat]![partSlot]!)?.nameJa
+                      : "—"}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </aside>
+      </div>
+    </main>
+  );
+}
+
 function eventToVisual(event: SimEvent, state: MatchState): BattleEventVisual {
   if (event.type === "impact") {
     return {
@@ -1095,11 +1278,13 @@ function stateToVisual(
 function MatchScreen({
   builds,
   settings,
+  launchPowers,
   onExit,
   onFinished
 }: {
   builds: readonly TopBuildSpec[];
   settings: GameSettings;
+  launchPowers: readonly number[];
   onExit: () => void;
   onFinished: (match: FinishedMatch) => void;
 }) {
@@ -1160,6 +1345,7 @@ function MatchScreen({
       names: builds.map((build) => build.name),
       arena,
       cpuSeats: builds.slice(1).map((_, index) => (index + 1) as SeatIndex),
+      launchPower: launchPowers,
       countdownSec: 2.25,
       suddenDeathSec: 120,
       maxDurationSec: 240
@@ -1225,7 +1411,7 @@ function MatchScreen({
       scene.dispose();
       sceneRef.current = null;
     };
-  }, [builds, settings.arenaId, onFinished]);
+  }, [builds, settings.arenaId, launchPowers, onFinished]);
 
   useEffect(() => {
     pausedRef.current = paused;
@@ -1366,12 +1552,95 @@ function ResultScreen({
   );
 }
 
+function endlessThreat(
+  seed: number,
+  wave: number,
+  playerCount: VortexPlayerCount
+): number {
+  const enemyCount = playerCount === 2 ? 1 : 2;
+  return Array.from({ length: enemyCount }, (_, variant) =>
+    generateEndlessEnemy(seed, wave, variant).threatScore
+  ).reduce((total, threat) => total + threat, 0);
+}
+
+function EndlessNetworkStateScreen({
+  state,
+  seat,
+  playerCount,
+  session,
+  onExit
+}: {
+  state: EndlessStateView;
+  seat: SeatIndex;
+  playerCount: VortexPlayerCount;
+  session: VortexSession;
+  onExit: () => void;
+}) {
+  const nextThreat = useMemo(
+    () => endlessThreat(state.run.seed, state.run.wave + 1, playerCount),
+    [playerCount, state.run.seed, state.run.wave]
+  );
+  const totalAcquiredParts = useMemo(
+    () =>
+      state.run.players.reduce(
+        (total, player) =>
+          total +
+          TOP_SLOTS.reduce(
+            (playerTotal, slot) => playerTotal + player.build.parts[slot].length,
+            0
+          ),
+        0
+      ) - state.run.players.length * TOP_SLOTS.length,
+    [state.run.players]
+  );
+
+  if (state.phase === "game-over" && state.gameOver) {
+    return (
+      <EndlessGameOverScreen
+        reachedWave={state.gameOver.wave}
+        clearedWaves={state.gameOver.cleared}
+        score={state.gameOver.score}
+        totalAcquiredParts={totalAcquiredParts}
+        onExit={onExit}
+      />
+    );
+  }
+
+  const offer = state.run.rewardOffers.find(
+    (candidate) => candidate.playerId === `seat-${seat + 1}`
+  );
+  if (state.phase === "reward" && offer) {
+    return (
+      <EndlessRewardScreen
+        run={state.run}
+        offer={offer}
+        nextEnemyThreat={nextThreat}
+        remainingMs={state.remainingMs}
+        onPick={(partId) => session.submitEndlessReward(partId)}
+        onExit={onExit}
+      />
+    );
+  }
+
+  return (
+    <main className="vc-screen">
+      <TopBar onLogo={onExit} status="ENDLESS HOST STATE" />
+      <div className="vc-match__message">
+        NEXT WAVE SYNCHRONIZING
+        <small>ホストから正規WAVE状態を受信しています</small>
+      </div>
+    </main>
+  );
+}
+
 function NetworkMatchView({
   session,
   snapshot,
   builds,
   names,
   settings,
+  startInfo,
+  endlessState,
   lobby,
   onExit
 }: {
@@ -1380,6 +1649,8 @@ function NetworkMatchView({
   builds: readonly TopBuildSpec[];
   names: readonly string[];
   settings: GameSettings;
+  startInfo: NetworkStartInfo;
+  endlessState: EndlessStateView | null;
   lobby: VortexLobby | null;
   onExit: () => void;
 }) {
@@ -1393,6 +1664,40 @@ function NetworkMatchView({
   );
   const mySeat = session.seat ?? 0;
   const me = state?.tops.find((top) => top.seat === mySeat);
+  const battlePresentation = useMemo(
+    () =>
+      settings.mode === "endless" && startInfo.wave !== null
+        ? {
+            playerCount: settings.playerCount,
+            wave: startInfo.wave,
+            stackCounts: startInfo.stackCounts
+          }
+        : undefined,
+    [
+      settings.mode,
+      settings.playerCount,
+      startInfo.stackCounts,
+      startInfo.wave
+    ]
+  );
+  const currentThreat = useMemo(
+    () =>
+      settings.mode === "endless" &&
+      startInfo.wave !== null &&
+      endlessState
+        ? endlessThreat(
+            endlessState.run.seed,
+            startInfo.wave,
+            settings.playerCount
+          )
+        : 0,
+    [
+      endlessState,
+      settings.mode,
+      settings.playerCount,
+      startInfo.wave
+    ]
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1400,14 +1705,26 @@ function NetworkMatchView({
     const scene = createVortexBattleScene(canvas);
     sceneRef.current = scene;
     const arena = RING_ARENAS.find((candidate) => candidate.id === settings.arenaId)!;
-    scene.setup(builds.map(buildToVisual), names, arenaVisual(arena), mySeat);
+    scene.setup(
+      builds.map(buildToVisual),
+      names,
+      arenaVisual(arena),
+      mySeat,
+      battlePresentation
+    );
     const onLost = (event: Event) => {
       event.preventDefault();
       setWebglMessage("WebGLコンテキストを復旧しています…");
     };
     const onRestored = () => {
       setWebglMessage("");
-      scene.setup(builds.map(buildToVisual), names, arenaVisual(arena), mySeat);
+      scene.setup(
+        builds.map(buildToVisual),
+        names,
+        arenaVisual(arena),
+        mySeat,
+        battlePresentation
+      );
     };
     canvas.addEventListener("webglcontextlost", onLost);
     canvas.addEventListener("webglcontextrestored", onRestored);
@@ -1417,7 +1734,7 @@ function NetworkMatchView({
       scene.dispose();
       sceneRef.current = null;
     };
-  }, [builds, names, settings.arenaId, mySeat]);
+  }, [battlePresentation, builds, names, settings.arenaId, mySeat]);
 
   useEffect(() => {
     if (!snapshot || !sceneRef.current) return;
@@ -1448,12 +1765,32 @@ function NetworkMatchView({
   return (
     <main className="vc-match" data-testid="vortex-network-match">
       <canvas ref={canvasRef} />
+      {startInfo.wave !== null && (
+        <EndlessWaveBadge
+          wave={startInfo.wave}
+          isBoss={startInfo.wave % 5 === 0}
+          enemyThreat={currentThreat}
+          clearedWaves={endlessState?.run.clearedWaves}
+        />
+      )}
       <div className="vc-match__top">
         <div className="vc-roster">
           {(state?.tops ?? []).map((top) => (
-            <div className={`vc-fighter${top.alive ? "" : " is-out"}`} key={top.seat}>
+            <div
+              className={`vc-fighter${top.alive ? "" : " is-out"}${
+                startInfo.teamIds[top.seat] === 1 ? " is-enemy" : ""
+              }`}
+              key={top.seat}
+            >
               <div className="vc-fighter__head">
-                <b>{top.seat === mySeat ? "YOU" : `P${top.seat + 1}`} {top.name}</b>
+                <b>
+                  {startInfo.teamIds[top.seat] === 1
+                    ? "ENEMY"
+                    : top.seat === mySeat
+                      ? "YOU"
+                      : `ALLY ${top.seat + 1}`}{" "}
+                  {top.name}
+                </b>
                 <span>{top.alive ? "ACTIVE" : "OUT"}</span>
               </div>
               <div className="vc-fighter__meters">
@@ -1507,7 +1844,11 @@ function NetworkMatchView({
               <strong>{skill?.name ?? "NO ACTIVE"}</strong>
               <small>
                 {skill?.skillId
-                  ? skill.chargesRemaining < 0 ? "∞" : `×${skill.chargesRemaining}`
+                  ? (skill.groupSize ?? 1) > 1
+                    ? `${skill.readyCount ?? 0}/${skill.groupSize} SYNC`
+                    : skill.chargesRemaining < 0
+                      ? "∞"
+                      : `×${skill.chargesRemaining}`
                   : SLOT_META[TOP_SLOTS[index]!].name}
               </small>
             </button>
@@ -1521,51 +1862,104 @@ function NetworkMatchView({
 function NetworkRoomFlow({
   role,
   settings,
+  onSettings,
   onBack,
+  onEditBuild,
   build,
-  cpuBuilds
+  onBuild,
+  cpuBuilds,
+  roomCode,
+  onRoomCodeChange
 }: {
   role: Exclude<NetworkRole, "solo">;
   settings: GameSettings;
+  onSettings: (settings: GameSettings) => void;
   onBack: () => void;
+  onEditBuild: () => void;
   build: TopBuildSpec;
+  onBuild: (build: TopBuildSpec) => void;
   cpuBuilds?: readonly TopBuildSpec[];
+  roomCode: string;
+  onRoomCodeChange: (roomCode: string) => void;
 }) {
-  const [roomCode, setRoomCode] = useState("");
   const generated = useMemo(createRoomCode, []);
+  const buildCost = useMemo(() => deriveBuildStats(build).totalCost, [build]);
   const [session, setSession] = useState<VortexSession | null>(null);
   const sessionRef = useRef<VortexSession | null>(null);
   const [lobby, setLobby] = useState<VortexLobby | null>(null);
   const lobbyRef = useRef<VortexLobby | null>(null);
   const [snapshot, setSnapshot] = useState<VortexSnapshot | null>(null);
   const snapshotRef = useRef<VortexSnapshot | null>(null);
-  const [startInfo, setStartInfo] = useState<{
-    builds: readonly TopBuildSpec[];
-    names: readonly string[];
-    settings: GameSettings;
-  } | null>(null);
+  const [networkDraft, setNetworkDraft] = useState<NetworkDraftSnapshot | null>(null);
+  const [launchPhase, setLaunchPhase] = useState<LaunchPhaseView | null>(null);
+  const [endlessState, setEndlessState] = useState<EndlessStateView | null>(null);
+  const [startInfo, setStartInfo] = useState<NetworkStartInfo | null>(null);
   const [finished, setFinished] = useState<FinishedMatch | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [editingGuestBuild, setEditingGuestBuild] = useState(false);
+  const [guestReady, setGuestReady] = useState(false);
+  const [roomSettingsReceived, setRoomSettingsReceived] = useState(role === "host");
   const resultTimer = useRef<number | null>(null);
 
   const callbacks = useMemo(() => ({
     onLobby(nextLobby: VortexLobby) {
       lobbyRef.current = nextLobby;
       setLobby(nextLobby);
+      const currentSeat = sessionRef.current?.seat;
+      if (currentSeat !== null && currentSeat !== undefined) {
+        setGuestReady(Boolean(nextLobby.seats[currentSeat]?.ready));
+      }
     },
-    onStart(payload: {
-      readonly settings: VortexRoomSettings;
-      readonly builds: readonly TopBuildSpec[];
-      readonly names: readonly string[];
-    }) {
+    onRoomSettings(roomSettings: VortexRoomSettings) {
+      setRoomSettingsReceived(true);
+      onSettings({
+        playerCount: roomSettings.playerCount,
+        costLimit:
+          roomSettings.costLimit >= Number.MAX_SAFE_INTEGER
+            ? Number.POSITIVE_INFINITY
+            : roomSettings.costLimit,
+        arenaId: roomSettings.arenaId as SimRingArena["id"],
+        mode: roomSettings.mode
+      });
+    },
+    onDraftState(nextDraft: DraftState, remainingMs: number) {
+      setNetworkDraft({
+        draft: nextDraft,
+        deadlineAt: performance.now() + Math.max(0, remainingMs)
+      });
+    },
+    onLaunchPhase(nextLaunch: LaunchPhaseView) {
+      setLaunchPhase(nextLaunch);
+      setStartInfo(null);
       setSnapshot(null);
       snapshotRef.current = null;
+    },
+    onEndlessState(nextEndless: EndlessStateView) {
+      setEndlessState(nextEndless);
+      if (nextEndless.phase !== "battle") {
+        setLaunchPhase(null);
+        setStartInfo(null);
+        setSnapshot(null);
+        snapshotRef.current = null;
+      }
+    },
+    onStart(payload: VortexStartPayload) {
+      setSnapshot(null);
+      snapshotRef.current = null;
+      setNetworkDraft(null);
+      setLaunchPhase(null);
       setFinished(null);
+      if (payload.settings.mode !== "endless") setEndlessState(null);
       setStartInfo({
+        seed: payload.seed,
         builds: payload.builds,
         names: payload.names,
+        launchPowers: payload.launchPowers,
+        teamIds: payload.teamIds,
+        wave: payload.wave,
+        stackCounts: payload.stackCounts,
         settings: {
           playerCount: payload.settings.playerCount,
           costLimit:
@@ -1599,8 +1993,25 @@ function NetworkRoomFlow({
     onError(message: string) {
       setError(message);
       setBusy(false);
+    },
+    onEnded(message: string) {
+      const active = sessionRef.current;
+      sessionRef.current = null;
+      setSession(null);
+      setNetworkDraft(null);
+      setLaunchPhase(null);
+      setEndlessState(null);
+      setStartInfo(null);
+      setSnapshot(null);
+      snapshotRef.current = null;
+      setGuestReady(false);
+      setEditingGuestBuild(false);
+      setRoomSettingsReceived(false);
+      setBusy(false);
+      setError(message);
+      active?.dispose();
     }
-  }), []);
+  }), [onSettings]);
 
   useEffect(() => () => {
     if (resultTimer.current !== null) window.clearTimeout(resultTimer.current);
@@ -1638,6 +2049,7 @@ function NetworkRoomFlow({
     if (busy || sessionRef.current) return;
     setBusy(true);
     setError("");
+    setRoomSettingsReceived(false);
     try {
       const normalized = normalizeRoomCode(roomCode);
       const next = await createGuestSession(normalized, {
@@ -1647,7 +2059,6 @@ function NetworkRoomFlow({
         ...(useBroadcastTransport() ? { wire: createBroadcastChannelWire() } : {})
       }, callbacks);
       attachSession(next);
-      await next.start();
     } catch (reason) {
       setBusy(false);
       setError(reason instanceof Error ? reason.message : "ルームへ接続できませんでした");
@@ -1664,6 +2075,35 @@ function NetworkRoomFlow({
     } catch (reason) {
       setBusy(false);
       setError(reason instanceof Error ? reason.message : "対戦を開始できませんでした");
+    }
+  };
+
+  const confirmGuestBuild = async () => {
+    const active = sessionRef.current;
+    if (!active || busy || !roomSettingsReceived) return;
+    const validation = validateBuild(
+      build,
+      settings.mode === "draft" ? Number.POSITIVE_INFINITY : settings.costLimit
+    );
+    if (!validation.ok) {
+      setError(validation.errors.map((issue) => issue.message).join(" / "));
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      if (
+        (settings.mode === "custom" || settings.mode === "endless") &&
+        !active.updateBuild(build)
+      ) {
+        throw new Error("ビルド更新を送信できませんでした。");
+      }
+      await active.start();
+      setEditingGuestBuild(false);
+      setBusy(false);
+    } catch (reason) {
+      setBusy(false);
+      setError(reason instanceof Error ? reason.message : "READYにできませんでした");
     }
   };
 
@@ -1684,6 +2124,74 @@ function NetworkRoomFlow({
     );
   }
 
+  if (role === "guest" && session && editingGuestBuild) {
+    return (
+      <BuilderScreen
+        build={build}
+        settings={settings}
+        onBuild={onBuild}
+        onBack={() => setEditingGuestBuild(false)}
+        onLaunch={confirmGuestBuild}
+        launchLabel={busy ? "VERIFYING…" : "ビルドを確定してREADY"}
+      />
+    );
+  }
+
+  if (launchPhase && session && session.seat !== null) {
+    const visibleSeatCount =
+      launchPhase.kind === "endless"
+        ? endlessState?.run.players.length ?? settings.playerCount
+        : launchPhase.specs.length;
+    const localSpec = launchPhase.specs[session.seat];
+    if (localSpec) {
+      return (
+        <LaunchMeterScreen
+          spec={localSpec}
+          remainingMs={launchPhase.remainingMs}
+          seat={session.seat}
+          seats={launchPhase.powers
+            .slice(0, visibleSeatCount)
+            .map((power, seat) => ({
+              seat,
+              name:
+                endlessState?.run.players[seat]?.name ??
+                lobby?.seats[seat]?.name ??
+                `P${seat + 1}`,
+              stopped: power !== null,
+              power
+            }))}
+          wave={launchPhase.wave ?? undefined}
+          title={
+            launchPhase.kind === "endless"
+              ? "SQUAD LAUNCH SYNCHRONIZER"
+              : "LAUNCH SYNCHRONIZER"
+          }
+          onStop={(result) =>
+            session.submitLaunchStop(result.stoppedAtMs)
+          }
+          onExit={exit}
+        />
+      );
+    }
+  }
+
+  if (
+    endlessState &&
+    endlessState.phase !== "battle" &&
+    session &&
+    session.seat !== null
+  ) {
+    return (
+      <EndlessNetworkStateScreen
+        state={endlessState}
+        seat={session.seat}
+        playerCount={settings.playerCount}
+        session={session}
+        onExit={exit}
+      />
+    );
+  }
+
   if (startInfo && session) {
     return (
       <NetworkMatchView
@@ -1692,7 +2200,20 @@ function NetworkRoomFlow({
         builds={startInfo.builds}
         names={startInfo.names}
         settings={startInfo.settings}
+        startInfo={startInfo}
+        endlessState={endlessState}
         lobby={lobby}
+        onExit={exit}
+      />
+    );
+  }
+
+  if (networkDraft && session) {
+    return (
+      <NetworkDraftScreen
+        snapshot={networkDraft}
+        seat={session.seat}
+        session={session}
         onExit={exit}
       />
     );
@@ -1706,6 +2227,12 @@ function NetworkRoomFlow({
       ready: seat === 0 && role === "host",
       build: seat === 0 && role === "host" ? build : null
     }));
+  const exactEndlessSquadReady =
+    settings.mode !== "endless" ||
+    seats.length === settings.playerCount &&
+      seats.every((seat) =>
+        (seat.occupant === "host" || seat.occupant === "guest") && seat.ready
+      );
 
   return (
     <main className="vc-screen">
@@ -1745,14 +2272,16 @@ function NetworkRoomFlow({
                 <span>ROOM CODE</span>
                 <input
                   value={roomCode}
-                  onChange={(event) => setRoomCode(event.target.value.toUpperCase())}
+                  onChange={(event) => onRoomCodeChange(event.target.value.toUpperCase())}
                   placeholder="vc-ABC123"
                   maxLength={9}
                 />
               </label>
             )}
             <p style={{ color: "var(--vc-muted)", fontSize: 11, lineHeight: 1.7 }}>
-              空席は開始時にCPUで補充。ゲスト切断時は同じ機体をCPUが引き継ぎ、ホスト切断時はルームを終了します。
+              {settings.mode === "endless"
+                ? "ENDLESSは設定人数ぶんの2〜4人が全員READYで開始。開始後のゲスト切断は同じ機体をCPUが引き継ぎます。"
+                : "空席は開始時にCPUで補充。ゲスト切断時は同じ機体をCPUが引き継ぎ、ホスト切断時はルームを終了します。"}
             </p>
             {error && <div className="vc-errors" role="alert">{error}</div>}
             {role === "host" && !session && (
@@ -1762,8 +2291,19 @@ function NetworkRoomFlow({
             )}
             {role === "host" && session && (
               <>
-                <button className="vc-btn vc-btn--primary" style={{ width: "100%" }} disabled={busy} onClick={startHost}>
-                  {busy ? "STARTING…" : "空席をCPUで補充して開始"}
+                <button
+                  className="vc-btn vc-btn--primary"
+                  style={{ width: "100%" }}
+                  disabled={busy || !exactEndlessSquadReady}
+                  onClick={startHost}
+                >
+                  {busy
+                    ? "STARTING…"
+                    : settings.mode === "endless"
+                      ? exactEndlessSquadReady
+                        ? "全員でENDLESSを開始"
+                        : `${settings.playerCount}人全員のREADY待ち`
+                      : "空席をCPUで補充して開始"}
                 </button>
                 <button
                   className="vc-btn vc-btn--ghost"
@@ -1778,20 +2318,88 @@ function NetworkRoomFlow({
               </>
             )}
             {role === "guest" && !session && (
-              <button
-                className="vc-btn vc-btn--primary"
-                style={{ width: "100%" }}
-                disabled={busy || !/^(?:VC-)?[A-Z0-9]{6}$/iu.test(roomCode)}
-                onClick={joinRoom}
-              >
-                {busy ? "CONNECTING…" : "接続してREADY"}
-              </button>
+              <>
+                <div className="vc-guest-build">
+                  <span>
+                    <small>YOUR BUILD</small>
+                    <strong>{build.name}</strong>
+                  </span>
+                  <b>{buildCost} C</b>
+                </div>
+                <div className="vc-guest-actions">
+                  <button
+                    className="vc-btn"
+                    disabled={busy}
+                    onClick={onEditBuild}
+                    data-testid="guest-edit-build"
+                  >
+                    自機を編集
+                  </button>
+                  <button
+                    className="vc-btn vc-btn--primary"
+                    disabled={busy || !/^(?:VC-)?[A-Z0-9]{6}$/iu.test(roomCode)}
+                    onClick={joinRoom}
+                  >
+                    {busy ? "CONNECTING…" : "接続してルーム設定を取得"}
+                  </button>
+                </div>
+                <p className="vc-guest-validation-note">
+                  接続後にホストの人数・リング・コスト上限を取得し、その設定で機体を確定できます。
+                </p>
+              </>
             )}
             {role === "guest" && session && (
-              <div className="vc-room-code">
-                <small>STATUS</small>
-                <strong style={{ fontSize: 28 }}>READY / WAIT HOST</strong>
-              </div>
+              <>
+                <div className="vc-room-code">
+                  <small>STATUS</small>
+                  <strong style={{ fontSize: 28 }}>
+                    {!roomSettingsReceived
+                      ? "CONNECTED / FETCHING RULES"
+                      : guestReady
+                        ? "READY / WAIT HOST"
+                        : "CONNECTED / BUILD REQUIRED"}
+                  </strong>
+                </div>
+                <div className="vc-guest-build">
+                  <span>
+                    <small>HOST RULE / YOUR BUILD</small>
+                    <strong>
+                      {settings.mode.toUpperCase()} · {settings.costLimit === Number.POSITIVE_INFINITY
+                        ? "∞"
+                        : settings.costLimit}C / {build.name}
+                    </strong>
+                  </span>
+                  <b>{buildCost} C</b>
+                </div>
+                <div className="vc-guest-actions">
+                  {roomSettingsReceived && (
+                    settings.mode === "custom" || settings.mode === "endless"
+                  ) && (
+                    <button
+                      className="vc-btn"
+                      disabled={busy}
+                      onClick={() => setEditingGuestBuild(true)}
+                      data-testid="guest-edit-connected-build"
+                    >
+                      ホスト設定で自機を編集
+                    </button>
+                  )}
+                  <button
+                    className="vc-btn vc-btn--primary"
+                    disabled={busy || guestReady || !roomSettingsReceived}
+                    onClick={confirmGuestBuild}
+                    data-testid="guest-ready"
+                  >
+                    {busy
+                      ? "VERIFYING…"
+                      : guestReady
+                        ? "READY"
+                        : settings.mode === "draft"
+                          ? "ドラフトREADY"
+                          : "ビルドを検証してREADY"}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -1806,13 +2414,42 @@ export default function App() {
   const [settings, setSettings] = useState<GameSettings>(DEFAULT_SETTINGS);
   const [build, setBuild] = useState<TopBuildSpec>(buildFromUrl);
   const [battleBuilds, setBattleBuilds] = useState<readonly TopBuildSpec[]>([]);
+  const [launchPowers, setLaunchPowers] = useState<readonly number[]>([]);
+  const [localLaunch, setLocalLaunch] = useState<LocalLaunchState | null>(null);
+  const [localLaunchResult, setLocalLaunchResult] =
+    useState<LaunchStopResult | null>(null);
   const [finished, setFinished] = useState<FinishedMatch | null>(null);
+  const [guestRoomCode, setGuestRoomCode] = useState("");
 
   const launch = useCallback((builds: readonly TopBuildSpec[]) => {
-    setBattleBuilds(builds);
+    const seed = Date.now() >>> 0;
+    setLocalLaunch({
+      builds,
+      spec: createLaunchMeter({ seed }).spec,
+      cpuPowers: builds.map((_, seat) =>
+        seat === 0 ? 0 : cpuLaunchPower(seed, seat)
+      )
+    });
+    setLocalLaunchResult(null);
     setFinished(null);
-    setScreen("match");
+    setScreen("launch");
   }, []);
+
+  useEffect(() => {
+    if (!localLaunch || !localLaunchResult) return;
+    const timer = window.setTimeout(() => {
+      setBattleBuilds(localLaunch.builds);
+      setLaunchPowers(
+        localLaunch.cpuPowers.map((power, seat) =>
+          seat === 0 ? localLaunchResult.power : power
+        )
+      );
+      setLocalLaunch(null);
+      setLocalLaunchResult(null);
+      setScreen("match");
+    }, 720);
+    return () => window.clearTimeout(timer);
+  }, [localLaunch, localLaunchResult]);
 
   const launchCurrent = useCallback(() => {
     if (!validateBuild(build, settings.costLimit).ok) {
@@ -1833,8 +2470,15 @@ export default function App() {
   const openRole = (nextRole: NetworkRole) => {
     setRole(nextRole);
     setBattleBuilds([]);
-    if (nextRole === "guest") setScreen("room");
-    else setScreen("mode");
+    setLaunchPowers([]);
+    setLocalLaunch(null);
+    setLocalLaunchResult(null);
+    if (nextRole === "guest") {
+      setGuestRoomCode("");
+      setScreen("room");
+    } else {
+      setScreen("mode");
+    }
   };
 
   return (
@@ -1862,9 +2506,21 @@ export default function App() {
               mode: "draft",
               costLimit: Number.isFinite(current.costLimit) ? current.costLimit : 1300
             }));
-            setScreen("draft");
+            setScreen(role === "host" ? "room" : "draft");
           }}
-          onQuick={role === "host" ? openHostRoom : launchCurrent}
+          onEndless={() => {
+            setSettings((current) => ({
+              ...current,
+              mode: "endless",
+              costLimit: Number.isFinite(current.costLimit) ? current.costLimit : 1000
+            }));
+            setScreen("builder");
+          }}
+          onQuick={() => {
+            setSettings((current) => ({ ...current, mode: "custom" }));
+            if (role === "host") openHostRoom();
+            else launchCurrent();
+          }}
         />
       )}
       {screen === "builder" && (
@@ -1872,8 +2528,15 @@ export default function App() {
           build={build}
           settings={settings}
           onBuild={setBuild}
-          onBack={() => setScreen("mode")}
-          onLaunch={role === "host" ? openHostRoom : launchCurrent}
+          onBack={() => setScreen(role === "guest" ? "room" : "mode")}
+          onLaunch={
+            role === "host"
+              ? openHostRoom
+              : role === "guest"
+                ? () => setScreen("room")
+                : launchCurrent
+          }
+          launchLabel={role === "guest" ? "編集を確定してROOMへ" : undefined}
         />
       )}
       {screen === "draft" && (
@@ -1895,15 +2558,43 @@ export default function App() {
         <NetworkRoomFlow
           role={role}
           settings={settings}
+          onSettings={setSettings}
           build={build}
+          onBuild={setBuild}
           cpuBuilds={settings.mode === "draft" ? battleBuilds.slice(1) : undefined}
           onBack={() => setScreen(role === "guest" ? "title" : "mode")}
+          onEditBuild={() => setScreen("builder")}
+          roomCode={guestRoomCode}
+          onRoomCodeChange={setGuestRoomCode}
+        />
+      )}
+      {screen === "launch" && localLaunch && (
+        <LaunchMeterScreen
+          spec={localLaunch.spec}
+          remainingMs={localLaunch.spec.durationMs}
+          seat={0}
+          seats={localLaunch.builds.map((candidate, seat) => ({
+            seat,
+            name: candidate.name,
+            stopped: seat !== 0 || localLaunchResult !== null,
+            power:
+              seat === 0
+                ? localLaunchResult?.power ?? null
+                : localLaunch.cpuPowers[seat] ?? 0.6
+          }))}
+          onStop={setLocalLaunchResult}
+          onExit={() => {
+            setLocalLaunch(null);
+            setLocalLaunchResult(null);
+            setScreen("mode");
+          }}
         />
       )}
       {screen === "match" && battleBuilds.length >= 2 && (
         <MatchScreen
           builds={battleBuilds}
           settings={settings}
+          launchPowers={launchPowers}
           onExit={() => setScreen("mode")}
           onFinished={(match) => {
             setFinished(match);

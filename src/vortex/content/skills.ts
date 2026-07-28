@@ -448,6 +448,193 @@ export const ACTIVE_SKILLS = [
       { kind: "impulse", direction: "toward-target", strength: 16 },
       { kind: "stat-multiplier", stat: "attack", multiplier: 1.55, durationSec: 1.2 }
     ]
+  },
+  {
+    id: "emergency-ramen",
+    name: "Emergency Ramen",
+    nameJa: "緊急ラーメン",
+    descriptionJa: "瀕死時に非常食カートリッジを開封し、湯気と一緒に耐久・回転を取り戻す。",
+    cooldownSec: 29,
+    charges: 2,
+    condition: { kind: "durability-below", ratio: 0.38 },
+    effects: [
+      { kind: "durability", amount: 55 },
+      { kind: "spin", amount: 11 },
+      { kind: "cleanse" }
+    ]
+  },
+  {
+    id: "banana-orbit",
+    name: "Banana Orbit",
+    nameJa: "バナナ軌道",
+    descriptionJa: "外周で予測不能な反転ドリフトを始め、追跡してきた相手の読みを外す。",
+    cooldownSec: 13,
+    charges: 4,
+    condition: { kind: "near-rim", normalizedRadius: 0.58 },
+    effects: [
+      { kind: "reverse-orbit", durationSec: 6 },
+      { kind: "impulse", direction: "tangent", strength: 8 },
+      { kind: "physics-multiplier", stat: "restitution", multiplier: 0.72, durationSec: 4 }
+    ]
+  },
+  {
+    id: "rubber-chicken-counter",
+    name: "Rubber Chicken Counter",
+    nameJa: "ゴムチキン反撃",
+    descriptionJa: "被弾音を盛大に鳴らし、その反響を全周カウンターへ変換する。",
+    cooldownSec: 17,
+    charges: 3,
+    condition: { kind: "recently-hit", withinSec: 0.9 },
+    effects: [
+      { kind: "radial-damage", amount: 26, radius: 1.9 },
+      { kind: "impulse", direction: "away-from-target", strength: 9 }
+    ]
+  },
+  {
+    id: "coffee-overfill",
+    name: "Coffee Overfill",
+    nameJa: "コーヒー過充填",
+    descriptionJa: "駆動核へ濃すぎる一杯を注ぎ、低回転から猛烈な加速状態へ入る。",
+    cooldownSec: 21,
+    charges: 2,
+    condition: { kind: "spin-below", ratio: 0.65 },
+    effects: [
+      { kind: "spin", amount: 26 },
+      { kind: "stat-multiplier", stat: "mobility", multiplier: 1.34, durationSec: 4 },
+      { kind: "physics-multiplier", stat: "drag", multiplier: 0.72, durationSec: 4 }
+    ]
+  },
+  {
+    id: "monday-override",
+    name: "Monday Override",
+    nameJa: "月曜強制再起動",
+    descriptionJa: "週初め級の危機を検知すると現実逃避シールドを展開して強制復帰する。",
+    cooldownSec: 52,
+    charges: 1,
+    condition: { kind: "durability-below", ratio: 0.25 },
+    effects: [
+      { kind: "phase", durationSec: 1 },
+      { kind: "shield", amount: 70, durationSec: 3 },
+      { kind: "durability", amount: 36 }
+    ]
+  },
+  {
+    id: "deadline-dash",
+    name: "Deadline Dash",
+    nameJa: "締切ダッシュ",
+    descriptionJa: "締切八秒前の集中力で標的へ突進する。なぜ普段から出せないのかは未解明。",
+    cooldownSec: 8,
+    charges: 5,
+    condition: { kind: "target-near", distance: 4.2 },
+    effects: [
+      { kind: "impulse", direction: "toward-target", strength: 12 },
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.16, durationSec: 1.6 }
+    ]
+  },
+  {
+    id: "popcorn-scatter",
+    name: "Popcorn Scatter",
+    nameJa: "ポップコーン散開",
+    descriptionJa: "浮いた瞬間に内蔵粒子が弾け、周囲を巻き込む派手な着地準備を行う。",
+    cooldownSec: 24,
+    charges: 2,
+    condition: { kind: "airborne" },
+    effects: [
+      { kind: "radial-damage", amount: 40, radius: 2.6 },
+      { kind: "impulse", direction: "away-from-target", strength: 11 }
+    ]
+  },
+  {
+    id: "vector-parry",
+    name: "Vector Parry",
+    nameJa: "ベクトルパリィ",
+    descriptionJa: "衝撃を接線方向へ受け流し、薄い防壁を残しながら射線を切る。",
+    cooldownSec: 15,
+    charges: 4,
+    condition: { kind: "recently-hit", withinSec: 0.7 },
+    effects: [
+      { kind: "shield", amount: 66, durationSec: 2.2 },
+      { kind: "impulse", direction: "tangent", strength: 6.5 }
+    ]
+  },
+  {
+    id: "nullwake-wash",
+    name: "Nullwake Wash",
+    nameJa: "ヌルウェイク洗浄",
+    descriptionJa: "妨害を洗い流し、空力境界を整えて滑らかな周回へ戻す。",
+    cooldownSec: 19,
+    charges: 3,
+    condition: { kind: "always" },
+    effects: [
+      { kind: "cleanse" },
+      { kind: "physics-multiplier", stat: "drag", multiplier: 0.62, durationSec: 4.5 }
+    ]
+  },
+  {
+    id: "periapsis-lance",
+    name: "Periapsis Lance",
+    nameJa: "近点槍",
+    descriptionJa: "外周で蓄えた周回速度を最短距離の刺突へ変換する。",
+    cooldownSec: 16,
+    charges: 3,
+    condition: { kind: "near-rim", normalizedRadius: 0.7 },
+    effects: [
+      { kind: "impulse", direction: "toward-target", strength: 13.5 },
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.3, durationSec: 1.5 }
+    ]
+  },
+  {
+    id: "iron-choir",
+    name: "Iron Choir",
+    nameJa: "鋼鉄聖歌",
+    descriptionJa: "最終決戦で装甲各層を共振させ、長時間の守勢へ移行する。",
+    cooldownSec: 48,
+    charges: 1,
+    condition: { kind: "last-survivor" },
+    effects: [
+      { kind: "shield", amount: 135, durationSec: 9 },
+      { kind: "stat-multiplier", stat: "defense", multiplier: 1.32, durationSec: 9 },
+      { kind: "stat-multiplier", stat: "stamina", multiplier: 1.2, durationSec: 9 }
+    ]
+  },
+  {
+    id: "spin-escrow",
+    name: "Spin Escrow",
+    nameJa: "回転エスクロー",
+    descriptionJa: "余剰回転を一時預託し、強固な防壁として先払いする。",
+    cooldownSec: 20,
+    charges: 3,
+    condition: { kind: "spin-above", ratio: 0.76 },
+    effects: [
+      { kind: "spin", amount: -6 },
+      { kind: "shield", amount: 110, durationSec: 4.2 }
+    ]
+  },
+  {
+    id: "centerline-recall",
+    name: "Centerline Recall",
+    nameJa: "中心線リコール",
+    descriptionJa: "位相をずらしながらリング中央へ帰還し、場外軌道を断ち切る。",
+    cooldownSec: 23,
+    charges: 2,
+    condition: { kind: "near-rim", normalizedRadius: 0.78 },
+    effects: [
+      { kind: "phase", durationSec: 0.9 },
+      { kind: "impulse", direction: "toward-center", strength: 13 }
+    ]
+  },
+  {
+    id: "harmonic-dividend",
+    name: "Harmonic Dividend",
+    nameJa: "共振配当",
+    descriptionJa: "近距離の回転共振から利益を回収し、自機の再使用待ちを短縮する。",
+    cooldownSec: 25,
+    charges: 3,
+    condition: { kind: "target-near", distance: 2 },
+    effects: [
+      { kind: "steal-spin", amount: 8 },
+      { kind: "cooldown-shift", amountSec: -2.5 }
+    ]
   }
 ] as const satisfies readonly ActiveSkillDef[];
 
@@ -772,8 +959,187 @@ export const PASSIVE_SKILLS = [
       { kind: "stat-multiplier", stat: "defense", multiplier: 1.06 },
       { kind: "durability", amount: 12 }
     ]
+  },
+  {
+    id: "monday-resistance",
+    name: "Monday Resistance",
+    nameJa: "月曜耐性",
+    descriptionJa: "開始直後の憂鬱を装甲へ変換し、しばらく防御と持久を高める。",
+    trigger: "battle-start",
+    effects: [
+      { kind: "shield", amount: 50, durationSec: 12 },
+      { kind: "stat-multiplier", stat: "stamina", multiplier: 1.1, durationSec: 12 }
+    ]
+  },
+  {
+    id: "rubber-chicken-reflex",
+    name: "Rubber Chicken Reflex",
+    nameJa: "ゴムチキン反射",
+    descriptionJa: "殴られるたび珍妙な反響波を放ち、相手との距離を強引に作る。",
+    trigger: "on-take-hit",
+    effects: [
+      { kind: "radial-damage", amount: 14, radius: 1.5 },
+      { kind: "impulse", direction: "tangent", strength: 1.8 }
+    ]
+  },
+  {
+    id: "coffee-drip-bearing",
+    name: "Coffee Drip Bearing",
+    nameJa: "コーヒー滴下ベアリング",
+    descriptionJa: "低回転になると一滴だけ補給し、回転とスキル循環をこっそり立て直す。",
+    trigger: "spin-below",
+    threshold: 0.45,
+    effects: [
+      { kind: "spin", amount: 6 },
+      { kind: "cooldown-shift", amountSec: -0.5 }
+    ]
+  },
+  {
+    id: "emergency-snack-bay",
+    name: "Emergency Snack Bay",
+    nameJa: "非常用おやつ収納",
+    descriptionJa: "損傷で隠し蓋が開くと糖分と予備装甲を展開し、少しだけ粘る。",
+    trigger: "durability-below",
+    threshold: 0.35,
+    effects: [
+      { kind: "durability", amount: 9 },
+      { kind: "physics-multiplier", stat: "mass", multiplier: 1.06, durationSec: 3 },
+      { kind: "cleanse" }
+    ]
+  },
+  {
+    id: "suspicious-spare-screw",
+    name: "Suspicious Spare Screw",
+    nameJa: "怪しい余りネジ",
+    descriptionJa: "命中時だけ妙に仕事をして攻撃を上げるが、姿勢精度には少し自信がない。",
+    trigger: "on-hit",
+    effects: [
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.12, durationSec: 2.2 },
+      { kind: "stat-multiplier", stat: "stability", multiplier: 0.96, durationSec: 2.2 }
+    ]
+  },
+  {
+    id: "meeting-escape-hatch",
+    name: "Meeting Escape Hatch",
+    nameJa: "会議脱出ハッチ",
+    descriptionJa: "外周で長引く会議を検知すると一瞬だけ現実から離脱し、中央へ戻る。",
+    trigger: "near-rim",
+    threshold: 0.65,
+    effects: [
+      { kind: "phase", durationSec: 0.4 },
+      { kind: "impulse", direction: "toward-center", strength: 1.6 }
+    ]
+  },
+  {
+    id: "victory-pose-buffer",
+    name: "Victory Pose Buffer",
+    nameJa: "勝利ポーズ先行予約",
+    descriptionJa: "脱落者が出るたび早すぎる勝利ポーズで軌道を反転し、耐久を少し回復する。",
+    trigger: "elimination",
+    effects: [
+      { kind: "reverse-orbit", durationSec: 3 },
+      { kind: "durability", amount: 8 }
+    ]
+  },
+  {
+    id: "impact-cartographer",
+    name: "Impact Cartographer",
+    nameJa: "衝突地図",
+    descriptionJa: "命中地点を学習し、次の進路変更と姿勢制御を精密化する。",
+    trigger: "on-hit",
+    effects: [
+      { kind: "stat-multiplier", stat: "stability", multiplier: 1.1, durationSec: 3 },
+      { kind: "stat-multiplier", stat: "mobility", multiplier: 1.08, durationSec: 3 }
+    ]
+  },
+  {
+    id: "terminal-ballast",
+    name: "Terminal Ballast",
+    nameJa: "終端バラスト",
+    descriptionJa: "耐久が危険域へ入ると可動錘を固定し、質量と防御を底上げする。",
+    trigger: "durability-below",
+    threshold: 0.3,
+    effects: [
+      { kind: "physics-multiplier", stat: "mass", multiplier: 1.15, durationSec: 4 },
+      { kind: "stat-multiplier", stat: "defense", multiplier: 1.14, durationSec: 4 }
+    ]
+  },
+  {
+    id: "aerogel-lattice",
+    name: "Aerogel Lattice",
+    nameJa: "エアロゲル格子",
+    descriptionJa: "軽量格子が空気抵抗を減らしながら、装甲面の荷重を分散する。",
+    trigger: "continuous",
+    effects: [
+      { kind: "physics-multiplier", stat: "drag", multiplier: 0.9 },
+      { kind: "stat-multiplier", stat: "defense", multiplier: 1.05 }
+    ]
+  },
+  {
+    id: "rim-shepherd",
+    name: "Rim Shepherd",
+    nameJa: "リムシェパード",
+    descriptionJa: "外周を検知すると接地力を高め、中央へ穏やかに軌道を戻す。",
+    trigger: "near-rim",
+    threshold: 0.7,
+    effects: [
+      { kind: "impulse", direction: "toward-center", strength: 2.6 },
+      { kind: "physics-multiplier", stat: "friction", multiplier: 1.15, durationSec: 2 }
+    ]
+  },
+  {
+    id: "quiet-capacitor",
+    name: "Quiet Capacitor",
+    nameJa: "静穏キャパシタ",
+    descriptionJa: "極低回転で蓄積電荷を解放し、回転とスキル循環を同時に補う。",
+    trigger: "spin-below",
+    threshold: 0.25,
+    effects: [
+      { kind: "spin", amount: 10 },
+      { kind: "cooldown-shift", amountSec: -1 }
+    ]
+  },
+  {
+    id: "collision-checksum",
+    name: "Collision Checksum",
+    nameJa: "衝突チェックサム",
+    descriptionJa: "被弾データを即時検証し、次の衝撃だけを抑える薄い防壁を生成する。",
+    trigger: "on-take-hit",
+    effects: [{ kind: "shield", amount: 20, durationSec: 1.3 }]
+  },
+  {
+    id: "hunter-ledger",
+    name: "Hunter Ledger",
+    nameJa: "狩猟台帳",
+    descriptionJa: "脱落を記録するたび攻撃系統を再調整し、回転も少量回収する。",
+    trigger: "elimination",
+    effects: [
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.08, durationSec: 10 },
+      { kind: "spin", amount: 3 }
+    ]
   }
 ] as const satisfies readonly PassiveSkillDef[];
+
+/** Explicitly curated playful skills. Gates verify every ID is assigned to real parts. */
+export const JOKE_ACTIVE_SKILL_IDS = [
+  "emergency-ramen",
+  "banana-orbit",
+  "rubber-chicken-counter",
+  "coffee-overfill",
+  "monday-override",
+  "deadline-dash",
+  "popcorn-scatter"
+] as const satisfies readonly (typeof ACTIVE_SKILLS)[number]["id"][];
+
+export const JOKE_PASSIVE_SKILL_IDS = [
+  "monday-resistance",
+  "rubber-chicken-reflex",
+  "coffee-drip-bearing",
+  "emergency-snack-bay",
+  "suspicious-spare-screw",
+  "meeting-escape-hatch",
+  "victory-pose-buffer"
+] as const satisfies readonly (typeof PASSIVE_SKILLS)[number]["id"][];
 
 export const ACTIVE_SKILL_BY_ID: ReadonlyMap<string, ActiveSkillDef> = new Map(
   ACTIVE_SKILLS.map((skill) => [skill.id, skill])

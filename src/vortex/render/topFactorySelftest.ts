@@ -14,6 +14,12 @@ import {
   type TopVisualPart,
   type TopVisualSpec,
 } from "./topFactory";
+import {
+  MAX_STACK_DECORATIONS,
+  applyCrowdBattleLod,
+  createBattleStackDecoration,
+  resolveBattlePresentation,
+} from "./battlePresentation";
 
 function assert(condition: unknown, message = "assertion failed"): asserts condition {
   if (!condition) throw new Error(message);
@@ -139,6 +145,86 @@ assert(
 );
 assert(signatureHigh.triangles < 100_000);
 
+const classicPresentation = resolveBattlePresentation(4);
+assertEqual(classicPresentation.length, 4);
+assertEqual(classicPresentation[0]?.color, 0x62ddff, "classic P1 palette changed");
+assertEqual(classicPresentation[1]?.color, 0xffb448, "classic P2 palette changed");
+assert(classicPresentation.every((seat) => seat.team === "ally"));
+assert(classicPresentation.every((seat) => seat.extraStacks === 0));
+
+const maximumStacks = Array.from({ length: 6 }, () =>
+  Array.from({ length: 7 }, (_, slot) => 3 + (slot % 3)),
+);
+const endlessPresentation = resolveBattlePresentation(6, {
+  playerCount: 4,
+  wave: 37,
+  stackCounts: maximumStacks,
+});
+assertEqual(endlessPresentation.filter((seat) => seat.team === "ally").length, 4);
+assertEqual(endlessPresentation.filter((seat) => seat.team === "enemy").length, 2);
+for (const enemy of endlessPresentation.slice(4)) {
+  const color = new THREE.Color(enemy.color);
+  assert(
+    color.r > color.g * 1.35 && color.r > color.b * 1.25,
+    "enemy team marker is not red-dominant",
+  );
+}
+
+let endlessTopCalls = 0;
+let maximumVisibleCrowdTopCalls = 0;
+let maximumDecorationCalls = 0;
+let maximumDecorationInstances = 0;
+for (const seat of endlessPresentation) {
+  const root = createTopVisual(maximumSignatureSpec, {
+    quality: "low",
+    playerColor: seat.color,
+  });
+  const compactCalls = applyCrowdBattleLod(root);
+  maximumVisibleCrowdTopCalls = Math.max(maximumVisibleCrowdTopCalls, compactCalls);
+  const decorations = createBattleStackDecoration(seat);
+  root.add(decorations);
+  let decorationCalls = 0;
+  let decorationInstances = 0;
+  let decorationResources = 0;
+  let disposedDecorationResources = 0;
+  decorations.traverse((object) => {
+    if (!(object instanceof THREE.InstancedMesh)) return;
+    decorationCalls += 1;
+    decorationInstances += object.count;
+    decorationResources += 2;
+    object.geometry.addEventListener("dispose", () => {
+      disposedDecorationResources += 1;
+    });
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    assertEqual(materials.length, 1, "stack draw unexpectedly split its material");
+    materials[0]!.addEventListener("dispose", () => {
+      disposedDecorationResources += 1;
+    });
+  });
+  maximumDecorationCalls = Math.max(maximumDecorationCalls, decorationCalls);
+  maximumDecorationInstances = Math.max(maximumDecorationInstances, decorationInstances);
+  assert(decorationCalls <= 2, "stack presentation exceeded two instanced draws");
+  assert(
+    decorationInstances <= MAX_STACK_DECORATIONS,
+    "stack presentation exceeded its twelve-piece cap",
+  );
+  endlessTopCalls += compactCalls + decorationCalls;
+  disposeTopVisual(root);
+  assertEqual(
+    disposedDecorationResources,
+    decorationResources,
+    "stack presentation leaked a GPU geometry or material",
+  );
+}
+
+// Six compact tops, arena surfaces, name labels, trails and the shared spark
+// pool. Instancing keeps twelve visible stack pieces per top to two calls.
+const maximumEndlessBattleCalls = endlessTopCalls + 8 + 6 + 6 + 1;
+assert(
+  maximumEndlessBattleCalls <= 180,
+  `six-player endless battle requires ${maximumEndlessBattleCalls} structural draw calls`,
+);
+
 for (const slot of TOP_SLOTS) {
   const signatures = PARTS.filter(
     (part) => part.slot === slot && part.grade === "signature",
@@ -175,6 +261,10 @@ console.log(
     signatureBattle,
     signatureLow,
     maximumBattleCalls,
+    maximumEndlessBattleCalls,
+    maximumVisibleCrowdTopCalls,
+    maximumDecorationCalls,
+    maximumDecorationInstances,
     maximumBuilderCalls,
     signatureShapes: 21,
   }),

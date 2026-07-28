@@ -5,6 +5,15 @@ import {
   disposeTopVisual,
   type TopVisualSpec
 } from "./topFactory";
+import {
+  applyCrowdBattleLod,
+  createBattleStackDecoration,
+  resolveBattlePresentation,
+  type BattlePresentation,
+  type BattleSeatPresentation,
+} from "./battlePresentation";
+
+export type { BattlePresentation } from "./battlePresentation";
 
 export interface BattleArenaVisual {
   readonly id: string;
@@ -55,7 +64,8 @@ export interface VortexBattleScene {
     builds: readonly TopVisualSpec[],
     names: readonly string[],
     arena: BattleArenaVisual,
-    mySeat: number
+    mySeat: number,
+    presentation?: BattlePresentation,
   ): void;
   pushSnapshot(snapshot: BattleSnapshotVisual): void;
   setPaused(paused: boolean): void;
@@ -67,6 +77,13 @@ export interface VortexBattleScene {
     lastTick: number;
     render: { calls: number; triangles: number };
     memory: { geometries: number; textures: number };
+    presentation: {
+      crowdLod: boolean;
+      allies: number;
+      enemies: number;
+      wave: number;
+      stackDecorations: number;
+    };
   };
   dispose(): void;
 }
@@ -78,6 +95,7 @@ interface BotVisual {
   target: BattleBotVisualState | null;
   previous: BattleBotVisualState | null;
   blend: number;
+  readonly presentation: BattleSeatPresentation;
 }
 
 interface Spark {
@@ -360,8 +378,14 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
   let cameraYaw = 0.35;
   let cameraTarget = new THREE.Vector3();
   const cameraLook = new THREE.Vector3();
+  let crowdLod = false;
+  let seatPresentation: readonly BattleSeatPresentation[] = [];
 
-  function setupBots(builds: readonly TopVisualSpec[], names: readonly string[]): void {
+  function setupBots(
+    builds: readonly TopVisualSpec[],
+    names: readonly string[],
+    presentation?: BattlePresentation,
+  ): void {
     for (const visual of bots.values()) {
       disposeTopVisual(visual.root);
       fxRoot.remove(visual.trail);
@@ -369,12 +393,23 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
     }
     bots.clear();
     botRoot.clear();
+    crowdLod = builds.length >= 5;
+    seatPresentation = resolveBattlePresentation(builds.length, presentation);
+    const useShadows = !lowPower && !crowdLod;
+    renderer.shadowMap.enabled = useShadows;
+    sun.castShadow = useShadows;
+    renderer.shadowMap.needsUpdate = true;
     for (let seat = 0; seat < builds.length; seat += 1) {
-      const color = PLAYER_COLORS[seat % PLAYER_COLORS.length]!;
+      const seatPlan = seatPresentation[seat]!;
+      const color = seatPlan.color;
       const root = createTopVisual(builds[seat]!, {
-        quality: lowPower ? "low" : "battle",
+        quality: lowPower || crowdLod ? "low" : "battle",
         playerColor: color
       });
+      if (crowdLod) applyCrowdBattleLod(root);
+      if (seatPlan.extraStacks > 0) {
+        root.add(createBattleStackDecoration(seatPlan));
+      }
       root.scale.setScalar(0.56);
       root.add(makeNameLabel(names[seat] ?? `UNIT ${seat + 1}`, color));
       root.visible = false;
@@ -394,7 +429,15 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
         })
       );
       fxRoot.add(trail);
-      bots.set(seat, { root, trail, trailPositions: [], target: null, previous: null, blend: 1 });
+      bots.set(seat, {
+        root,
+        trail,
+        trailPositions: [],
+        target: null,
+        previous: null,
+        blend: 1,
+        presentation: seatPlan,
+      });
     }
   }
 
@@ -407,7 +450,10 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
 
   function burst(event: BattleEventVisual): void {
     const count = lowPower ? 7 : Math.min(24, 8 + Math.round((event.power ?? 1) * 2));
-    const color = event.color ?? PLAYER_COLORS[(event.seat ?? 0) % PLAYER_COLORS.length]!;
+    const color =
+      event.color ??
+      seatPresentation[event.seat ?? -1]?.color ??
+      PLAYER_COLORS[(event.seat ?? 0) % PLAYER_COLORS.length]!;
     for (let index = 0; index < count; index += 1) {
       if (sparks.length >= sparkCapacity) sparks.shift();
       const angle = Math.random() * Math.PI * 2;
@@ -462,6 +508,12 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
       visual.root.children.forEach((child) => {
         if (child.name === "energy-aura") {
           child.scale.lerp(new THREE.Vector3(spinGlow, 1, spinGlow), follow);
+        } else if (child.name === "roguelike-stack-augmentation") {
+          child.rotation.y +=
+            dt *
+            (0.16 +
+              Math.min(0.4, visual.presentation.wave * 0.008) +
+              visual.presentation.extraStacks * 0.006);
         }
       });
       if (state.alive) {
@@ -527,7 +579,8 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
       2.25
     );
     const pullback = 1 + (portraitPressure - 1) * 1.25;
-    const radius = arena.radius * (lowPower ? 1.58 : 1.42) * pullback;
+    const densityPullback = crowdLod ? 1.07 : 1;
+    const radius = arena.radius * (lowPower ? 1.58 : 1.42) * pullback * densityPullback;
     const height =
       arena.radius * (1.05 + (portraitPressure - 1) * 1.5);
     const desired = new THREE.Vector3(
@@ -571,10 +624,10 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
   frame = requestAnimationFrame(loop);
 
   return {
-    setup(builds, names, nextArena, nextMySeat) {
+    setup(builds, names, nextArena, nextMySeat, presentation) {
       mySeat = nextMySeat;
       setupArena(nextArena);
-      setupBots(builds, names);
+      setupBots(builds, names, presentation);
       lastTick = -1;
       ready = true;
       cameraYaw = (mySeat / Math.max(1, builds.length)) * Math.PI * 2 + Math.PI;
@@ -607,7 +660,17 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
         bots: bots.size,
         lastTick,
         render: { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles },
-        memory: { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures }
+        memory: { geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures },
+        presentation: {
+          crowdLod,
+          allies: seatPresentation.filter((seat) => seat.team === "ally").length,
+          enemies: seatPresentation.filter((seat) => seat.team === "enemy").length,
+          wave: seatPresentation[0]?.wave ?? 0,
+          stackDecorations: seatPresentation.reduce(
+            (total, seat) => total + Math.min(12, seat.extraStacks),
+            0,
+          ),
+        },
       };
     },
     dispose() {

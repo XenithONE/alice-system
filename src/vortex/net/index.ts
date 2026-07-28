@@ -18,13 +18,18 @@ export {
 } from "./protocol";
 export type {
   ClientMessage,
+  EndlessGameOverState,
+  EndlessStateView,
   HostMessage,
+  LaunchPhaseView,
   LobbySeat,
   SkillSnapshot,
   TopSnapshot,
   VortexLobby,
   VortexResult,
+  VortexSessionEndReason,
   VortexSnapshot,
+  VortexStartPayload,
   Wire,
   WireConn,
 } from "./protocol";

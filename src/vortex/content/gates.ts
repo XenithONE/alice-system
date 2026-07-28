@@ -1,6 +1,8 @@
 import {
   ACTIVE_SKILLS,
   CATALOG_BY_ID,
+  JOKE_ACTIVE_SKILL_IDS,
+  JOKE_PASSIVE_SKILL_IDS,
   PARTS,
   PASSIVE_SKILLS,
   SYNERGIES,
@@ -149,14 +151,14 @@ function catalogGates(): void {
   );
 
   check(
-    "[C07] Active辞書は35件でID一意",
-    ACTIVE_SKILLS.length === 35 &&
+    "[C07] Active辞書は49件でID一意",
+    ACTIVE_SKILLS.length === 49 &&
       new Set(ACTIVE_SKILLS.map((skill) => skill.id)).size === ACTIVE_SKILLS.length,
     `${ACTIVE_SKILLS.length} definitions`
   );
   check(
-    "[C08] Passive辞書は35件でID一意",
-    PASSIVE_SKILLS.length === 35 &&
+    "[C08] Passive辞書は49件でID一意",
+    PASSIVE_SKILLS.length === 49 &&
       new Set(PASSIVE_SKILLS.map((skill) => skill.id)).size === PASSIVE_SKILLS.length,
     `${PASSIVE_SKILLS.length} definitions`
   );
@@ -169,13 +171,116 @@ function catalogGates(): void {
   const referencedPassive = new Set(PARTS.map((part) => part.passiveSkillId).filter(Boolean));
   check(
     "[C10] 全Active定義が実パーツで使用される",
-    referencedActive.size === ACTIVE_SKILLS.length,
+    ACTIVE_SKILLS.every((skill) => referencedActive.has(skill.id)),
     `${referencedActive.size} / ${ACTIVE_SKILLS.length}`
   );
   check(
     "[C11] 全Passive定義が実パーツで使用される",
-    referencedPassive.size === PASSIVE_SKILLS.length,
+    PASSIVE_SKILLS.every((skill) => referencedPassive.has(skill.id)),
     `${referencedPassive.size} / ${PASSIVE_SKILLS.length}`
+  );
+
+  const expectedActiveConditions = [
+    "always",
+    "durability-below",
+    "spin-below",
+    "spin-above",
+    "near-rim",
+    "recently-hit",
+    "target-near",
+    "airborne",
+    "last-survivor"
+  ] as const;
+  const expectedPassiveTriggers = [
+    "continuous",
+    "battle-start",
+    "on-hit",
+    "on-take-hit",
+    "near-rim",
+    "durability-below",
+    "spin-below",
+    "elimination"
+  ] as const;
+  const expectedEffectKinds = [
+    "stat-multiplier",
+    "physics-multiplier",
+    "impulse",
+    "spin",
+    "durability",
+    "shield",
+    "radial-damage",
+    "cooldown-shift",
+    "cleanse",
+    "phase",
+    "steal-spin",
+    "reverse-orbit"
+  ] as const;
+  const activeConditions = new Set(ACTIVE_SKILLS.map((skill) => skill.condition.kind));
+  const passiveTriggers = new Set(PASSIVE_SKILLS.map((skill) => skill.trigger));
+  const activeEffects = new Set(
+    ACTIVE_SKILLS.flatMap((skill) => skill.effects.map((effect) => effect.kind))
+  );
+  const passiveEffects = new Set(
+    PASSIVE_SKILLS.flatMap((skill) => skill.effects.map((effect) => effect.kind))
+  );
+  check(
+    "[C12] Activeは全9発動条件を使用",
+    activeConditions.size === expectedActiveConditions.length &&
+      expectedActiveConditions.every((kind) => activeConditions.has(kind)),
+    [...activeConditions].sort().join(",")
+  );
+  check(
+    "[C13] Passiveは全8トリガーを使用",
+    passiveTriggers.size === expectedPassiveTriggers.length &&
+      expectedPassiveTriggers.every((trigger) => passiveTriggers.has(trigger)),
+    [...passiveTriggers].sort().join(",")
+  );
+  check(
+    "[C14] Activeは全12効果命令を使用",
+    activeEffects.size === expectedEffectKinds.length &&
+      expectedEffectKinds.every((kind) => activeEffects.has(kind)),
+    [...activeEffects].sort().join(",")
+  );
+  check(
+    "[C15] Passiveは全12効果命令を使用",
+    passiveEffects.size === expectedEffectKinds.length &&
+      expectedEffectKinds.every((kind) => passiveEffects.has(kind)),
+    [...passiveEffects].sort().join(",")
+  );
+  const jokeActiveIds = new Set<string>(JOKE_ACTIVE_SKILL_IDS);
+  const jokePassiveIds = new Set<string>(JOKE_PASSIVE_SKILL_IDS);
+  check(
+    "[C16] 遊び心Active 7種が定義・実配分済み",
+    jokeActiveIds.size === 7 &&
+      [...jokeActiveIds].every(
+        (id) =>
+          ACTIVE_SKILLS.some((skill) => skill.id === id) &&
+          referencedActive.has(id)
+      ),
+    `${jokeActiveIds.size} curated / ${[...jokeActiveIds].filter((id) => referencedActive.has(id)).length} assigned`
+  );
+  check(
+    "[C17] 遊び心Passive 7種が定義・実配分済み",
+    jokePassiveIds.size === 7 &&
+      [...jokePassiveIds].every(
+        (id) =>
+          PASSIVE_SKILLS.some((skill) => skill.id === id) &&
+          referencedPassive.has(id)
+      ),
+    `${jokePassiveIds.size} curated / ${[...jokePassiveIds].filter((id) => referencedPassive.has(id)).length} assigned`
+  );
+  const allSkills = [...ACTIVE_SKILLS, ...PASSIVE_SKILLS];
+  check(
+    "[C18] 全スキルに固有名・日本語名・日本語説明",
+    new Set(allSkills.map((skill) => skill.name)).size === allSkills.length &&
+      new Set(allSkills.map((skill) => skill.nameJa)).size === allSkills.length &&
+      allSkills.every(
+        (skill) =>
+          /[\u3040-\u30ff\u3400-\u9fff]/u.test(skill.nameJa) &&
+          /[\u3040-\u30ff\u3400-\u9fff]/u.test(skill.descriptionJa) &&
+          skill.descriptionJa.length >= 8
+      ),
+    `${allSkills.length} localized definitions`
   );
 
   const baseVisualKeys = new Set(
@@ -184,15 +289,15 @@ function catalogGates(): void {
   const signatureVisualKeys = new Set(
     PARTS.filter((part) => part.grade === "signature").map((part) => part.visual.visualKey)
   );
-  check("[C12] 基本形状factoryは63", baseVisualKeys.size === 63, `${baseVisualKeys.size} / 63`);
+  check("[C19] 基本形状factoryは63", baseVisualKeys.size === 63, `${baseVisualKeys.size} / 63`);
   check(
-    "[C13] シグネチャー形状factoryは21",
+    "[C20] シグネチャー形状factoryは21",
     signatureVisualKeys.size === 21,
     `${signatureVisualKeys.size} / 21`
   );
   const visualSignatures = new Set(PARTS.map((part) => part.visual.parameterSignature));
   check(
-    "[C14] 外観パラメータは全件一意",
+    "[C21] 外観パラメータは全件一意",
     visualSignatures.size === PARTS.length,
     `${visualSignatures.size} / ${PARTS.length}`
   );
@@ -210,7 +315,7 @@ function catalogGates(): void {
     )
   );
   check(
-    "[C15] 能力構成は全件一意",
+    "[C22] 能力構成は全件一意",
     gameplaySignatures.size === PARTS.length,
     `${gameplaySignatures.size} / ${PARTS.length}`
   );
@@ -218,11 +323,11 @@ function catalogGates(): void {
   const lineageSynergies = SYNERGIES.filter((synergy) => synergy.kind === "lineage");
   const roleSynergies = SYNERGIES.filter((synergy) => synergy.kind === "role-pair");
   check(
-    "[C16] 系統シナジーは9×3段階",
+    "[C23] 系統シナジーは9×3段階",
     lineageSynergies.length === 27,
     `${lineageSynergies.length} / 27`
   );
-  check("[C17] 役割ペアシナジーは6", roleSynergies.length === 6, `${roleSynergies.length} / 6`);
+  check("[C24] 役割ペアシナジーは6", roleSynergies.length === 6, `${roleSynergies.length} / 6`);
 }
 
 function buildGates(): TopBuildSpec {

@@ -24,11 +24,16 @@ import {
 } from "./rings";
 import {
   TOP_SLOTS,
+  VORTEX_SEATS,
   type CreateVortexSimOptions,
   type KnockoutReason,
   type MatchPhase,
   type MatchResult,
   type MatchState,
+  type ResolvedPassiveEffect,
+  type ResolvedPassiveSkill,
+  type ResolvedPassiveTrigger,
+  type ResolvedActiveSkill,
   type ResolvedTopBuild,
   type ResolvedTopPart,
   type RuntimeModifiers,
@@ -54,17 +59,38 @@ export async function initPhysics(): Promise<void> {
 
 interface RuntimeSkill {
   readonly slot: SkillSlot;
-  readonly def: ResolvedTopPart["activeSkill"];
+  readonly members: RuntimeSkillMember[];
+}
+
+interface RuntimeSkillMember {
+  readonly def: ResolvedActiveSkill;
   cooldownUntil: number;
   charges: number;
 }
 
+interface RuntimePassive {
+  readonly def: ResolvedPassiveSkill;
+  cooldownUntil: number;
+  conditionActive: boolean;
+  consumed: boolean;
+}
+
 type TimedModifierKind =
   | "shield"
+  | "phase"
   | "attack"
+  | "defense"
+  | "stamina"
   | "stability"
+  | "mobility"
+  | "durability"
   | "tracking"
-  | "friction";
+  | "mass"
+  | "inertia"
+  | "centerOfMass"
+  | "friction"
+  | "restitution"
+  | "drag";
 
 interface TimedModifier {
   readonly kind: TimedModifierKind;
@@ -74,11 +100,15 @@ interface TimedModifier {
 
 interface RuntimeTop<TSource> {
   readonly seat: SeatIndex;
+  readonly team: number;
   readonly name: string;
   readonly build: ResolvedTopBuild<TSource>;
   readonly body: RAPIER.RigidBody;
   readonly colliders: readonly RAPIER.Collider[];
+  readonly colliderFriction: readonly number[];
+  readonly colliderRestitution: readonly number[];
   readonly skills: RuntimeSkill[];
+  readonly passives: RuntimePassive[];
   readonly hpMax: number;
   readonly motionBias: number;
   hp: number;
@@ -114,6 +144,27 @@ function skillSlot(value: number): SkillSlot {
   return value as SkillSlot;
 }
 
+function normaliseTeam(value: number | undefined, seat: number): number {
+  return value !== undefined && Number.isFinite(value)
+    ? Math.trunc(value)
+    : seat;
+}
+
+function normaliseLaunchPower(value: number | undefined): number {
+  return clamp(
+    value !== undefined && Number.isFinite(value) ? value : 1,
+    0,
+    1.25,
+  );
+}
+
+function areEnemies(
+  first: Pick<RuntimeTop<unknown>, "team">,
+  second: Pick<RuntimeTop<unknown>, "team">,
+): boolean {
+  return first.team !== second.team;
+}
+
 function assertBuild(build: ResolvedTopBuild<unknown>, seat: number): void {
   if (build.parts.length !== TOP_SLOTS.length) {
     throw new Error(`Seat ${seat} must resolve exactly seven top parts`);
@@ -141,6 +192,17 @@ function assertBuild(build: ResolvedTopBuild<unknown>, seat: number): void {
       if (!Number.isFinite(value)) {
         throw new Error(`Seat ${seat} part ${part.id} has non-finite physics`);
       }
+    }
+  }
+  for (const passive of build.passives) {
+    if (
+      !passive.id ||
+      !passive.name ||
+      passive.rank < 1 ||
+      passive.rank > 3 ||
+      (passive.threshold !== null && !Number.isFinite(passive.threshold))
+    ) {
+      throw new Error(`Seat ${seat} has an invalid resolved passive`);
     }
   }
 }
@@ -295,21 +357,26 @@ function spawnTop<TSource>(
   build: ResolvedTopBuild<TSource>,
   name: string,
   seat: SeatIndex,
+  team: number,
+  spawnIndex: number,
   playerCount: number,
   arena: SimRingArena,
   startAngle: number,
   motionBias: number,
+  launchPower: number,
   cpu: boolean,
 ): RuntimeTop<TSource> {
   assertBuild(build as ResolvedTopBuild<unknown>, seat);
-  const angle = startAngle + seat / playerCount * Math.PI * 2;
+  const angle = startAngle + spawnIndex / playerCount * Math.PI * 2;
   const radius = arena.spawnRadius;
   const x = Math.cos(angle) * radius;
   const z = Math.sin(angle) * radius;
   const surface = sampleRingHeight(arena, radius, angle);
   const layouts = colliderLayouts(build as ResolvedTopBuild<unknown>);
   const lowest = Math.min(...layouts.map((layout) => layout.y - layout.height / 2));
-  const launchSpin = clamp(finite(build.physics.launchSpin, 82), 30, 190);
+  const baseLaunchSpin = clamp(finite(build.physics.launchSpin, 82), 30, 190);
+  const power = normaliseLaunchPower(launchPower);
+  const launchSpin = clamp(baseLaunchSpin * power, 0, 220);
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(x, surface - lowest + 0.045, z)
@@ -328,8 +395,8 @@ function spawnTop<TSource>(
   // Seeded sub-centimetre launch variation prevents identical builds from
   // remaining in a perfectly mirrored orbit. It is deterministic for replay
   // and host-authoritative networking, while being visually imperceptible.
-  const tangentSpeed = 0.11 + motionBias * 0.045;
-  const radialSpeed = motionBias * 0.028;
+  const tangentSpeed = (0.11 + motionBias * 0.045) * power;
+  const radialSpeed = motionBias * 0.028 * power;
   body.setLinvel(
     {
       x: -Math.sin(angle) * tangentSpeed + Math.cos(angle) * radialSpeed,
@@ -345,6 +412,24 @@ function spawnTop<TSource>(
   );
   const desiredMass = clamp(finite(build.physics.mass, partMassTotal), 0.35, 8);
   const massScale = desiredMass / Math.max(0.01, partMassTotal);
+  const rawFriction = build.parts.reduce(
+    (sum, part) => sum + part.friction * Math.max(0.01, part.mass),
+    0,
+  ) / Math.max(0.01, partMassTotal);
+  const rawRestitution = build.parts.reduce(
+    (sum, part) => sum + part.restitution * Math.max(0.01, part.mass),
+    0,
+  ) / Math.max(0.01, partMassTotal);
+  const resolvedFrictionScale = clamp(
+    build.physics.friction / Math.max(0.01, rawFriction),
+    0.25,
+    4,
+  );
+  const resolvedRestitutionScale = clamp(
+    build.physics.restitution / Math.max(0.01, rawRestitution),
+    0.25,
+    4,
+  );
   const colliders: RAPIER.Collider[] = [];
   const configure = (
     descriptor: RAPIER.ColliderDesc,
@@ -360,9 +445,11 @@ function spawnTop<TSource>(
           part.friction * (part.slot === "tip" ? 0.008 : 0.004),
           0.001,
           0.008,
-        ),
+        ) * resolvedFrictionScale,
       )
-      .setRestitution(clamp(part.restitution, 0, 0.95))
+      .setRestitution(
+        clamp(part.restitution * resolvedRestitutionScale, 0, 0.95),
+      )
       .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
       .setContactForceEventThreshold(0);
 
@@ -445,20 +532,42 @@ function spawnTop<TSource>(
 
   const durability = clamp(build.stats.durability, 0, 200);
   const hpMax = 72 + durability * 2.15;
-  const skills: RuntimeSkill[] = build.parts.map((part, index) => ({
-    slot: skillSlot(index + 1),
-    def: part.activeSkill,
+  const skills: RuntimeSkill[] = build.parts.map((part, index) => {
+    const slot = TOP_SLOTS[index]!;
+    const configured = build.activeGroups?.[slot];
+    const definitions =
+      configured === undefined
+        ? part.activeSkill === null
+          ? []
+          : [part.activeSkill]
+        : configured;
+    return {
+      slot: skillSlot(index + 1),
+      members: definitions.map((def) => ({
+        def,
+        cooldownUntil: 0,
+        charges: def.charges,
+      })),
+    };
+  });
+  const passives: RuntimePassive[] = build.passives.map((def) => ({
+    def,
     cooldownUntil: 0,
-    charges: part.activeSkill?.charges ?? 0,
+    conditionActive: false,
+    consumed: false,
   }));
 
   return {
     seat,
+    team,
     name,
     build,
     body,
     colliders,
+    colliderFriction: colliders.map((collider) => collider.friction()),
+    colliderRestitution: colliders.map((collider) => collider.restitution()),
     skills,
+    passives,
     hpMax,
     motionBias,
     hp: hpMax,
@@ -488,6 +597,21 @@ function modifierAt(
   for (const modifier of top.timed) {
     if (modifier.kind === kind && modifier.until > elapsed) result *= modifier.value;
   }
+  for (const passive of top.passives) {
+    if (!passive.conditionActive) continue;
+    for (const effect of passive.def.effects) {
+      if (
+        (effect.type !== "stat-multiplier" &&
+          effect.type !== "physics-multiplier") ||
+        effect.durationSec !== undefined ||
+        effect.stat !== kind
+      ) {
+        continue;
+      }
+      const scale = 1 + (passive.def.rank - 1) * 0.12;
+      result *= 1 + (effect.multiplier - 1) * scale;
+    }
+  }
   return clamp(result, 0.12, 5);
 }
 
@@ -499,7 +623,7 @@ function nearestTarget<TSource>(
   let nearest: RuntimeTop<TSource> | null = null;
   let nearestDistance = Number.POSITIVE_INFINITY;
   for (const target of tops) {
-    if (!target.alive || target === source) continue;
+    if (!target.alive || target === source || !areEnemies(source, target)) continue;
     const distance = horizontalDistance(origin, target.body.translation());
     if (distance < nearestDistance) {
       nearest = target;
@@ -550,9 +674,13 @@ function conditionSatisfied<TSource>(
       return position.y - surface >= Math.max(0.05, condition.heightAboveSurface);
     }
     case "final-duel":
-      return tops.filter((candidate) => candidate.alive).length <= 2;
+      return tops.filter(
+        (candidate) => candidate.alive && areEnemies(top, candidate),
+      ).length <= 1;
     case "outnumbered":
-      return tops.filter((candidate) => candidate.alive && candidate !== top).length >= 2;
+      return tops.filter(
+        (candidate) => candidate.alive && areEnemies(top, candidate),
+      ).length >= 2;
     case "all":
       return condition.conditions.every((entry) =>
         conditionSatisfied(entry, top, tops, arena, elapsed),
@@ -582,16 +710,29 @@ export function createVortexSim<TSource = unknown>(
   opts: CreateVortexSimOptions<TSource>,
 ): VortexSim {
   const activeBuilds = opts.builds
-    .slice(0, 4)
-    .map((build, seat) => ({ build, seat }))
+    .slice(0, VORTEX_SEATS)
+    .map((build, seat) => ({
+      build,
+      seat,
+      team: normaliseTeam(opts.teamIds?.[seat], seat),
+      launchPower: normaliseLaunchPower(opts.launchPower?.[seat]),
+    }))
     .filter(
       (
         entry,
-      ): entry is { readonly build: ResolvedTopBuild<TSource>; readonly seat: number } =>
+      ): entry is {
+        readonly build: ResolvedTopBuild<TSource>;
+        readonly seat: number;
+        readonly team: number;
+        readonly launchPower: number;
+      } =>
         entry.build !== null,
     );
-  if (activeBuilds.length < 2 || activeBuilds.length > 4) {
-    throw new Error("VORTEX CROWN requires two to four resolved builds");
+  if (activeBuilds.length < 2 || activeBuilds.length > VORTEX_SEATS) {
+    throw new Error("VORTEX CROWN requires two to eight resolved builds");
+  }
+  if (new Set(activeBuilds.map((entry) => entry.team)).size < 2) {
+    throw new Error("VORTEX CROWN requires at least two opposing teams");
   }
   const arena = opts.arena ?? ringArenaById(opts.arenaId ?? "core-bowl");
   const world = new RAPIER.World({ x: 0, y: GRAVITY, z: 0 });
@@ -601,16 +742,19 @@ export function createVortexSim<TSource = unknown>(
   const rng = mulberry32(opts.seed);
   const cpuSeats = new Set(opts.cpuSeats ?? []);
   const startAngle = rng.range(0, Math.PI * 2);
-  const tops = activeBuilds.map(({ build, seat }) =>
+  const tops = activeBuilds.map(({ build, seat, team, launchPower }, spawnIndex) =>
     spawnTop(
       world,
       build,
       opts.names?.[seat] ?? build.name,
       seatIndex(seat),
+      team,
+      spawnIndex,
       activeBuilds.length,
       arena,
       startAngle,
       rng.range(-1, 1),
+      launchPower,
       cpuSeats.has(seatIndex(seat)),
     ),
   );
@@ -639,10 +783,20 @@ export function createVortexSim<TSource = unknown>(
     at: number;
   }[] = [];
   const pairCooldown = new Map<string, number>();
+  const passiveTriggerCounts = new Map<
+    string,
+    {
+      seat: SeatIndex;
+      passiveId: string;
+      trigger: ResolvedPassiveTrigger;
+      count: number;
+    }
+  >();
   let tick = 0;
   let countdownElapsed = 0;
   let elapsed = 0;
   let phase: MatchPhase = countdownSec > 0 ? "countdown" : "live";
+  let battleStartApplied = false;
   let suddenDeathStage = 0;
   let matchResult: MatchResult | null = null;
   let disposed = false;
@@ -659,29 +813,55 @@ export function createVortexSim<TSource = unknown>(
     return { ok: false, seat, slot, reason };
   }
 
+  function memberReject(
+    top: RuntimeTop<TSource>,
+    member: RuntimeSkillMember,
+  ): Extract<SkillRejectReason, "cooldown" | "no-charges" | "condition"> | null {
+    if (member.cooldownUntil > elapsed + 1e-8) return "cooldown";
+    if (member.charges === 0) return "no-charges";
+    if (
+      !member.def.conditions.every((condition) =>
+        conditionSatisfied(condition, top, tops, arena, elapsed),
+      )
+    ) {
+      return "condition";
+    }
+    return null;
+  }
+
+  function readyMembers(
+    top: RuntimeTop<TSource>,
+    runtime: RuntimeSkill,
+  ): readonly RuntimeSkillMember[] {
+    return runtime.members.filter((member) => memberReject(top, member) === null);
+  }
+
   function activationCheck(seat: number, slot: number): SkillActivationResult {
     if (phase !== "live") return reject(seat, slot, "match-not-live");
     const top = topBySeat(seat);
     if (!top) return reject(seat, slot, "invalid-seat");
     if (!top.alive) return reject(seat, slot, "knocked-out");
     const runtime = top.skills[slot - 1];
-    if (!runtime?.def) return reject(seat, slot, "empty-slot");
-    if (runtime.cooldownUntil > elapsed + 1e-8) {
-      return reject(seat, slot, "cooldown");
+    if (!runtime || runtime.members.length === 0) {
+      return reject(seat, slot, "empty-slot");
     }
-    if (runtime.charges === 0) return reject(seat, slot, "no-charges");
-    if (
-      !runtime.def.conditions.every((condition) =>
-        conditionSatisfied(condition, top, tops, arena, elapsed),
+    const ready = readyMembers(top, runtime);
+    if (ready.length === 0) {
+      const reasons = runtime.members.map((member) => memberReject(top, member));
+      const reason: SkillRejectReason = reasons.every(
+        (entry) => entry === "no-charges",
       )
-    ) {
-      return reject(seat, slot, "condition");
+        ? "no-charges"
+        : reasons.includes("condition")
+          ? "condition"
+          : "cooldown";
+      return reject(seat, slot, reason);
     }
     return {
       ok: true,
       seat: top.seat,
       slot: runtime.slot,
-      skillId: runtime.def.id,
+      skillId: ready[0]!.def.id,
     };
   }
 
@@ -698,31 +878,87 @@ export function createVortexSim<TSource = unknown>(
     });
   }
 
+  function addPassiveModifier(
+    top: RuntimeTop<TSource>,
+    kind: TimedModifierKind,
+    value: number,
+    durationSec: number | undefined,
+  ): void {
+    top.timed.push({
+      kind,
+      value: clamp(finite(value, 1), 0.12, 5),
+      until:
+        durationSec === undefined
+          ? Number.POSITIVE_INFINITY
+          : elapsed + clamp(finite(durationSec, 0), 0, 120),
+    });
+  }
+
+  function setSpinEnergy(top: RuntimeTop<TSource>, value: number): void {
+    const angular = top.body.angvel();
+    const sign = angular.y < 0 ? -1 : 1;
+    top.spinEnergy = clamp(finite(value, top.spinEnergy), 0, 220);
+    top.body.setAngvel(
+      {
+        x: angular.x,
+        y: sign * top.spinEnergy,
+        z: angular.z,
+      },
+      true,
+    );
+  }
+
   function dealDamage(
     victim: RuntimeTop<TSource>,
     rawDamage: number,
     attacker: RuntimeTop<TSource> | null,
   ): number {
     if (!victim.alive) return 0;
+    if (attacker && attacker !== victim && !areEnemies(attacker, victim)) {
+      return 0;
+    }
     const victimMods = normalizedModifiers.get(victim.seat)!;
     const shield = modifierAt(
       victim as RuntimeTop<unknown>,
       "shield",
       elapsed,
     );
-    const defense = 0.7 + clamp(victim.build.stats.defense, 0, 200) / 115;
+    const phaseGuard = modifierAt(
+      victim as RuntimeTop<unknown>,
+      "phase",
+      elapsed,
+    );
+    const defenseStat =
+      victim.build.stats.defense *
+      modifierAt(victim as RuntimeTop<unknown>, "defense", elapsed);
+    const defense = 0.7 + clamp(defenseStat, 0, 400) / 115;
+    const durabilityGuard = modifierAt(
+      victim as RuntimeTop<unknown>,
+      "durability",
+      elapsed,
+    );
     // Sudden death deliberately turns every clean hit into a serious threat.
     // The first 120 seconds retain the normal defensive identity of a build.
     const suddenMultiplier = 1 + suddenDeathStage * 0.65;
     const damage = Math.max(
       0,
-      rawDamage * victimMods.damageTaken * shield * suddenMultiplier / defense,
+      rawDamage *
+        victimMods.damageTaken *
+        shield *
+        phaseGuard *
+        suddenMultiplier /
+        defense /
+        durabilityGuard,
     );
     victim.hp = Math.max(0, victim.hp - damage);
     if (damage > 0) {
       victim.lastHitAt = elapsed;
       victim.lastAttacker = attacker?.seat ?? victim.lastAttacker;
       victim.spinEnergy = Math.max(0, victim.spinEnergy - damage * 0.055);
+      if (attacker && attacker !== victim) {
+        firePassiveTrigger(attacker, "on-hit", victim);
+        firePassiveTrigger(victim, "on-take-hit", attacker);
+      }
     }
     return damage;
   }
@@ -732,21 +968,7 @@ export function createVortexSim<TSource = unknown>(
     const position = top.body.translation();
     switch (effect.type) {
       case "spin-boost": {
-        const angular = top.body.angvel();
-        const sign = angular.y < 0 ? -1 : 1;
-        top.spinEnergy = clamp(
-          top.spinEnergy + effect.radiansPerSec,
-          0,
-          220,
-        );
-        top.body.setAngvel(
-          {
-            x: angular.x,
-            y: sign * top.spinEnergy,
-            z: angular.z,
-          },
-          true,
-        );
+        setSpinEnergy(top, top.spinEnergy + effect.radiansPerSec);
         return;
       }
       case "dash": {
@@ -774,7 +996,7 @@ export function createVortexSim<TSource = unknown>(
       case "shockwave": {
         const radius = Math.max(0.1, effect.radius);
         for (const other of tops) {
-          if (!other.alive || other === top) continue;
+          if (!other.alive || other === top || !areEnemies(top, other)) continue;
           const otherPosition = other.body.translation();
           const dx = otherPosition.x - position.x;
           const dz = otherPosition.z - position.z;
@@ -811,21 +1033,11 @@ export function createVortexSim<TSource = unknown>(
       case "target-spin-drain": {
         const radius = Math.max(0, effect.radius);
         for (const other of tops) {
-          if (!other.alive || other === top) continue;
+          if (!other.alive || other === top || !areEnemies(top, other)) continue;
           if (horizontalDistance(position, other.body.translation()) > radius) continue;
-          const angular = other.body.angvel();
-          const sign = angular.y < 0 ? -1 : 1;
-          other.spinEnergy = Math.max(
-            0,
+          setSpinEnergy(
+            other,
             other.spinEnergy - Math.max(0, effect.radiansPerSec),
-          );
-          other.body.setAngvel(
-            {
-              x: angular.x,
-              y: sign * other.spinEnergy,
-              z: angular.z,
-            },
-            true,
           );
         }
         return;
@@ -873,10 +1085,12 @@ export function createVortexSim<TSource = unknown>(
       }
       case "cooldown-shift":
         for (const runtime of top.skills) {
-          runtime.cooldownUntil = Math.max(
-            elapsed,
-            runtime.cooldownUntil + effect.seconds,
-          );
+          for (const member of runtime.members) {
+            member.cooldownUntil = Math.max(
+              elapsed,
+              member.cooldownUntil + effect.seconds,
+            );
+          }
         }
         return;
       case "cleanse":
@@ -894,21 +1108,319 @@ export function createVortexSim<TSource = unknown>(
     }
   }
 
+  function passiveRankScale(passive: ResolvedPassiveSkill): number {
+    return 1 + (passive.rank - 1) * 0.12;
+  }
+
+  function scaledPassiveMultiplier(
+    multiplier: number,
+    passive: ResolvedPassiveSkill,
+  ): number {
+    return 1 + (multiplier - 1) * passiveRankScale(passive);
+  }
+
+  function passiveConditionBoundEffect(
+    passive: ResolvedPassiveSkill,
+    effect: ResolvedPassiveEffect,
+  ): boolean {
+    return (
+      (passive.trigger === "near-rim" ||
+        passive.trigger === "durability-below" ||
+        passive.trigger === "spin-below") &&
+      (effect.type === "stat-multiplier" ||
+        effect.type === "physics-multiplier") &&
+      effect.durationSec === undefined
+    );
+  }
+
+  function passiveConditionSatisfied(
+    top: RuntimeTop<TSource>,
+    passive: ResolvedPassiveSkill,
+  ): boolean {
+    if (!top.alive) return false;
+    const threshold = clamp(
+      finite(
+        passive.threshold ?? (
+          passive.trigger === "near-rim"
+            ? 0.72
+            : passive.trigger === "durability-below"
+              ? 0.5
+              : 0.35
+        ),
+        0.5,
+      ),
+      0,
+      1,
+    );
+    if (passive.trigger === "durability-below") {
+      return top.hp / Math.max(1, top.hpMax) <= threshold;
+    }
+    if (passive.trigger === "spin-below") {
+      return (
+        top.spinEnergy / Math.max(1, top.build.physics.launchSpin) <= threshold
+      );
+    }
+    if (passive.trigger === "near-rim") {
+      const position = top.body.translation();
+      return Math.hypot(position.x, position.z) / arena.outRadius >= threshold;
+    }
+    return false;
+  }
+
+  function passiveCooldownSec(passive: ResolvedPassiveSkill): number {
+    switch (passive.trigger) {
+      case "on-hit":
+      case "on-take-hit":
+        return 0.25;
+      case "near-rim":
+        return 1.25;
+      case "spin-below":
+        return 4;
+      case "durability-below":
+        return passive.effects.some((effect) => effect.type === "phase")
+          ? Number.POSITIVE_INFINITY
+          : 2;
+      case "elimination":
+        return 0;
+      case "battle-start":
+      case "continuous":
+        return Number.POSITIVE_INFINITY;
+    }
+  }
+
+  function passiveIsOneShot(passive: ResolvedPassiveSkill): boolean {
+    return (
+      passive.trigger === "battle-start" ||
+      (passive.trigger === "durability-below" &&
+        passive.effects.some((effect) => effect.type === "phase"))
+    );
+  }
+
+  function applyPassiveImpulse(
+    top: RuntimeTop<TSource>,
+    effect: Extract<ResolvedPassiveEffect, { readonly type: "impulse" }>,
+    target: RuntimeTop<TSource> | null,
+    scale: number,
+  ): void {
+    const position = top.body.translation();
+    const other = target?.body.translation();
+    let dx = 0;
+    let dz = 0;
+    if (effect.direction === "toward-center") {
+      dx = -position.x;
+      dz = -position.z;
+    } else if (effect.direction === "tangent") {
+      const radial = Math.max(1e-6, Math.hypot(position.x, position.z));
+      const sign = top.reverseOrbitUntil > elapsed ? -1 : 1;
+      dx = -position.z / radial * sign;
+      dz = position.x / radial * sign;
+    } else if (other) {
+      const direction = effect.direction === "away-from-target" ? -1 : 1;
+      dx = (other.x - position.x) * direction;
+      dz = (other.z - position.z) * direction;
+    } else {
+      return;
+    }
+    const length = Math.max(1e-6, Math.hypot(dx, dz));
+    const impulse = Math.max(0, effect.strength) * scale;
+    top.body.applyImpulse(
+      {
+        x: dx / length * impulse,
+        y: impulse * 0.02,
+        z: dz / length * impulse,
+      },
+      true,
+    );
+  }
+
+  function applyPassiveEffect(
+    top: RuntimeTop<TSource>,
+    passive: ResolvedPassiveSkill,
+    effect: ResolvedPassiveEffect,
+    target: RuntimeTop<TSource> | null,
+  ): void {
+    const scale = passiveRankScale(passive);
+    switch (effect.type) {
+      case "stat-multiplier":
+      case "physics-multiplier":
+        addPassiveModifier(
+          top,
+          effect.stat,
+          scaledPassiveMultiplier(effect.multiplier, passive),
+          effect.durationSec,
+        );
+        return;
+      case "impulse":
+        applyPassiveImpulse(top, effect, target, scale);
+        return;
+      case "spin":
+        setSpinEnergy(top, top.spinEnergy + effect.amount * scale);
+        return;
+      case "durability":
+        top.hp = Math.min(top.hpMax, top.hp + Math.max(0, effect.amount) * scale);
+        return;
+      case "shield":
+        addPassiveModifier(
+          top,
+          "shield",
+          clamp(1 - effect.amount * scale / 300, 0.2, 0.92),
+          effect.durationSec,
+        );
+        return;
+      case "radial-damage":
+        applyEffect(top, {
+          type: "shockwave",
+          radius: effect.radius,
+          impulse: effect.amount * 0.055 * scale,
+          damage: effect.amount * scale,
+        });
+        return;
+      case "cooldown-shift":
+        for (const runtime of top.skills) {
+          for (const member of runtime.members) {
+            member.cooldownUntil = Math.max(
+              elapsed,
+              member.cooldownUntil + effect.amountSec * scale,
+            );
+          }
+        }
+        return;
+      case "cleanse":
+        top.timed = top.timed.filter(
+          (modifier) =>
+            modifier.kind !== "friction" || modifier.value <= 1,
+        );
+        return;
+      case "phase":
+        addPassiveModifier(
+          top,
+          "phase",
+          0.12,
+          effect.durationSec * (1 + (passive.rank - 1) * 0.08),
+        );
+        return;
+      case "steal-spin": {
+        const victim =
+          target &&
+          target.alive &&
+          target !== top &&
+          areEnemies(top, target)
+            ? target
+            : nearestTarget(top, tops);
+        if (!victim) return;
+        const amount = Math.max(0, effect.amount) * scale;
+        setSpinEnergy(victim, victim.spinEnergy - amount);
+        setSpinEnergy(top, top.spinEnergy + amount);
+        return;
+      }
+      case "reverse-orbit":
+        top.reverseOrbitUntil = Math.max(
+          top.reverseOrbitUntil,
+          elapsed + effect.durationSec * (1 + (passive.rank - 1) * 0.08),
+        );
+        return;
+    }
+  }
+
+  function recordPassiveTrigger(
+    top: RuntimeTop<TSource>,
+    passive: ResolvedPassiveSkill,
+  ): void {
+    const key = `${top.seat}:${passive.id}:${passive.trigger}`;
+    const existing = passiveTriggerCounts.get(key);
+    if (existing) {
+      existing.count += 1;
+      return;
+    }
+    passiveTriggerCounts.set(key, {
+      seat: top.seat,
+      passiveId: passive.id,
+      trigger: passive.trigger,
+      count: 1,
+    });
+  }
+
+  function activatePassive(
+    top: RuntimeTop<TSource>,
+    runtime: RuntimePassive,
+    target: RuntimeTop<TSource> | null,
+  ): void {
+    if (!top.alive || runtime.consumed) return;
+    if (runtime.cooldownUntil > elapsed + 1e-8) return;
+    const passive = runtime.def;
+    const cooldown = passiveCooldownSec(passive);
+    runtime.cooldownUntil = Number.isFinite(cooldown)
+      ? elapsed + cooldown
+      : Number.POSITIVE_INFINITY;
+    if (passiveIsOneShot(passive)) runtime.consumed = true;
+    recordPassiveTrigger(top, passive);
+    for (const effect of passive.effects) {
+      if (passiveConditionBoundEffect(passive, effect)) continue;
+      applyPassiveEffect(top, passive, effect, target);
+    }
+  }
+
+  function firePassiveTrigger(
+    top: RuntimeTop<TSource>,
+    trigger: ResolvedPassiveTrigger,
+    target: RuntimeTop<TSource> | null,
+  ): void {
+    if (!top.alive) return;
+    for (const passive of top.passives) {
+      if (passive.def.trigger === trigger) {
+        activatePassive(top, passive, target);
+      }
+    }
+  }
+
+  function updateConditionalPassives(top: RuntimeTop<TSource>): void {
+    for (const passive of top.passives) {
+      const trigger = passive.def.trigger;
+      if (
+        trigger !== "near-rim" &&
+        trigger !== "durability-below" &&
+        trigger !== "spin-below"
+      ) {
+        continue;
+      }
+      const wasActive = passive.conditionActive;
+      passive.conditionActive = passiveConditionSatisfied(top, passive.def);
+      if (!passive.conditionActive) continue;
+      const hasInstantOrTimedEffect = passive.def.effects.some(
+        (effect) => !passiveConditionBoundEffect(passive.def, effect),
+      );
+      if (
+        !wasActive ||
+        (hasInstantOrTimedEffect &&
+          passive.cooldownUntil <= elapsed + 1e-8)
+      ) {
+        activatePassive(top, passive, nearestTarget(top, tops));
+      }
+    }
+  }
+
   function activate(seat: SeatIndex, slot: SkillSlot): SkillActivationResult {
     const checked = activationCheck(seat, slot);
     if (!checked.ok) return checked;
     const top = topBySeat(seat)!;
     const runtime = top.skills[slot - 1]!;
-    const definition = runtime.def!;
-    runtime.cooldownUntil = elapsed + clamp(definition.cooldownSec, 0.05, 120);
-    if (runtime.charges > 0) runtime.charges -= 1;
-    for (const effect of definition.effects) applyEffect(top, effect);
-    events.push({
-      type: "skill",
-      seat,
-      slot,
-      skillId: definition.id,
-    });
+    // Resolve the group once so effects from an earlier member cannot change
+    // whether a later member was ready at the instant the button was pressed.
+    const members = readyMembers(top, runtime);
+    for (const member of members) {
+      member.cooldownUntil =
+        elapsed + clamp(member.def.cooldownSec, 0.05, 120);
+      if (member.charges > 0) member.charges -= 1;
+    }
+    for (const member of members) {
+      for (const effect of member.def.effects) applyEffect(top, effect);
+      events.push({
+        type: "skill",
+        seat,
+        slot,
+        skillId: member.def.id,
+      });
+    }
     return checked;
   }
 
@@ -923,6 +1435,15 @@ export function createVortexSim<TSource = unknown>(
     top.body.setEnabled(false);
     knockouts.push({ seat: top.seat, reason, at: elapsed });
     events.push({ type: "knockout", seat: top.seat, reason, by });
+    for (const survivor of tops) {
+      if (
+        survivor.alive &&
+        survivor !== top &&
+        areEnemies(survivor, top)
+      ) {
+        firePassiveTrigger(survivor, "elimination", top);
+      }
+    }
   }
 
   function applyTrackingAndSpin(top: RuntimeTop<TSource>): void {
@@ -937,13 +1458,64 @@ export function createVortexSim<TSource = unknown>(
     const angular = top.body.angvel();
     const spin = top.spinEnergy;
     const spinRatio = clamp(spin / Math.max(1, top.build.physics.launchSpin), 0.05, 1.25);
+    const frictionModifier = modifierAt(
+      top as RuntimeTop<unknown>,
+      "friction",
+      elapsed,
+    );
+    const restitutionModifier = modifierAt(
+      top as RuntimeTop<unknown>,
+      "restitution",
+      elapsed,
+    );
+    for (let index = 0; index < top.colliders.length; index += 1) {
+      top.colliders[index]!.setFriction(
+        clamp(
+          top.colliderFriction[index]! * frictionModifier,
+          0.0005,
+          0.04,
+        ),
+      );
+      top.colliders[index]!.setRestitution(
+        clamp(
+          top.colliderRestitution[index]! * restitutionModifier,
+          0,
+          0.98,
+        ),
+      );
+    }
+    const dragModifier = modifierAt(
+      top as RuntimeTop<unknown>,
+      "drag",
+      elapsed,
+    );
+    top.body.setLinearDamping(
+      clamp(top.build.physics.drag * 0.1 * dragModifier, 0.008, 0.45),
+    );
+    top.body.setAngularDamping(
+      clamp(top.build.physics.drag * 0.006 * dragModifier, 0.0005, 0.09),
+    );
     const rotation = top.body.rotation();
     const upX = 2 * (rotation.x * rotation.y - rotation.z * rotation.w);
     const upZ = 2 * (rotation.y * rotation.z + rotation.x * rotation.w);
+    const stabilityStat =
+      top.build.stats.stability *
+      modifierAt(top as RuntimeTop<unknown>, "stability", elapsed);
+    const inertiaModifier = modifierAt(
+      top as RuntimeTop<unknown>,
+      "inertia",
+      elapsed,
+    );
+    const centerOfMassModifier = modifierAt(
+      top as RuntimeTop<unknown>,
+      "centerOfMass",
+      elapsed,
+    );
     const stability =
-      (0.55 + clamp(top.build.stats.stability, 0, 200) / 90) *
+      (0.55 + clamp(stabilityStat, 0, 400) / 90) *
       modifiers.stability *
-      modifierAt(top as RuntimeTop<unknown>, "stability", elapsed) *
+      Math.sqrt(inertiaModifier) /
+      Math.sqrt(centerOfMassModifier) *
       clamp(spinRatio, 0.15, 1);
     top.body.addTorque(
       {
@@ -991,7 +1563,10 @@ export function createVortexSim<TSource = unknown>(
       directionX = directionX * (1 - edgeFactor) - position.x / radial * edgeFactor * recovery;
       directionZ = directionZ * (1 - edgeFactor) - position.z / radial * edgeFactor * recovery;
     }
-    const mobility = 0.48 + clamp(top.build.stats.mobility, 0, 200) / 95;
+    const mobilityStat =
+      top.build.stats.mobility *
+      modifierAt(top as RuntimeTop<unknown>, "mobility", elapsed);
+    const mobility = 0.48 + clamp(mobilityStat, 0, 400) / 95;
     const tracking =
       modifiers.tracking *
       modifierAt(top as RuntimeTop<unknown>, "tracking", elapsed) *
@@ -1005,13 +1580,18 @@ export function createVortexSim<TSource = unknown>(
       true,
     );
 
-    const stamina = 0.58 + clamp(top.build.stats.stamina, 0, 200) / 90;
+    const staminaStat =
+      top.build.stats.stamina *
+      modifierAt(top as RuntimeTop<unknown>, "stamina", elapsed);
+    const stamina = 0.58 + clamp(staminaStat, 0, 400) / 90;
     const friction =
       clamp(top.build.physics.friction, 0.05, 1.5) *
-      modifierAt(top as RuntimeTop<unknown>, "friction", elapsed);
+      frictionModifier;
     const drain =
       BASE_SPIN_DRAIN *
       friction *
+      dragModifier /
+      Math.sqrt(inertiaModifier) *
       modifiers.spinDrain *
       (1 + suddenDeathStage * 1.15) /
       stamina;
@@ -1047,6 +1627,10 @@ export function createVortexSim<TSource = unknown>(
     const first = contact.first as RuntimeTop<TSource>;
     const second = contact.second as RuntimeTop<TSource>;
     if (!first.alive || !second.alive) return;
+    // Rapier has already resolved the physical contact. Teammates therefore
+    // still bump and block one another, but combat damage and hit passives are
+    // deliberately suppressed.
+    if (!areEnemies(first, second)) return;
     const key = impactKey(first, second);
     if ((pairCooldown.get(key) ?? Number.NEGATIVE_INFINITY) > elapsed) return;
     pairCooldown.set(key, elapsed + CONTACT_COOLDOWN_SEC);
@@ -1065,10 +1649,18 @@ export function createVortexSim<TSource = unknown>(
     const attacker = firstThreat >= secondThreat ? first : second;
     const victim = attacker === first ? second : first;
     const attackerMods = normalizedModifiers.get(attacker.seat)!;
-    const attack =
-      (0.68 + clamp(attacker.build.stats.attack, 0, 200) / 92) *
-      attackerMods.damageDealt *
+    const attackStat =
+      attacker.build.stats.attack *
       modifierAt(attacker as RuntimeTop<unknown>, "attack", elapsed);
+    const contactPhysics =
+      Math.sqrt(
+        modifierAt(attacker as RuntimeTop<unknown>, "mass", elapsed) *
+        modifierAt(attacker as RuntimeTop<unknown>, "restitution", elapsed),
+      );
+    const attack =
+      (0.68 + clamp(attackStat, 0, 400) / 92) *
+      attackerMods.damageDealt *
+      contactPhysics;
     const raw = Math.min(
       MAX_CONTACT_DAMAGE * 1.7,
       Math.max(0, contact.impulse - CONTACT_DAMAGE_THRESHOLD) *
@@ -1123,10 +1715,12 @@ export function createVortexSim<TSource = unknown>(
   function concludeIfNeeded(): void {
     if (phase !== "live" || matchResult) return;
     const alive = tops.filter((top) => top.alive);
-    if (alive.length > 1) return;
+    const aliveTeams = new Set(alive.map((top) => top.team));
+    if (aliveTeams.size > 1) return;
     const last = knockouts[knockouts.length - 1];
     matchResult = {
       winner: alive[0]?.seat ?? null,
+      winnerTeam: alive[0]?.team ?? null,
       reason: last?.reason ?? "draw",
       durationSec: elapsed,
       knockouts: knockouts.slice(),
@@ -1137,39 +1731,69 @@ export function createVortexSim<TSource = unknown>(
   function enforceSafetyCeiling(): void {
     if (elapsed < maxDurationSec || phase !== "live") return;
     const alive = tops.filter((top) => top.alive);
-    if (alive.length <= 1) return;
-    const sorted = alive.slice().sort((first, second) => {
-      const firstScore =
-        first.hp / first.hpMax + first.spinEnergy * 0.001;
-      const secondScore =
-        second.hp / second.hpMax + second.spinEnergy * 0.001;
-      return secondScore - firstScore;
-    });
-    const winner = sorted[0]!;
-    const runnerUp = sorted[1]!;
-    const winnerScore =
-      winner.hp / winner.hpMax + winner.spinEnergy * 0.001;
-    const runnerScore =
-      runnerUp.hp / runnerUp.hpMax + runnerUp.spinEnergy * 0.001;
+    const teamScores = new Map<number, number>();
+    for (const top of alive) {
+      const score = top.hp / top.hpMax + top.spinEnergy * 0.001;
+      teamScores.set(top.team, (teamScores.get(top.team) ?? 0) + score);
+    }
+    if (teamScores.size <= 1) return;
+    const rankedTeams = [...teamScores.entries()].sort(
+      ([firstTeam, firstScore], [secondTeam, secondScore]) =>
+        secondScore - firstScore || firstTeam - secondTeam,
+    );
+    const [winnerTeam, winnerScore] = rankedTeams[0]!;
+    const runnerScore = rankedTeams[1]![1];
     if (Math.abs(winnerScore - runnerScore) < 1e-6) {
       for (const top of alive) knockout(top, "destroyed", null);
       return;
     }
+    const creditedWinner = alive
+      .filter((top) => top.team === winnerTeam)
+      .sort(
+        (first, second) =>
+          second.hp / second.hpMax +
+            second.spinEnergy * 0.001 -
+            (first.hp / first.hpMax + first.spinEnergy * 0.001) ||
+          first.seat - second.seat,
+      )[0]!;
     for (const top of alive) {
-      if (top !== winner) knockout(top, "destroyed", winner.seat);
+      if (top.team !== winnerTeam) {
+        knockout(top, "destroyed", creditedWinner.seat);
+      }
     }
   }
 
   function skillState(top: RuntimeTop<TSource>, runtime: RuntimeSkill): SkillRuntimeState {
     const check = activationCheck(top.seat, runtime.slot);
+    const first = runtime.members[0];
+    const ready =
+      phase === "live" && top.alive ? readyMembers(top, runtime) : [];
+    const cooldownRemaining =
+      runtime.members.length === 0
+        ? 0
+        : Math.min(
+            ...runtime.members.map((member) =>
+              Math.max(0, member.cooldownUntil - elapsed),
+            ),
+          );
+    const chargesRemaining = runtime.members.some(
+      (member) => member.charges < 0,
+    )
+      ? -1
+      : runtime.members.reduce((sum, member) => sum + member.charges, 0);
     return {
       slot: runtime.slot,
-      skillId: runtime.def?.id ?? null,
-      name: runtime.def?.name ?? null,
-      cooldownRemaining: Math.max(0, runtime.cooldownUntil - elapsed),
-      chargesRemaining: runtime.charges,
+      skillId: first?.def.id ?? null,
+      name:
+        runtime.members.length === 0
+          ? null
+          : runtime.members.map((member) => member.def.name).join(" + "),
+      cooldownRemaining,
+      chargesRemaining,
       ready: check.ok,
       blockedReason: check.ok ? null : check.reason,
+      groupSize: runtime.members.length,
+      readyCount: ready.length,
     };
   }
 
@@ -1208,6 +1832,13 @@ export function createVortexSim<TSource = unknown>(
       if (disposed) throw new Error("VortexSim is disposed");
       if (phase === "over") return;
       if (phase === "live") {
+        if (!battleStartApplied) {
+          battleStartApplied = true;
+          for (const top of tops) {
+            firePassiveTrigger(top, "battle-start", null);
+          }
+        }
+        for (const top of tops) updateConditionalPassives(top);
         for (const top of tops) applyTrackingAndSpin(top);
       }
       world.step(queue);
@@ -1292,6 +1923,14 @@ export function createVortexSim<TSource = unknown>(
         colliders: world.colliders.len(),
         topRigidBodies: tops.length,
         topColliders: tops.map((top) => top.colliders.length),
+        passiveTriggers: [...passiveTriggerCounts.values()]
+          .map((entry) => ({ ...entry }))
+          .sort(
+            (first, second) =>
+              first.seat - second.seat ||
+              first.passiveId.localeCompare(second.passiveId) ||
+              first.trigger.localeCompare(second.trigger),
+          ),
         stepCount: tick,
       };
     },

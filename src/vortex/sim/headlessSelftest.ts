@@ -89,6 +89,7 @@ function fixtureBuild(index: number): ResolvedTopBuild<{ readonly id: string }> 
       launchSpin: 92 + index * 2,
     },
     parts,
+    passives: [],
     modifiers: NEUTRAL_MODIFIERS,
     synergyIds: [],
   };

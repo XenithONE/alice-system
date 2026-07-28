@@ -6,7 +6,6 @@ import {
   type ActiveSkillDef,
   type BuildCostLimit,
   type DerivedTopBuild,
-  type PassiveSkillDef,
   type SkillEffectDef,
   type SkillRank,
   type TopBuildSpec,
@@ -16,6 +15,8 @@ import {
 import {
   NEUTRAL_MODIFIERS,
   type ResolvedActiveSkill,
+  type ResolvedPassiveEffect,
+  type ResolvedPassiveSkill,
   type ResolvedTopBuild,
   type RuntimeModifiers,
   type SkillCondition,
@@ -243,6 +244,63 @@ function activeFromCatalog(
   };
 }
 
+function passiveEffectFromCatalog(
+  effect: SkillEffectDef,
+): ResolvedPassiveEffect {
+  switch (effect.kind) {
+    case "stat-multiplier":
+      return {
+        type: "stat-multiplier",
+        stat: effect.stat,
+        multiplier: effect.multiplier,
+        ...(effect.durationSec === undefined
+          ? {}
+          : { durationSec: effect.durationSec }),
+      };
+    case "physics-multiplier":
+      return {
+        type: "physics-multiplier",
+        stat: effect.stat,
+        multiplier: effect.multiplier,
+        ...(effect.durationSec === undefined
+          ? {}
+          : { durationSec: effect.durationSec }),
+      };
+    case "impulse":
+      return {
+        type: "impulse",
+        direction: effect.direction,
+        strength: effect.strength,
+      };
+    case "spin":
+      return { type: "spin", amount: effect.amount };
+    case "durability":
+      return { type: "durability", amount: effect.amount };
+    case "shield":
+      return {
+        type: "shield",
+        amount: effect.amount,
+        durationSec: effect.durationSec,
+      };
+    case "radial-damage":
+      return {
+        type: "radial-damage",
+        amount: effect.amount,
+        radius: effect.radius,
+      };
+    case "cooldown-shift":
+      return { type: "cooldown-shift", amountSec: effect.amountSec };
+    case "cleanse":
+      return { type: "cleanse" };
+    case "phase":
+      return { type: "phase", durationSec: effect.durationSec };
+    case "steal-spin":
+      return { type: "steal-spin", amount: effect.amount };
+    case "reverse-orbit":
+      return { type: "reverse-orbit", durationSec: effect.durationSec };
+  }
+}
+
 function applyNumber(
   record: Record<string, number>,
   key: string,
@@ -252,64 +310,56 @@ function applyNumber(
 }
 
 /**
- * Passive catalog effects are folded into deterministic runtime modifiers.
- * Triggered passives use a smaller uptime weight; they remain real build
- * choices without adding callbacks or renderer state to the physics world.
+ * Continuous passives are part of the resolved baseline. Every other trigger
+ * is carried into the world verbatim and must not receive an uptime estimate.
  */
-function applyPassive(
-  skill: PassiveSkillDef,
-  rank: SkillRank,
+function applyContinuousPassive(
+  passive: ResolvedPassiveSkill,
   stats: TopStats,
   physics: TopPhysicsStats,
   modifiers: RuntimeModifiers,
 ): RuntimeModifiers {
-  const uptime =
-    skill.trigger === "continuous" || skill.trigger === "battle-start"
-      ? 1
-      : skill.trigger === "on-hit" || skill.trigger === "on-take-hit"
-        ? 0.5
-        : 0.34;
-  const scale = rankScale(rank) * uptime;
+  const scale = rankScale(passive.rank);
   let result = { ...modifiers };
-  for (const effect of skill.effects) {
-    if (effect.kind === "stat-multiplier") {
+  for (const effect of passive.effects) {
+    if (effect.type === "stat-multiplier") {
       applyNumber(
         stats as unknown as Record<string, number>,
         effect.stat,
         1 + (effect.multiplier - 1) * scale,
       );
-    } else if (effect.kind === "physics-multiplier") {
+    } else if (effect.type === "physics-multiplier") {
       applyNumber(
         physics as unknown as Record<string, number>,
         effect.stat,
         1 + (effect.multiplier - 1) * scale,
       );
-    } else if (effect.kind === "durability") {
+    } else if (effect.type === "durability") {
       stats.durability += effect.amount * scale;
-    } else if (effect.kind === "shield" || effect.kind === "phase") {
-      const strength = effect.kind === "shield" ? effect.amount / 650 : 0.12;
+    } else if (effect.type === "shield" || effect.type === "phase") {
+      const strength = effect.type === "shield" ? effect.amount / 650 : 0.12;
       result = {
         ...result,
         damageTaken: result.damageTaken * clamp(1 - strength * scale, 0.68, 1),
       };
-    } else if (effect.kind === "spin") {
+    } else if (effect.type === "spin") {
       stats.stamina += effect.amount * scale * 0.45;
-    } else if (effect.kind === "steal-spin") {
+    } else if (effect.type === "steal-spin") {
       result = {
         ...result,
         lifesteal: clamp(result.lifesteal + effect.amount * scale / 400, 0, 0.3),
       };
-    } else if (effect.kind === "radial-damage") {
+    } else if (effect.type === "radial-damage") {
       result = {
         ...result,
         thorns: clamp(result.thorns + effect.amount * scale / 500, 0, 0.28),
       };
-    } else if (effect.kind === "reverse-orbit") {
+    } else if (effect.type === "reverse-orbit") {
       result = {
         ...result,
         tracking: result.tracking * (1 + 0.06 * scale),
       };
-    } else if (effect.kind === "cooldown-shift") {
+    } else if (effect.type === "cooldown-shift") {
       result = {
         ...result,
         tracking: result.tracking * (1 + Math.max(0, -effect.amountSec) * scale * 0.01),
@@ -324,18 +374,29 @@ export function resolvedBuildFromDerived(
 ): ResolvedTopBuild<TopBuildSpec> {
   const stats = { ...derived.stats };
   const physics = { ...derived.physics };
+  const passives: ResolvedPassiveSkill[] = derived.passiveSkills.flatMap(
+    (passive) => {
+      const definition = getPassiveSkill(passive.skillId);
+      if (!definition) return [];
+      return [{
+        id: definition.id,
+        name: definition.nameJa,
+        rank: passive.rank,
+        trigger: definition.trigger,
+        threshold: definition.threshold ?? null,
+        effects: definition.effects.map(passiveEffectFromCatalog),
+      }];
+    },
+  );
   let modifiers: RuntimeModifiers = { ...NEUTRAL_MODIFIERS };
-  for (const passive of derived.passiveSkills) {
-    const definition = getPassiveSkill(passive.skillId);
-    if (definition) {
-      modifiers = applyPassive(
-        definition,
-        passive.rank,
-        stats,
-        physics,
-        modifiers,
-      );
-    }
+  for (const passive of passives) {
+    if (passive.trigger !== "continuous") continue;
+    modifiers = applyContinuousPassive(
+      passive,
+      stats,
+      physics,
+      modifiers,
+    );
   }
   const launchSpin = clamp(
     70 + stats.stamina * 0.105 + physics.inertia * 14,
@@ -381,6 +442,7 @@ export function resolvedBuildFromDerived(
             : null,
       };
     }),
+    passives,
     modifiers,
     synergyIds: derived.synergies.map((entry) => entry.synergy.id),
   };

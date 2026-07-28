@@ -6,7 +6,7 @@
  * `ResolvedTopBuild`; from that point the simulation can run in Node.
  */
 
-export const VORTEX_SEATS = 4;
+export const VORTEX_SEATS = 8;
 export const TOP_SLOTS = [
   "crest",
   "crown",
@@ -19,7 +19,7 @@ export const TOP_SLOTS = [
 
 export type SimTopSlot = (typeof TOP_SLOTS)[number];
 export type SkillSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-export type SeatIndex = 0 | 1 | 2 | 3;
+export type SeatIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type MatchPhase = "countdown" | "live" | "over";
 export type KnockoutReason = "ring-out" | "destroyed";
 
@@ -133,6 +133,72 @@ export interface ResolvedActiveSkill {
   readonly effects: readonly SkillEffect[];
 }
 
+export type ResolvedPassiveTrigger =
+  | "continuous"
+  | "battle-start"
+  | "on-hit"
+  | "on-take-hit"
+  | "near-rim"
+  | "durability-below"
+  | "spin-below"
+  | "elimination";
+
+export type PassiveStatKey = keyof DisplayStats;
+export type PassivePhysicsKey = Exclude<keyof PhysicalStats, "launchSpin">;
+
+/**
+ * Declarative passive instructions. Values remain catalog-authored here;
+ * rank scaling and trigger timing are applied by the deterministic world.
+ */
+export type ResolvedPassiveEffect =
+  | {
+      readonly type: "stat-multiplier";
+      readonly stat: PassiveStatKey;
+      readonly multiplier: number;
+      readonly durationSec?: number;
+    }
+  | {
+      readonly type: "physics-multiplier";
+      readonly stat: PassivePhysicsKey;
+      readonly multiplier: number;
+      readonly durationSec?: number;
+    }
+  | {
+      readonly type: "impulse";
+      readonly direction:
+        | "toward-target"
+        | "away-from-target"
+        | "toward-center"
+        | "tangent";
+      readonly strength: number;
+    }
+  | { readonly type: "spin"; readonly amount: number }
+  | { readonly type: "durability"; readonly amount: number }
+  | {
+      readonly type: "shield";
+      readonly amount: number;
+      readonly durationSec: number;
+    }
+  | {
+      readonly type: "radial-damage";
+      readonly amount: number;
+      readonly radius: number;
+    }
+  | { readonly type: "cooldown-shift"; readonly amountSec: number }
+  | { readonly type: "cleanse" }
+  | { readonly type: "phase"; readonly durationSec: number }
+  | { readonly type: "steal-spin"; readonly amount: number }
+  | { readonly type: "reverse-orbit"; readonly durationSec: number };
+
+export interface ResolvedPassiveSkill {
+  readonly id: string;
+  readonly name: string;
+  readonly rank: 1 | 2 | 3;
+  readonly trigger: ResolvedPassiveTrigger;
+  readonly threshold: number | null;
+  readonly effects: readonly ResolvedPassiveEffect[];
+}
+
 export interface ResolvedTopPart {
   readonly id: string;
   readonly slot: SimTopSlot;
@@ -185,6 +251,16 @@ export interface ResolvedTopBuild<TSource = unknown> {
   readonly physics: PhysicalStats;
   /** exactly seven entries in TOP_SLOTS order */
   readonly parts: readonly ResolvedTopPart[];
+  /**
+   * Optional roguelike stacks. When present, every currently-ready member of
+   * the selected slot fires together; the seven representative parts still
+   * define the unchanged rigid-body/collider topology.
+   */
+  readonly activeGroups?: Partial<
+    Record<SimTopSlot, readonly ResolvedActiveSkill[]>
+  >;
+  /** zero to seven declarative part passives */
+  readonly passives: readonly ResolvedPassiveSkill[];
   readonly modifiers: RuntimeModifiers;
   readonly synergyIds: readonly string[];
 }
@@ -230,6 +306,9 @@ export interface SkillRuntimeState {
   readonly chargesRemaining: number;
   readonly ready: boolean;
   readonly blockedReason: SkillRejectReason | null;
+  /** Present for stacked roguelike slots; ordinary builds report 1/1. */
+  readonly groupSize?: number;
+  readonly readyCount?: number;
 }
 
 export interface TopState {
@@ -286,6 +365,8 @@ export interface MatchState {
 
 export interface MatchResult {
   readonly winner: SeatIndex | null;
+  /** Team id when `teamIds` were supplied; seat id in the default FFA. */
+  readonly winnerTeam?: number | null;
   readonly reason: KnockoutReason | "draw";
   readonly durationSec: number;
   readonly knockouts: readonly {
@@ -323,6 +404,12 @@ export interface VortexSimDiagnostics {
   readonly colliders: number;
   readonly topRigidBodies: number;
   readonly topColliders: readonly number[];
+  readonly passiveTriggers: readonly {
+    readonly seat: SeatIndex;
+    readonly passiveId: string;
+    readonly trigger: ResolvedPassiveTrigger;
+    readonly count: number;
+  }[];
   readonly stepCount: number;
 }
 
@@ -345,9 +432,19 @@ export interface VortexSim {
 
 export interface CreateVortexSimOptions<TSource = unknown> {
   readonly seed: number;
-  /** 2..4 non-null builds, indexed by seat */
+  /** 2..8 non-null builds, indexed by seat */
   readonly builds: readonly (ResolvedTopBuild<TSource> | null)[];
   readonly names?: readonly string[];
+  /**
+   * Per-seat launch-meter multiplier. Values are safely clamped to 0..1.25;
+   * omitted/non-finite entries preserve the historical 1.0 launch exactly.
+   */
+  readonly launchPower?: readonly number[];
+  /**
+   * Per-seat team identifiers. Omitted/non-finite entries use their seat id,
+   * preserving the historical free-for-all.
+   */
+  readonly teamIds?: readonly number[];
   readonly arenaId?: SimRingArena["id"];
   readonly arena?: SimRingArena;
   readonly cpuSeats?: readonly SeatIndex[];

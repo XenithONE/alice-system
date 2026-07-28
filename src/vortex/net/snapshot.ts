@@ -42,6 +42,10 @@ export function snapshotFromSim(sim: VortexSim): VortexSnapshot {
           charges: skill.chargesRemaining,
           ready: skill.ready,
           blocked: skill.blockedReason,
+          groupSize: skill.groupSize ?? (skill.skillId === null ? 0 : 1),
+          readyCount:
+            skill.readyCount ??
+            (skill.ready && skill.skillId !== null ? 1 : 0),
         })),
       }),
     ),
@@ -61,6 +65,7 @@ export function resultFromSim(sim: VortexSim): VortexResult | null {
   if (!result) return null;
   return {
     winner: result.winner,
+    winnerTeam: result.winnerTeam ?? result.winner,
     reason: result.reason,
     durationSec: quantize(result.durationSec, 3),
     knockouts: result.knockouts.map((knockout) => ({

@@ -687,3 +687,7 @@ export function disposeTopVisual(root: THREE.Object3D): void {
 export function topRadiusForSlot(slot: number): number {
   return SLOT_RADII[THREE.MathUtils.clamp(Math.trunc(slot), 0, 6)] ?? 0.5;
 }
+
+export function topHeightForSlot(slot: number): number {
+  return SLOT_Y[THREE.MathUtils.clamp(Math.trunc(slot), 0, 6)] ?? 0;
+}
