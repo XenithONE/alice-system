@@ -8,6 +8,7 @@ import {
 } from "react";
 import { FX_FAMILY_TINTS, fxFamilyForSkill } from "./content/fxFamily";
 import { makeCpuBuild } from "./content/cpuBuild";
+import { vortexAudio } from "./audio/engine";
 import type { SkillRuntimeState } from "./sim/types";
 import {
   ACTIVE_SKILLS,
@@ -1210,6 +1211,36 @@ function stateToVisual(
  * player nothing except that the dock has seven positions, and pushed the ones
  * that do something to the edge of a row they did not need to share.
  */
+/**
+ * Mute toggle. Reads/writes the singleton, keeps a local mirror only so
+ * React re-renders the label — the singleton (and vc.audio.v1 behind it)
+ * stays the single source of truth, which is why the M key handler does not
+ * need to reach this component.
+ */
+function AudioToggle() {
+  const [muted, setMutedState] = useState(vortexAudio.muted);
+  useEffect(() => {
+    // The M key flips the singleton without React knowing; poll cheaply.
+    const timer = window.setInterval(() => setMutedState(vortexAudio.muted), 500);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <button
+      className="vc-btn vc-btn--ghost"
+      style={{ pointerEvents: "auto" }}
+      aria-label={muted ? "音を出す" : "音を消す"}
+      title="M"
+      onClick={() => {
+        vortexAudio.unlock();
+        vortexAudio.setMuted(!muted);
+        setMutedState(!muted);
+      }}
+    >
+      {muted ? "SOUND OFF" : "SOUND ON"}
+    </button>
+  );
+}
+
 function SkillDock({
   skills,
   disabled,
@@ -1313,10 +1344,16 @@ function MatchScreen({
         activate(Number(event.key) as SkillSlot);
       } else if (event.key === "Escape") {
         setPaused((value) => !value);
+      } else if (event.key === "m" || event.key === "M") {
+        vortexAudio.setMuted(!vortexAudio.muted);
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      // The sudden-death drone must not outlive the match that earned it.
+      vortexAudio.reset();
+    };
   }, [activate]);
 
   useEffect(() => {
@@ -1326,7 +1363,7 @@ function MatchScreen({
     let animation = 0;
     let previous = performance.now();
     let accumulator = 0;
-    const scene = createVortexBattleScene(canvas);
+    const scene = createVortexBattleScene(canvas, vortexAudio);
     sceneRef.current = scene;
     /* Verification seam. The battle canvas cannot be screenshotted from the
        harness, so the only way to check what is actually in the scene — draw
@@ -1464,6 +1501,7 @@ function MatchScreen({
           {clock}
           <small>{(state?.suddenDeathStage ?? 0) > 0 ? `SUDDEN DEATH ${state!.suddenDeathStage}` : "BATTLE TIME"}</small>
         </div>
+        <AudioToggle />
         <button className="vc-btn vc-btn--ghost" style={{ pointerEvents: "auto" }} onClick={() => setPaused((value) => !value)}>
           {paused ? "再開" : "PAUSE"}
         </button>
@@ -1685,7 +1723,7 @@ function NetworkMatchView({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const scene = createVortexBattleScene(canvas);
+    const scene = createVortexBattleScene(canvas, vortexAudio);
     sceneRef.current = scene;
     const arena = RING_ARENAS.find((candidate) => candidate.id === settings.arenaId)!;
     scene.setup(
@@ -1737,10 +1775,15 @@ function NetworkMatchView({
       } else if (event.key === "Escape") {
         event.preventDefault();
         setMenuOpen((value) => !value);
+      } else if (event.key === "m" || event.key === "M") {
+        vortexAudio.setMuted(!vortexAudio.muted);
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      vortexAudio.reset();
+    };
   }, [session]);
 
   const time = Math.floor(state?.elapsed ?? 0);
@@ -1791,6 +1834,7 @@ function NetworkMatchView({
           {clock}
           <small>{(state?.suddenDeathStage ?? 0) > 0 ? `SUDDEN DEATH ${state!.suddenDeathStage}` : "20 HZ HOST SNAPSHOT"}</small>
         </div>
+        <AudioToggle />
         <button className="vc-btn vc-btn--ghost" style={{ pointerEvents: "auto" }} onClick={() => setMenuOpen((value) => !value)}>
           MENU
         </button>
@@ -2363,6 +2407,18 @@ function NetworkRoomFlow({
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("title");
+  useEffect(() => {
+    // Browsers gate AudioContext behind a gesture; any first input anywhere
+    // in the app is that gesture. unlock() is idempotent and cheap after the
+    // first call, so the listeners simply stay on.
+    const unlock = () => vortexAudio.unlock();
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
   const [role, setRole] = useState<NetworkRole>("solo");
   const [settings, setSettings] = useState<GameSettings>(DEFAULT_SETTINGS);
   const [build, setBuild] = useState<TopBuildSpec>(buildFromUrl);

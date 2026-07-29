@@ -19,6 +19,7 @@ import {
 } from "../content/fxFamily";
 import type { SimEvent } from "../sim/types";
 import { assertNever } from "../assertNever";
+import type { AudioSink } from "../audio/engine";
 
 export type { BattlePresentation } from "./battlePresentation";
 
@@ -416,7 +417,16 @@ function makeNameLabel(name: string, color: number): THREE.Sprite {
   return sprite;
 }
 
-export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattleScene {
+/*
+ * `audio` is fed at exactly the points the visual cues fire, AFTER the same
+ * ranking and budget. What you hear is what you see — an event dropped by
+ * the cue budget is dropped from both senses, so the two can never disagree
+ * about what just happened.
+ */
+export function createVortexBattleScene(
+  canvas: HTMLCanvasElement,
+  audio?: AudioSink,
+): VortexBattleScene {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const lowPower = matchMedia("(max-width: 700px)").matches || devicePixelRatio > 2.5;
   const renderer = new THREE.WebGLRenderer({
@@ -540,6 +550,7 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
   let disposed = false;
   let clock = 0;
   let lastTick = -1;
+  let lastPhase = "";
   /* Presentation-only. None of these are read by the simulation: shaking the
      camera or punching the FOV must never be able to change a result. */
   let shake = 0;
@@ -813,6 +824,7 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
           fovPunch = Math.min(3.4, fovPunch + power * 0.34);
           // The impact mark is a ring too - a third pool would be a third draw call.
           spawnCue("ring", at, 0xffffff, 0.25, 1.1, 0.3);
+          audio?.cue({ kind: "impact", impulse: event.impulse });
           const victim = bots.get(event.victim);
           if (victim) {
             victim.recoil
@@ -829,6 +841,7 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
           if (spent >= FRAME_CUE_BUDGET) break;
           spent += 1;
           playSkillCue(family ?? "overclock", event.seat, null);
+          audio?.cue({ kind: "skill", family: family ?? "overclock" });
           break;
         }
         case "shockwave": {
@@ -839,6 +852,7 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
           spawnCue("ring", at, tint, 0.3, Math.max(0.8, event.radius), 0.55);
           burstAt(at, tint, lowPower ? 6 : 14, "disc");
           shake = Math.min(0.5, shake + 0.12);
+          audio?.cue({ kind: "shockwave" });
           break;
         }
         case "knockout": {
@@ -854,12 +868,14 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
           }
           shake = Math.min(0.6, shake + 0.34);
           fovPunch = Math.min(4, fovPunch + 2.4);
+          audio?.cue({ kind: "knockout", reason: event.reason });
           break;
         }
         case "sudden-death": {
           // A rule change, so it is announced by the arena rather than by a top.
           suddenDeathStage = Math.max(suddenDeathStage, event.stage);
           shake = Math.min(0.5, shake + 0.2);
+          audio?.cue({ kind: "sudden-death", stage: event.stage });
           break;
         }
         default:
@@ -1078,6 +1094,7 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
   return {
     setup(builds, names, nextArena, nextMySeat, presentation) {
       mySeat = nextMySeat;
+      lastPhase = "";
       setupArena(nextArena);
       setupBots(builds, names, presentation);
       lastTick = -1;
@@ -1087,6 +1104,11 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
     pushSnapshot(snapshot) {
       if (snapshot.tick <= lastTick) return;
       lastTick = snapshot.tick;
+      // The launch sting belongs to the transition, not to any one event.
+      if (snapshot.phase === "live" && lastPhase === "countdown") {
+        audio?.cue({ kind: "launch" });
+      }
+      lastPhase = snapshot.phase;
       for (const state of snapshot.bots) {
         const visual = bots.get(state.seat);
         if (!visual) continue;

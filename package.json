@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "sitemap": "npx tsx scripts/sitemap.ts",
     "site:gates": "npx tsx src/portfolio/bentoSelftest.ts && npx tsx src/portfolio/qualitySelftest.ts && npx tsx scripts/sitemap.ts --check && python scripts/optimize_covers.py --check && node scripts/measure_closure.mjs",
-    "vortex:content-gates": "npx tsx src/vortex/content/gates.ts && npx tsx src/vortex/content/fxSelftest.ts",
+    "vortex:content-gates": "npx tsx src/vortex/content/gates.ts && npx tsx src/vortex/content/fxSelftest.ts && npx tsx src/vortex/audio/selftest.ts",
     "vortex:endless-gates": "npx tsx src/vortex/endless/selftest.ts",
     "vortex:launch-gates": "npx tsx src/vortex/launch/selftest.ts",
     "vortex:sim-gates": "npx tsx src/vortex/sim/headlessSelftest.ts && npx tsx src/vortex/sim/passiveSelftest.ts && npx tsx src/vortex/sim/targetingSelftest.ts && npx tsx src/vortex/sim/phaseSelftest.ts && npx tsx src/vortex/sim/finishSelftest.ts && npx tsx src/vortex/sim/teamSelftest.ts && npm run vortex:launch-gates",
