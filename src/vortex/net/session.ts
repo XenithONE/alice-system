@@ -836,23 +836,23 @@ class HostSessionImpl extends AuthoritativeLoop implements VortexSession {
         !seat.ready ||
         (this.settings.mode === "custom" && seat.build === null),
     );
-    const endlessMissingHuman =
+    /*
+     * Endless used to demand a real player in every seat, which made the
+     * game's deepest mode (~1,900 lines of engine) effectively dead code:
+     * it required 2-4 simultaneous humans on a personal site. Occupied
+     * seats must still be ready with a build; vacant seats become CPUs,
+     * exactly like every other mode. The engine side never cared — it has
+     * carried a cpuSeats list and a disconnect-to-CPU handover all along.
+     */
+    const endlessNotReady =
       this.settings.mode === "endless" &&
-      (humanSeats.length !== this.settings.playerCount ||
-        this.seats
-          .slice(0, this.settings.playerCount)
-          .some(
-            (seat) =>
-              (seat.occupant !== "host" && seat.occupant !== "guest") ||
-              !seat.ready ||
-              seat.build === null,
-          ));
-    if (waitingForHuman || endlessMissingHuman) {
+      humanSeats.some((seat) => !seat.ready || seat.build === null);
+    if (waitingForHuman || endlessNotReady) {
       const message =
         this.settings.mode === "draft"
           ? "参加プレイヤーの準備完了を待っています。"
           : this.settings.mode === "endless"
-            ? "ENDLESSは2〜4人全員の参加・準備完了が必要です。"
+            ? "参加中プレイヤー全員のREADYとビルドが必要です。"
           : "参加プレイヤーのビルド確定を待っています。";
       this.callbacks.onError?.(message);
       throw new Error(message);
@@ -864,6 +864,10 @@ class HostSessionImpl extends AuthoritativeLoop implements VortexSession {
         return;
       }
       if (this.settings.mode === "endless") {
+        for (let seat = 0; seat < this.settings.playerCount; seat += 1) {
+          if (!this.seats[seat]!.build) this.fillVacantSeat(seat);
+        }
+        this.publishLobby();
         this.beginEndlessRun();
         return;
       }
@@ -1354,29 +1358,33 @@ class HostSessionImpl extends AuthoritativeLoop implements VortexSession {
     this.rewardDeadlineMs = 0;
   }
 
+  /** Turns one vacant seat into a ready CPU. The single fill rule. */
+  private fillVacantSeat(seat: number): TopBuildSpec {
+    const current = this.seats[seat]!;
+    const build =
+      this.config.cpuBuilds?.[seat - 1] ??
+      this.config.cpuBuilds?.[0] ??
+      this.config.build;
+    this.seats[seat] = {
+      ...current,
+      name: `CPU ${seat + 1}`,
+      occupant: "cpu",
+      ready: true,
+      build,
+    };
+    return build;
+  }
+
   private async launchMatch(
     draftedSpecs?: readonly TopBuildSpec[],
   ): Promise<void> {
-    const fallback = this.config.build;
     const resolved: ResolvedTopBuild<TopBuildSpec>[] = [];
     const specs: TopBuildSpec[] = [];
     const names: string[] = [];
     for (let seat = 0; seat < this.settings.playerCount; seat += 1) {
       const current = this.seats[seat]!;
-      let build = draftedSpecs?.[seat] ?? current.build;
-      if (!build) {
-        build =
-          this.config.cpuBuilds?.[seat - 1] ??
-          this.config.cpuBuilds?.[0] ??
-          fallback;
-        this.seats[seat] = {
-          ...current,
-          name: `CPU ${seat + 1}`,
-          occupant: "cpu",
-          ready: true,
-          build,
-        };
-      }
+      const build =
+        draftedSpecs?.[seat] ?? current.build ?? this.fillVacantSeat(seat);
       specs.push(build);
       names.push(this.seats[seat]!.name);
       resolved.push(this.resolver(build, this.settings));

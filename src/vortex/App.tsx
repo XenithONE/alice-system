@@ -9,6 +9,8 @@ import {
 import { FX_FAMILY_TINTS, fxFamilyForSkill } from "./content/fxFamily";
 import { makeCpuBuild } from "./content/cpuBuild";
 import { vortexAudio } from "./audio/engine";
+import { loadRecords, recordEndlessWave, recordMatch } from "./records";
+import type { CpuLevel } from "./sim/ai";
 import type { SkillRuntimeState } from "./sim/types";
 import {
   ACTIVE_SKILLS,
@@ -120,6 +122,7 @@ interface GameSettings {
   costLimit: BuildCostLimit;
   arenaId: SimRingArena["id"];
   mode: VortexGameMode;
+  cpuLevel: CpuLevel;
 }
 
 interface FinishedMatch {
@@ -153,6 +156,19 @@ const STAT_LABELS = {
   mobility: "機動",
   durability: "耐久"
 } as const;
+/*
+ * What each number DOES, phrased against the simulation's actual formulas
+ * (world.ts): six stats existed for three versions with no explanation
+ * anywhere in the product.
+ */
+const STAT_HELP: Record<keyof typeof STAT_LABELS, string> = {
+  attack: "接触・衝撃波で与えるダメージが増える",
+  defense: "受けるダメージを割り算で軽減する",
+  stamina: "回転エネルギーの消耗が遅くなる",
+  stability: "傾きへの復元力。転倒と横滑りに強くなる",
+  mobility: "追跡・旋回の操舵力が上がる",
+  durability: "HP上限が増える（72+2.15×耐久）"
+};
 const RING_DESCRIPTIONS: Record<SimRingArena["id"], string> = {
   "core-bowl": "中央へ自然に引き寄せる標準的な深皿。攻防持久すべてが機能します。",
   "wide-dish": "広く浅い長期戦型。高機動の追跡と持久構成が力を発揮します。",
@@ -165,7 +181,8 @@ const DEFAULT_SETTINGS: GameSettings = {
   playerCount: 4,
   costLimit: 1000,
   arenaId: "core-bowl",
-  mode: "custom"
+  mode: "custom",
+  cpuLevel: 2
 };
 
 function isFiniteBudget(value: BuildCostLimit): boolean {
@@ -219,15 +236,26 @@ function buildToVisual(build: TopBuildSpec): TopVisualSpec {
 }
 
 
+/*
+ * `nonce` is the launch counter. Without it the CPU seed collapsed to
+ * `arenaId.length + playerCount` — at most a handful of distinct values —
+ * so REMATCH and every session on the same arena met literally identical
+ * opponents.
+ */
 function makeBattleBuilds(
   player: TopBuildSpec,
-  settings: GameSettings
+  settings: GameSettings,
+  nonce: number
 ): readonly TopBuildSpec[] {
   return Array.from({ length: settings.playerCount }, (_, seat) =>
     seat === 0
       ? player
       : {
-          ...makeCpuBuild(seat, settings.costLimit, settings.arenaId.length + settings.playerCount),
+          ...makeCpuBuild(
+            seat,
+            settings.costLimit,
+            settings.arenaId.length + settings.playerCount + nonce * 17
+          ),
           paint: PLAYER_COLORS[seat % PLAYER_COLORS.length]!
         }
   );
@@ -420,6 +448,20 @@ function SettingsFields({
         </select>
       </div>
       <div className="vc-field">
+        <label htmlFor="vc-cpu-level">CPU強度</label>
+        <select
+          id="vc-cpu-level"
+          value={settings.cpuLevel}
+          onChange={(event) =>
+            onChange({ ...settings, cpuLevel: Number(event.target.value) as CpuLevel })
+          }
+        >
+          <option value={1}>1 / ゆるい</option>
+          <option value={2}>2 / 標準</option>
+          <option value={3}>3 / 手強い</option>
+        </select>
+      </div>
+      <div className="vc-field">
         <label htmlFor="vc-cost-limit">コスト上限</label>
         <select
           id="vc-cost-limit"
@@ -505,20 +547,18 @@ function ModeScreen({
             <small>7-ROUND SNAKE PICK</small>
             <p>部位ごとに順番を反転。取得済みパーツと予算予約をホストが厳密に検証します。</p>
           </button>
-          {role === "host" && (
-            <button
-              className="vc-mode-card vc-mode-card--endless"
-              onClick={onEndless}
-              data-testid="mode-endless"
-            >
-              <b>ENDLESS CO-OP</b>
-              <small>2–4 PILOTS / ROGUELIKE WAVES</small>
-              <p>
-                人数分の仲間だけで共闘。各WAVE後に3択でパーツを重ね、
-                同部位Activeを一斉発動して無限強化の敵へ挑みます。
-              </p>
-            </button>
-          )}
+          <button
+            className="vc-mode-card vc-mode-card--endless"
+            onClick={onEndless}
+            data-testid="mode-endless"
+          >
+            <b>ENDLESS CO-OP</b>
+            <small>1–4 PILOTS / ROGUELIKE WAVES</small>
+            <p>
+              各WAVE後に3択でパーツを重ね、同部位Activeを一斉発動して
+              無限強化の敵へ挑みます。1人でも出撃可能 — 空席はCPUの僚機です。
+            </p>
+          </button>
           <button className="vc-mode-card" onClick={onQuick}>
             <b>QUICK LAUNCH</b>
             <small>INSTANT PHYSICS MATCH</small>
@@ -824,7 +864,7 @@ function BuilderScreen({
           </div>
           <div className="vc-stat-block vc-stats">
             {(Object.keys(STAT_LABELS) as (keyof typeof STAT_LABELS)[]).map((stat) => (
-              <div className="vc-stat" key={stat}>
+              <div className="vc-stat" key={stat} title={STAT_HELP[stat]}>
                 <span>{STAT_LABELS[stat]}</span>
                 <span className="vc-stat__bar">
                   <i style={{ width: `${Math.min(100, derived.stats[stat] / 6)}%` }} />
@@ -1217,6 +1257,53 @@ function stateToVisual(
  * stays the single source of truth, which is why the M key handler does not
  * need to reach this component.
  */
+const INTRO_STORAGE_KEY = "vc.intro.v1";
+
+/**
+ * Shown once, before the first battle a browser ever sees. The game had no
+ * screen anywhere that said how you WIN — a player could finish matches
+ * without learning that the rim is a kill zone or that 1-7 do anything.
+ */
+function IntroOverlay() {
+  const [seen, setSeen] = useState(() => {
+    try {
+      return localStorage.getItem(INTRO_STORAGE_KEY) === "seen";
+    } catch {
+      return true;
+    }
+  });
+  if (seen) return null;
+  return (
+    <div className="vc-intro" role="dialog" aria-label="遊び方">
+      <div className="vc-intro__card">
+        <h2>勝利条件</h2>
+        <ul>
+          <li><b>場外</b> — 相手をリングの外へ弾き出す（主要な決着）</li>
+          <li><b>破壊</b> — 接触とスキルでHPを削り切る</li>
+          <li><b>判定</b> — 時間切れ時は残HPなどで決まる</li>
+        </ul>
+        <p>
+          機体は自動で動く。あなたの仕事は <b>1〜7</b> のスキルを正しい瞬間に
+          撃つこと。120秒でサドンデス — 全ダメージが跳ね上がる。
+        </p>
+        <button
+          className="vc-btn vc-btn--primary"
+          onClick={() => {
+            try {
+              localStorage.setItem(INTRO_STORAGE_KEY, "seen");
+            } catch {
+              /* storage's absence must not trap the player here */
+            }
+            setSeen(true);
+          }}
+        >
+          了解、出撃する
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AudioToggle() {
   const [muted, setMutedState] = useState(vortexAudio.muted);
   useEffect(() => {
@@ -1240,6 +1327,18 @@ function AudioToggle() {
     </button>
   );
 }
+
+/*
+ * Seven reject reasons are produced by the host, carried by the protocol,
+ * and validated by the wire gate — and until v3 rendered nowhere. The dock
+ * shows the per-slot `blockedReason` the snapshot already carries; only the
+ * reasons a player can act on get words, the rest stay as the countdown.
+ */
+const BLOCKED_LABEL: Partial<Record<string, string>> = {
+  "no-charges": "残弾なし",
+  condition: "条件未達",
+  "knocked-out": "戦闘不能",
+};
 
 function SkillDock({
   skills,
@@ -1297,11 +1396,12 @@ function SkillDock({
             <small>
               {stacked
                 ? `${skill?.readyCount ?? 0}/${skill?.groupSize} SYNC`
-                : remaining > 0.05
-                  ? `${remaining.toFixed(1)}s`
-                  : (skill?.chargesRemaining ?? -1) < 0
-                    ? "∞"
-                    : `×${skill?.chargesRemaining}`}
+                : (skill?.blockedReason && BLOCKED_LABEL[skill.blockedReason]) ||
+                  (remaining > 0.05
+                    ? `${remaining.toFixed(1)}s`
+                    : (skill?.chargesRemaining ?? -1) < 0
+                      ? "∞"
+                      : `×${skill?.chargesRemaining}`)}
             </small>
           </button>
         );
@@ -1334,7 +1434,9 @@ function MatchScreen({
   const resultSent = useRef(false);
 
   const activate = useCallback((slot: SkillSlot) => {
-    simRef.current?.activate(0, slot);
+    const result = simRef.current?.activate(0, slot);
+    // Keyboard can press what the dock has disabled; the refusal is audible.
+    if (result && !result.ok) vortexAudio.cue({ kind: "deny" });
   }, []);
 
   useEffect(() => {
@@ -1416,7 +1518,7 @@ function MatchScreen({
             sim.step();
             if (sim.phase === "live" && sim.tick % 12 === 0) {
               for (let seat = 1; seat < builds.length; seat += 1) {
-                const slot = aiActivation(sim, seat as SeatIndex);
+                const slot = aiActivation(sim, seat as SeatIndex, settings.cpuLevel);
                 if (slot !== null) sim.activate(seat as SeatIndex, slot);
               }
             }
@@ -1521,18 +1623,27 @@ function MatchScreen({
           )}
         </div>
       )}
+      <div className="vc-legend">1–7 スキル ｜ M 音 ｜ ESC ポーズ</div>
+      <IntroOverlay />
       <SkillDock skills={me?.skills} disabled={paused} onActivate={activate} />
     </main>
   );
 }
 
+const KNOCKOUT_LABEL: Record<string, string> = {
+  "ring-out": "場外",
+  destroyed: "破壊",
+};
+
 function ResultScreen({
   match,
+  mode = "solo",
   onRematch,
   onBuilder,
   onTitle
 }: {
   match: FinishedMatch;
+  mode?: "solo" | "network";
   onRematch: () => void;
   onBuilder: () => void;
   onTitle: () => void;
@@ -1542,6 +1653,31 @@ function ResultScreen({
     return second.hp - first.hp;
   });
   const winner = match.result.winner;
+  /*
+   * Recorded here rather than at every call site: this screen is the single
+   * place a finished match becomes visible, so it is the single place the
+   * match becomes history. The effect key is the match object itself —
+   * strict-mode double-mount is the one duplicate to guard against, and the
+   * ref does that.
+   */
+  const recorded = useRef<FinishedMatch | null>(null);
+  const [records, setRecords] = useState(loadRecords);
+  useEffect(() => {
+    if (recorded.current === match) return;
+    recorded.current = match;
+    setRecords(
+      recordMatch({
+        at: Date.now(),
+        mode,
+        arenaId: match.state.arenaId ?? "",
+        outcome: winner === 0 ? "win" : winner === null ? "draw" : "loss",
+        reason: match.result.reason,
+        durationSec: match.result.durationSec,
+      })
+    );
+  }, [match, mode, winner]);
+  const clock = (seconds: number) =>
+    `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
   return (
     <main className="vc-result">
       <TopBar onLogo={onTitle} status="MATCH ARCHIVE COMPLETE" />
@@ -1562,6 +1698,24 @@ function ResultScreen({
               <span>{top.alive ? "SURVIVED" : "KNOCKOUT"}</span>
             </div>
           ))}
+        </div>
+        {/* The result always carried a timeline; it was simply never shown. */}
+        <div className="vc-result__timeline">
+          <small>
+            決着 {clock(match.result.durationSec)}
+            {match.result.knockouts.map((knockout) => {
+              const name =
+                match.state.tops.find((top) => top.seat === knockout.seat)?.name ??
+                `#${knockout.seat + 1}`;
+              return ` ｜ ${clock(knockout.at)} ${name} ${KNOCKOUT_LABEL[knockout.reason] ?? knockout.reason}`;
+            }).join("")}
+          </small>
+          <small>
+            通算 {records.matches}戦 {records.wins}勝{records.losses}敗
+            {records.draws > 0 ? `${records.draws}分` : ""} ｜ 場外{records.ringOuts}
+            ・破壊{records.destroys}
+            {records.bestWave > 0 ? ` ｜ ENDLESS最高 WAVE ${records.bestWave}` : ""}
+          </small>
         </div>
         <div className="vc-title__actions" style={{ justifyContent: "center" }}>
           <button className="vc-btn vc-btn--primary" onClick={onRematch}>REMATCH</button>
@@ -1771,7 +1925,8 @@ function NetworkMatchView({
     const onKey = (event: KeyboardEvent) => {
       if (/^[1-7]$/u.test(event.key)) {
         event.preventDefault();
-        session.activate(Number(event.key) as SkillSlot);
+        const result = session.activate(Number(event.key) as SkillSlot);
+        if (result && !result.ok) vortexAudio.cue({ kind: "deny" });
       } else if (event.key === "Escape") {
         event.preventDefault();
         setMenuOpen((value) => !value);
@@ -1851,6 +2006,8 @@ function NetworkMatchView({
           )}
         </div>
       )}
+      <div className="vc-legend">1–7 スキル ｜ M 音 ｜ ESC メニュー</div>
+      <IntroOverlay />
       <SkillDock skills={me?.skills} disabled={menuOpen} onActivate={(slot) => session.activate(slot)} />
     </main>
   );
@@ -1918,7 +2075,9 @@ function NetworkRoomFlow({
             ? Number.POSITIVE_INFINITY
             : roomSettings.costLimit,
         arenaId: roomSettings.arenaId as SimRingArena["id"],
-        mode: roomSettings.mode
+        mode: roomSettings.mode,
+        // Not in protocol v1; the local pick survives the room handshake.
+        cpuLevel: settings.cpuLevel
       });
     },
     onDraftState(nextDraft: DraftState, remainingMs: number) {
@@ -1934,6 +2093,8 @@ function NetworkRoomFlow({
       snapshotRef.current = null;
     },
     onEndlessState(nextEndless: EndlessStateView) {
+      // The wave counter IS the endless score; the best one persists.
+      recordEndlessWave(nextEndless.run.wave);
       setEndlessState(nextEndless);
       if (nextEndless.phase !== "battle") {
         setLaunchPhase(null);
@@ -1963,6 +2124,7 @@ function NetworkRoomFlow({
             payload.settings.costLimit >= Number.MAX_SAFE_INTEGER
               ? Number.POSITIVE_INFINITY
               : payload.settings.costLimit,
+          cpuLevel: settings.cpuLevel,
           arenaId: payload.settings.arenaId as SimRingArena["id"],
           mode: payload.settings.mode
         }
@@ -2032,7 +2194,7 @@ function NetworkRoomFlow({
         name: build.name,
         build,
         settings: toRoomSettings(settings),
-        cpuBuilds: cpuBuilds ?? makeBattleBuilds(build, settings).slice(1),
+        cpuBuilds: cpuBuilds ?? makeBattleBuilds(build, settings, Date.now() % 9973).slice(1),
         ...(useBroadcastTransport() ? { wire: createBroadcastChannelWire() } : {})
       }, callbacks);
       attachSession(next);
@@ -2110,12 +2272,39 @@ function NetworkRoomFlow({
     onBack();
   };
 
+  /*
+   * REMATCH used to be one of three buttons that all called exit — the one
+   * labelled rematch quit the room. A session cannot restart a finished
+   * match (started/matchStarted latch in the host loop), so rematch means:
+   * tear the session down, stay on this screen, and let the lobby remount
+   * fresh with the same role, settings, and room-code field.
+   */
+  const rematch = () => {
+    sessionRef.current?.dispose();
+    sessionRef.current = null;
+    setSession(null);
+    setLobby(null);
+    setSnapshot(null);
+    setNetworkDraft(null);
+    setLaunchPhase(null);
+    setEndlessState(null);
+    setStartInfo(null);
+    setFinished(null);
+    setBusy(false);
+    setError("");
+    setGuestReady(false);
+  };
+
   if (finished) {
     return (
       <ResultScreen
         match={finished}
-        onRematch={exit}
-        onBuilder={exit}
+        mode="network"
+        onRematch={rematch}
+        onBuilder={() => {
+          rematch();
+          onEditBuild();
+        }}
         onTitle={exit}
       />
     );
@@ -2224,12 +2413,14 @@ function NetworkRoomFlow({
       ready: seat === 0 && role === "host",
       build: seat === 0 && role === "host" ? build : null
     }));
-  const exactEndlessSquadReady =
+  /* Mirrors HostSessionImpl.start: occupied human seats must be ready;
+     vacant seats become CPU wingmates. */
+  const endlessSquadReady =
     settings.mode !== "endless" ||
-    seats.length === settings.playerCount &&
-      seats.every((seat) =>
-        (seat.occupant === "host" || seat.occupant === "guest") && seat.ready
-      );
+    seats.every(
+      (seat) =>
+        (seat.occupant !== "host" && seat.occupant !== "guest") || seat.ready
+    );
 
   return (
     <main className="vc-screen">
@@ -2277,7 +2468,7 @@ function NetworkRoomFlow({
             )}
             <p style={{ color: "var(--vc-muted)", fontSize: 11, lineHeight: 1.7 }}>
               {settings.mode === "endless"
-                ? "ENDLESSは設定人数ぶんの2〜4人が全員READYで開始。開始後のゲスト切断は同じ機体をCPUが引き継ぎます。"
+                ? "ENDLESSは1人でも開始可能。空席はCPU僚機になり、開始後のゲスト切断も同じ機体をCPUが引き継ぎます。"
                 : "空席は開始時にCPUで補充。ゲスト切断時は同じ機体をCPUが引き継ぎ、ホスト切断時はルームを終了します。"}
             </p>
             {error && <div className="vc-errors" role="alert">{error}</div>}
@@ -2291,15 +2482,15 @@ function NetworkRoomFlow({
                 <button
                   className="vc-btn vc-btn--primary"
                   style={{ width: "100%" }}
-                  disabled={busy || !exactEndlessSquadReady}
+                  disabled={busy || !endlessSquadReady}
                   onClick={startHost}
                 >
                   {busy
                     ? "STARTING…"
                     : settings.mode === "endless"
-                      ? exactEndlessSquadReady
-                        ? "全員でENDLESSを開始"
-                        : `${settings.playerCount}人全員のREADY待ち`
+                      ? endlessSquadReady
+                        ? "空席をCPU僚機にしてENDLESS開始"
+                        : "参加中プレイヤーのREADY待ち"
                       : "空席をCPUで補充して開始"}
                 </button>
                 <button
@@ -2429,6 +2620,9 @@ export default function App() {
     useState<LaunchStopResult | null>(null);
   const [finished, setFinished] = useState<FinishedMatch | null>(null);
   const [guestRoomCode, setGuestRoomCode] = useState("");
+  /* Increments per launch so rematches meet fresh CPU builds. A ref, not
+     state: nothing renders it. */
+  const matchNonce = useRef(0);
 
   const launch = useCallback((builds: readonly TopBuildSpec[]) => {
     const seed = Date.now() >>> 0;
@@ -2465,7 +2659,8 @@ export default function App() {
       setScreen("builder");
       return;
     }
-    launch(makeBattleBuilds(build, settings));
+    matchNonce.current += 1;
+    launch(makeBattleBuilds(build, settings, matchNonce.current));
   }, [build, settings, launch]);
 
   const openHostRoom = useCallback(() => {
@@ -2523,6 +2718,13 @@ export default function App() {
               mode: "endless",
               costLimit: Number.isFinite(current.costLimit) ? current.costLimit : 1000
             }));
+            /*
+             * Endless runs on the authoritative session, which only the host
+             * flow creates. A solo player therefore BECOMES a host: same
+             * builder, then a room they can start alone — vacant seats are
+             * CPU wingmates. No separate solo-endless engine to drift.
+             */
+            if (role === "solo") setRole("host");
             setScreen("builder");
           }}
           onQuick={() => {
