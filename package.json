@@ -9,7 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "sitemap": "npx tsx scripts/sitemap.ts",
-    "site:gates": "npx tsx src/portfolio/bentoSelftest.ts && npx tsx scripts/sitemap.ts --check && node scripts/measure_closure.mjs",
+    "site:gates": "npx tsx src/portfolio/bentoSelftest.ts && npx tsx scripts/sitemap.ts --check && python scripts/optimize_covers.py --check && node scripts/measure_closure.mjs",
     "vortex:content-gates": "npx tsx src/vortex/content/gates.ts",
     "vortex:endless-gates": "npx tsx src/vortex/endless/selftest.ts",
     "vortex:launch-gates": "npx tsx src/vortex/launch/selftest.ts",
@@ -19,7 +19,8 @@
     "vortex:gates": "npm run vortex:content-gates && npm run vortex:endless-gates && npm run vortex:sim-gates && npm run vortex:net-gates && npm run vortex:render-gates",
     "arena:render-gates": "npx tsx src/arena/render/renderPlanSelftest.ts && npx tsx src/arena/render/proceduralGeometrySelftest.ts && npx tsx src/arena/render/driveGeometrySelftest.ts && npx tsx src/arena/render/rotorPositionSelftest.ts && npx tsx src/arena/render/resourceDisposalSelftest.ts && npx tsx src/arena/render/entityVisualSelftest.ts && npx tsx src/arena/render/drivePhaseSelftest.ts",
     "arena:mechanism-gates": "npx tsx src/arena/sim/trapSelftest.ts && npx tsx src/arena/sim/netSelftest.ts && npx tsx src/arena/sim/harpoonSelftest.ts && npx tsx src/arena/net/wireSizeSelftest.ts",
-    "arena:gates": "npx tsx src/arena/sim/catalogSelftest.ts && npx tsx src/arena/sim/buildSelftest.ts && npx tsx src/arena/sim/driveSelftest.ts && npx tsx src/arena/sim/legSelftest.ts && npx tsx src/arena/sim/headless.ts && npx tsx src/arena/sim/headingSelftest.ts && npx tsx src/arena/sim/spinupSelftest.ts && npx tsx src/arena/sim/internalsSelftest.ts && npx tsx src/arena/sim/levelSelftest.ts && npx tsx src/arena/builder/levelMountSelftest.ts && npx tsx src/arena/builder/storageSelftest.ts && npm run arena:render-gates && npm run arena:mechanism-gates"
+    "arena:gates": "npx tsx src/arena/sim/catalogSelftest.ts && npx tsx src/arena/sim/buildSelftest.ts && npx tsx src/arena/sim/driveSelftest.ts && npx tsx src/arena/sim/legSelftest.ts && npx tsx src/arena/sim/headless.ts && npx tsx src/arena/sim/headingSelftest.ts && npx tsx src/arena/sim/spinupSelftest.ts && npx tsx src/arena/sim/internalsSelftest.ts && npx tsx src/arena/sim/levelSelftest.ts && npx tsx src/arena/builder/levelMountSelftest.ts && npx tsx src/arena/builder/storageSelftest.ts && npm run arena:render-gates && npm run arena:mechanism-gates",
+    "covers": "python scripts/optimize_covers.py"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

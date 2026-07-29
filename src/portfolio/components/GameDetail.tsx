@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Work } from "../../data/works";
+import { DETAIL_SIZES, mediaFor, type Art } from "../bento";
 import { StatusBadge, PlatformRow, EngineChip, MadeWith } from "./badges";
 
 const BASE = import.meta.env.BASE_URL;
@@ -24,6 +25,17 @@ export function GameDetail({ work, onClose }: { work: Work | null; onClose: () =
   return (
     <dialog ref={ref} className="game-detail" onClose={onClose} onClick={onBackdrop} aria-label="タイトル詳細">
       {work && (
+        <DetailShell work={work} art={mediaFor(work.cover, BASE, DETAIL_SIZES)} onClose={onClose} />
+      )}
+    </dialog>
+  );
+}
+
+/* Split out so `work` is a Work rather than a Work | null narrowed by a JSX
+   guard — the art has to be computed from it, and && does not narrow across a
+   const declared outside the branch. */
+function DetailShell({ work, art, onClose }: { work: Work; art: Art; onClose: () => void }) {
+  return (
         <div className="detail-shell">
           <button type="button" className="detail-close" onClick={onClose} aria-label="閉じる">
             ✕
@@ -31,9 +43,15 @@ export function GameDetail({ work, onClose }: { work: Work | null; onClose: () =
 
           <div className="detail-media">
             {work.trailer ? (
-              <video src={BASE + work.trailer} poster={BASE + work.cover} controls playsInline preload="metadata" />
+              <video src={BASE + work.trailer} poster={art.src} controls playsInline preload="metadata" />
             ) : (
-              <img src={BASE + work.cover} alt={`${work.title} のキーアート`} />
+              <img
+                src={art.src}
+                {...(art.srcSet ? { srcSet: art.srcSet, sizes: art.sizes } : {})}
+                width={art.width}
+                height={art.height}
+                alt={`${work.title} のキーアート`}
+              />
             )}
           </div>
 
@@ -98,7 +116,5 @@ export function GameDetail({ work, onClose }: { work: Work | null; onClose: () =
             </div>
           </div>
         </div>
-      )}
-    </dialog>
   );
 }

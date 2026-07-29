@@ -10,7 +10,7 @@
  * Run: npx tsx src/portfolio/bentoSelftest.ts
  */
 
-import { CATALOG, GRID_COLUMNS, TIERS, packBands, packedOrder, tierOf } from "./bento";
+import { CATALOG, GRID_COLUMNS, TIERS, artFor, packBands, packedOrder, tierOf } from "./bento";
 import { ARENA_GAMES } from "../data/arenaGames";
 import { STUDIO_TALLY, WORKS } from "../data/works";
 
@@ -169,6 +169,34 @@ check(
   STUDIO_TALLY.live === WORKS.filter((w) => w.status === "playable").length &&
     STUDIO_TALLY.live < CATALOG.filter((w) => w.status === "playable").length,
   `tally.live=${STUDIO_TALLY.live} / カタログの playable=${CATALOG.filter((w) => w.status === "playable").length}`
+);
+
+/* ---------------- the pictures are the right size ---------------- */
+
+/*
+ * artFor falls back to the full-size source when a work has no derivatives, so
+ * that a new cover renders rather than 404s. A fallback is the correct
+ * behaviour and the wrong outcome — it means someone added art and did not run
+ * the optimiser, and the only symptom is a slow page. Make it loud here.
+ */
+const unoptimised = order
+  .map((w) => ({ w, art: artFor(w, tierOf(w), "/") }))
+  .filter(({ art }) => art.srcSet === "");
+check(
+  "[F1] 全タイルが幅の派生を持つ（原寸フォールバックに落ちていない）",
+  unoptimised.length === 0,
+  unoptimised.length
+    ? `${unoptimised.map(({ w }) => w.id).join(", ")} — python scripts/optimize_covers.py`
+    : `${order.length} 件すべて srcset あり`
+);
+
+const badSizes = order
+  .map((w) => ({ w, art: artFor(w, tierOf(w), "/") }))
+  .filter(({ art }) => art.srcSet !== "" && !art.sizes.includes("max-width"));
+check(
+  "[F2] srcset を出すタイルは必ず sizes も出す（無いと 100vw 扱いで最大幅を掴む）",
+  badSizes.length === 0,
+  badSizes.length ? badSizes.map(({ w }) => w.id).join(", ") : "なし"
 );
 
 /* ---------------- growth ---------------- */

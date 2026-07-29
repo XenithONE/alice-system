@@ -1,0 +1,192 @@
+{
+  "assets/atelier-adrift-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/constellation-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/demiurge-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/dragons-keep-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/hollow-ward-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/hollow-ward-poster.webp": {
+    "h": 1536,
+    "w": 1024,
+    "widths": [
+      360,
+      560,
+      760,
+      1024
+    ]
+  },
+  "assets/huntcontract-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/iwbtg-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/locker-hunt-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/relic-road-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/rift-courier-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/rlyeh-engine-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/scrap-crown-cover.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/signal-runner-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/signal-siege-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/signal-siege-poster.webp": {
+    "h": 1536,
+    "w": 1024,
+    "widths": [
+      360,
+      560,
+      760,
+      1024
+    ]
+  },
+  "assets/the-eidolon-brick.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
+  "assets/the-eidolon-poster.webp": {
+    "h": 1536,
+    "w": 1024,
+    "widths": [
+      360,
+      560,
+      760,
+      1024
+    ]
+  },
+  "assets/vortex-crown-cover.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  }
+}

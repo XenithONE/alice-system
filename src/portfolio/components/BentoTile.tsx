@@ -1,4 +1,4 @@
-import { TIERS, tierOf } from "../bento";
+import { TIERS, artFor, tierOf } from "../bento";
 import { EngineChip, StatusBadge, primaryCta } from "./badges";
 import type { Work } from "../../data/works";
 
@@ -34,17 +34,25 @@ export function BentoTile({ work, index, onOpenDetail }: Props) {
   const tier = tierOf(work);
   const spec = TIERS[tier];
   const cta = primaryCta(work);
-  const art = tier === "p" && work.poster ? work.poster : work.cover;
+  const art = artFor(work, tier, BASE);
   const eager = index < 2;
 
   return (
     <li className={`bento-tile bt-${tier} bt-${spec.mode}`} id={work.id} data-tier={tier}>
       <div className="bt-media">
+        {/*
+         * width/height are the source's, not the tile's — they only have to
+         * state the aspect ratio so the box is reserved before the bytes
+         * arrive. srcset then picks a width against the grid's breakpoints;
+         * the tiles are 344 CSS px for all but the XL, so the 1280 file was
+         * about four times the pixels being drawn.
+         */}
         <img
-          src={`${BASE}${art}`}
+          src={art.src}
+          {...(art.srcSet ? { srcSet: art.srcSet, sizes: art.sizes } : {})}
           alt=""
-          width={tier === "p" ? 1024 : 1280}
-          height={tier === "p" ? 1536 : 800}
+          width={art.width}
+          height={art.height}
           loading={eager ? "eager" : "lazy"}
           decoding={eager ? "sync" : "async"}
           {...(index === 0 ? { fetchPriority: "high" as const } : {})}

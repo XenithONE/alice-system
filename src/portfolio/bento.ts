@@ -1,4 +1,5 @@
 import { ARENA_GAMES } from "../data/arenaGames";
+import derivatives from "../data/imageDerivatives.json";
 import { WORKS, type Work } from "../data/works";
 
 /**
@@ -148,3 +149,76 @@ export function packBands(works: readonly Work[]): Band[] {
 export function packedOrder(works: readonly Work[]): Work[] {
   return packBands(works).flatMap((band) => [...band.tiles]);
 }
+
+/* ------------------------------------------------------------------ art --- */
+
+/**
+ * What to put in the <img>.
+ *
+ * The widths come from imageDerivatives.json, which scripts/optimize_covers.py
+ * writes — so this cannot offer the browser a width that was never encoded.
+ * The sizes strings are the grid's own breakpoints read back as percentages:
+ * six columns above 1180, four to 880, two to 560, one below. Get these wrong
+ * and srcset quietly picks the wrong file, which looks like nothing at all.
+ */
+export interface Art {
+  readonly src: string;
+  readonly srcSet: string;
+  readonly sizes: string;
+  readonly width: number;
+  readonly height: number;
+}
+
+/*
+ * Measured, not estimated. At a 1280 viewport the XL tile is 700 CSS px and
+ * every other tile 342 — 54.7vw and 26.7vw. The first draft said 60vw and
+ * 30vw, and the browser dutifully fetched the 960 for a 700px box: sizes that
+ * overstates is not a rounding error, it is the next file up.
+ */
+const SIZES: Record<Tier, string> = {
+  // four of six columns, then the whole grid once it is four across
+  xl: "(max-width: 1179px) 92vw, (max-width: 1650px) 55vw, 890px",
+  l: "(max-width: 1179px) 92vw, (max-width: 1650px) 55vw, 890px",
+  // p keeps two columns down to 560, where it becomes the whole row
+  p: "(max-width: 879px) 92vw, (max-width: 1179px) 45vw, (max-width: 1650px) 27vw, 440px",
+  m: "(max-width: 559px) 92vw, (max-width: 1179px) 45vw, (max-width: 1650px) 27vw, 440px",
+  s: "(max-width: 559px) 92vw, (max-width: 1179px) 45vw, (max-width: 1650px) 27vw, 440px"
+};
+
+type Derived = Record<string, { w: number; h: number; widths: number[] } | undefined>;
+
+/** Any image with derivatives, given the CSS width it will be drawn at. */
+export function mediaFor(path: string, base: string, sizes: string): Art {
+  const entry = (derivatives as Derived)[path];
+  // No manifest entry means no derivatives were made for it; serve the source
+  // rather than 404 on a width that does not exist.
+  if (!entry || entry.widths.length === 0) {
+    return { src: base + path, srcSet: "", sizes: "", width: 1280, height: 800 };
+  }
+  const stem = path.replace(/^.*\//, "").replace(/\.webp$/, "");
+  const url = (w: number): string => `${base}assets/derived/${stem}-${w}.webp`;
+  return {
+    src: url(entry.widths[entry.widths.length - 1]!),
+    srcSet: entry.widths.map((w) => `${url(w)} ${w}w`).join(", "),
+    sizes,
+    width: entry.w,
+    height: entry.h
+  };
+}
+
+export function artFor(work: Work, tier: Tier, base: string): Art {
+  const path = tier === "p" && work.poster ? work.poster : work.cover;
+  return mediaFor(path, base, SIZES[tier]);
+}
+
+/**
+ * The detail dialog's key art. It used to load the full source — 350 KB for
+ * the widest — the moment anyone opened a tile.
+ *
+ * `.game-detail` is max-width: min(960px, 94vw), and the media fills it minus
+ * the shell's border: 943 CSS px at a 1280 viewport, measured. A first guess of
+ * 620px here made the browser fetch the 720 for a 943px box and upscale it
+ * 1.5x — sizes that understates is as wrong as sizes that overstates, just
+ * blurry instead of slow.
+ */
+export const DETAIL_SIZES = "(max-width: 1021px) 94vw, 960px";
