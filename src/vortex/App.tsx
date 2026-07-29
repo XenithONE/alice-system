@@ -7,6 +7,7 @@ import {
   type CSSProperties
 } from "react";
 import { FX_FAMILY_TINTS, fxFamilyForSkill } from "./content/fxFamily";
+import { makeCpuBuild } from "./content/cpuBuild";
 import type { SkillRuntimeState } from "./sim/types";
 import {
   ACTIVE_SKILLS,
@@ -216,63 +217,6 @@ function buildToVisual(build: TopBuildSpec): TopVisualSpec {
   };
 }
 
-function partScore(part: TopPartDef): number {
-  const stats = part.stats;
-  return (
-    stats.attack * 1.05 +
-    stats.defense +
-    stats.stamina * 0.92 +
-    stats.stability +
-    stats.mobility * 0.88 +
-    stats.durability * 0.54
-  );
-}
-
-function makeCpuBuild(
-  seat: number,
-  budget: BuildCostLimit,
-  seed: number
-): TopBuildSpec {
-  const parts = {} as Record<TopSlot, string>;
-  let spent = 0;
-  for (let slotIndex = 0; slotIndex < TOP_SLOTS.length; slotIndex += 1) {
-    const slot = TOP_SLOTS[slotIndex]!;
-    const remainingSlots = TOP_SLOTS.slice(slotIndex + 1);
-    const reserve = remainingSlots.reduce(
-      (total, remaining) =>
-        total + Math.min(...getPartsForSlot(remaining).map((part) => part.cost)),
-      0
-    );
-    const preferredLineage = TOP_LINEAGES[(seat * 2 + slotIndex + seed) % TOP_LINEAGES.length]!;
-    const preferredRole = TOP_ROLES[(seat + slotIndex + seed) % TOP_ROLES.length]!;
-    const choices = [...getPartsForSlot(slot)]
-      .filter(
-        (part) =>
-          !Number.isFinite(budget) ||
-          spent + part.cost + reserve <= budget
-      )
-      .sort((first, second) => {
-        const firstTheme =
-          (first.lineage === preferredLineage ? 70 : 0) +
-          (first.role === preferredRole ? 35 : 0);
-        const secondTheme =
-          (second.lineage === preferredLineage ? 70 : 0) +
-          (second.role === preferredRole ? 35 : 0);
-        const firstValue = firstTheme + partScore(first) / Math.max(1, first.cost) * 50;
-        const secondValue = secondTheme + partScore(second) / Math.max(1, second.cost) * 50;
-        return secondValue - firstValue || first.id.localeCompare(second.id);
-      });
-    const chosen = choices[(seed + seat + slotIndex) % Math.min(4, choices.length)] ?? choices[0]!;
-    parts[slot] = chosen.id;
-    spent += chosen.cost;
-  }
-  return {
-    v: 1,
-    name: `CPU-${String(seat).padStart(2, "0")} ${TOP_LINEAGES[(seat + seed) % 9]!.toUpperCase()}`,
-    paint: PLAYER_COLORS[seat % PLAYER_COLORS.length]!,
-    parts
-  };
-}
 
 function makeBattleBuilds(
   player: TopBuildSpec,
@@ -281,7 +225,10 @@ function makeBattleBuilds(
   return Array.from({ length: settings.playerCount }, (_, seat) =>
     seat === 0
       ? player
-      : makeCpuBuild(seat, settings.costLimit, settings.arenaId.length + settings.playerCount)
+      : {
+          ...makeCpuBuild(seat, settings.costLimit, settings.arenaId.length + settings.playerCount),
+          paint: PLAYER_COLORS[seat % PLAYER_COLORS.length]!
+        }
   );
 }
 

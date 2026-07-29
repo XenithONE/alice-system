@@ -3,6 +3,10 @@ import {
   BASE_GYRO_TORQUE,
   BASE_SPIN_DRAIN,
   BASE_TRACKING_FORCE,
+  EDGE_EARLY_GUARD_BONUS,
+  EDGE_EARLY_GUARD_SEC,
+  EDGE_GUARD_BRAKE_PER_SEC,
+  EDGE_GUARD_BRAKE_RADIUS,
   CONTACT_COOLDOWN_SEC,
   CONTACT_DAMAGE_SCALE,
   CONTACT_DAMAGE_THRESHOLD,
@@ -1675,7 +1679,31 @@ export function createVortexSim<TSource = unknown>(
     const edgeStart = arena.outRadius * 0.77;
     if (radial > edgeStart) {
       const edgeFactor = clamp((radial - edgeStart) / (arena.outRadius - edgeStart), 0, 1);
-      const recovery = clamp(0.65 + modifiers.edgeRecovery, 0.65, 1.65);
+      // Reinforced during the launch transient — see balance.ts.
+      const earlyGuard =
+        elapsed < EDGE_EARLY_GUARD_SEC ? EDGE_EARLY_GUARD_BONUS : 0;
+      const recovery =
+        clamp(0.65 + modifiers.edgeRecovery, 0.65, 1.65) + earlyGuard;
+      if (
+        elapsed < EDGE_EARLY_GUARD_SEC &&
+        radial > arena.outRadius * EDGE_GUARD_BRAKE_RADIUS
+      ) {
+        const velocity = top.body.linvel();
+        const outwardSpeed =
+          (velocity.x * position.x + velocity.z * position.z) / radial;
+        if (outwardSpeed > 0) {
+          const brake =
+            outwardSpeed * top.body.mass() * EDGE_GUARD_BRAKE_PER_SEC;
+          top.body.addForce(
+            {
+              x: -position.x / radial * brake,
+              y: 0,
+              z: -position.z / radial * brake,
+            },
+            true,
+          );
+        }
+      }
       directionX = directionX * (1 - edgeFactor) - position.x / radial * edgeFactor * recovery;
       directionZ = directionZ * (1 - edgeFactor) - position.z / radial * edgeFactor * recovery;
     }

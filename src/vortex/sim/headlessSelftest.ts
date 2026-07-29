@@ -1,4 +1,4 @@
-import { FIXED_DT } from "./balance";
+import { EDGE_EARLY_GUARD_SEC, FIXED_DT } from "./balance";
 import { createDefaultBuild, deriveBuildStats } from "../content";
 import {
   aiActivation,
@@ -312,6 +312,18 @@ async function main(): Promise<void> {
       suddenDeathSec: 120,
       maxDurationSec: 240,
     });
+    /*
+     * Fired AFTER the launch guard on purpose. For the first
+     * EDGE_EARLY_GUARD_SEC the rim brakes outward momentum (finishSelftest
+     * owns that guarantee), so a t=0 blast now proves nothing — this case
+     * fired at t=0 for one version and correctly went red. The property it
+     * guards is that once the guard is over, a clean blast still produces a
+     * genuine physical ring-out rather than a durability kill.
+     */
+    const guardSteps = Math.ceil(EDGE_EARLY_GUARD_SEC / FIXED_DT) + 5;
+    for (let step = 0; step < guardSteps && !ringoutSim.result(); step += 1) {
+      ringoutSim.step();
+    }
     const fired = ringoutSim.activate(0, 3);
     if (!fired.ok) throw new Error("ring-out skill did not activate");
     for (let step = 0; step < 300 && !ringoutSim.result(); step += 1) {
