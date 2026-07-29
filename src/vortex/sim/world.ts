@@ -49,6 +49,7 @@ import {
   type TopState,
   type VortexSim,
 } from "./types";
+import { assertNever } from "../assertNever";
 
 let physicsInit: Promise<void> | null = null;
 
@@ -1105,6 +1106,15 @@ export function createVortexSim<TSource = unknown>(
           elapsed + clamp(effect.durationSec, 0, 30),
         );
         return;
+      default:
+        /*
+         * This function returns void, and tsconfig does not set
+         * noImplicitReturns, so until this arm existed a new SkillEffect
+         * member could be added, adapted, shipped — and silently do nothing.
+         * The effect would exist in the catalogue, pass every content gate,
+         * and simply never happen. Now it is a build error.
+         */
+        assertNever(effect);
     }
   }
 
@@ -1319,6 +1329,9 @@ export function createVortexSim<TSource = unknown>(
           elapsed + effect.durationSec * (1 + (passive.rank - 1) * 0.08),
         );
         return;
+      default:
+        // Same silent hole as applyEffect, on the passive side.
+        assertNever(effect);
     }
   }
 

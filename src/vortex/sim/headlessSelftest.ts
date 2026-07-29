@@ -350,8 +350,12 @@ async function main(): Promise<void> {
     skillFires < matches ||
     ringOuts < 1 ||
     destroyed < 1 ||
-    !catalogTopology ||
-    output.avgStepMs >= 4
+    !catalogTopology
+    // avgStepMs was part of this condition. It measured 3.79-3.81 idle and
+    // 4.229 under load against a 4ms wall - a 5% margin, so this gate went
+    // red whenever the machine was busy and reported it as a correctness
+    // failure. The number is still in the output; the budget is in
+    // `npm run vortex:perf`.
   ) {
     process.exitCode = 1;
   }

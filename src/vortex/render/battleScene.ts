@@ -18,6 +18,7 @@ import {
   type FxFamily
 } from "../content/fxFamily";
 import type { SimEvent } from "../sim/types";
+import { assertNever } from "../assertNever";
 
 export type { BattlePresentation } from "./battlePresentation";
 
@@ -127,11 +128,6 @@ interface Spark {
 }
 
 const PLAYER_COLORS = [0x62ddff, 0xffb448, 0xff5bd7, 0x6effb2] as const;
-
-/** Reached only if a SimEvent variant is left undrawn — a compile error there. */
-function assertNever(value: never): never {
-  throw new Error('unhandled sim event: ' + JSON.stringify(value));
-}
 
 
 function profileHeight(profile: BattleArenaVisual["profile"], normalizedRadius: number): number {

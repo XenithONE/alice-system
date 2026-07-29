@@ -315,14 +315,20 @@ function longWaveGenerationGate(): {
   const wave5000Ms = performance.now() - start5000;
   const enemy100Parts = validateRogueBuild(enemy100.sourceBuild).totalParts;
   const enemy5000Parts = validateRogueBuild(enemy5000.sourceBuild).totalParts;
+  /*
+   * Correctness only. This assert used to end with `wave100Ms < 250 &&
+   * wave5000Ms < 500`, so a timing blip on a busy machine was reported as
+   * "[E24] enemy generation is not finite" — a stopwatch masquerading as a
+   * content bug, which is the worst kind of false alarm because it sends you
+   * looking in the wrong file. The durations are reported and budgeted in
+   * `npm run vortex:perf`.
+   */
   check(
-    "[E24] wave100/5000敵生成は有限・実用時間",
+    "[E24] wave100/5000敵生成は有限・パーツ数が正確",
     finiteTree(enemy100) &&
       finiteTree(enemy5000) &&
       enemy100Parts === TOP_SLOTS.length + wave100Stacks &&
-      enemy5000Parts === TOP_SLOTS.length + wave5000Stacks &&
-      wave100Ms < 250 &&
-      wave5000Ms < 500,
+      enemy5000Parts === TOP_SLOTS.length + wave5000Stacks,
     `w100=${wave100Ms.toFixed(2)}ms/${enemy100Parts} parts, w5000=${wave5000Ms.toFixed(2)}ms/${enemy5000Parts} parts`
   );
   check(

@@ -55,10 +55,17 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+/*
+ * A harness timeout, not a performance budget. It waits for asynchronous
+ * message delivery, so exceeding it on a loaded machine says nothing about the
+ * protocol - it says the event loop was busy. 2500ms was tight enough to turn
+ * that into a red gate; 15s still catches a genuine hang in seconds of human
+ * patience while never firing for load.
+ */
 async function waitFor(
   predicate: () => boolean,
   message: string,
-  timeoutMs = 2500,
+  timeoutMs = 15_000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
