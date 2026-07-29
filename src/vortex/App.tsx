@@ -304,9 +304,10 @@ function toRoomSettings(settings: GameSettings): VortexRoomSettings {
     arenaId: settings.arenaId,
     mode: settings.mode,
     playerCount: settings.playerCount,
-    cpuCount: settings.mode === "endless" ? 0 : settings.playerCount - 1,
+    cpuCount: settings.playerCount - 1,
     seed: Date.now() >>> 0,
-    draftTurnSec: 12
+    draftTurnSec: 12,
+    cpuLevel: settings.cpuLevel
   };
 }
 
@@ -2076,8 +2077,8 @@ function NetworkRoomFlow({
             : roomSettings.costLimit,
         arenaId: roomSettings.arenaId as SimRingArena["id"],
         mode: roomSettings.mode,
-        // Not in protocol v1; the local pick survives the room handshake.
-        cpuLevel: settings.cpuLevel
+        // v2: the host's room-wide choice wins on every peer.
+        cpuLevel: roomSettings.cpuLevel
       });
     },
     onDraftState(nextDraft: DraftState, remainingMs: number) {

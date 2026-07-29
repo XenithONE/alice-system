@@ -33,6 +33,7 @@ import {
   type LaunchPhaseView,
   type VortexSnapshot,
   type WireConn,
+  VORTEX_PROTOCOL_VERSION,
 } from "./protocol";
 import { SnapshotInterpolator } from "./interpolation";
 import {
@@ -266,6 +267,7 @@ function hostMessageGuardGate(): void {
     cpuCount: 0,
     seed: 0x51afe,
     draftTurnSec: 12,
+    cpuLevel: 2,
   } satisfies VortexRoomSettings;
   const build = createDefaultBuild("GUARD-BUILD");
   const lobby = {
@@ -1802,8 +1804,20 @@ async function main(): Promise<void> {
     failures += 1;
     errors.push(error instanceof Error ? error.message : String(error));
   }
+  /*
+   * ASSERTED, not reported. The old line `protocol: 1` was pure output —
+   * when the version moved to 2 nothing here would have noticed a stale
+   * constant, and a v1 guest on a v2 host dies as a silent freeze, the
+   * worst failure shape this codebase knows.
+   */
+  if (VORTEX_PROTOCOL_VERSION !== 2) {
+    failures += 1;
+    errors.push(
+      `protocol version expected 2 (combo events), got ${VORTEX_PROTOCOL_VERSION}`,
+    );
+  }
   const output = {
-    protocol: 1,
+    protocol: VORTEX_PROTOCOL_VERSION,
     prefix: "vc-",
     hostMessageGuard: failures === 0,
     broadcastRoundTrip: failures === 0,

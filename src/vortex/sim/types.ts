@@ -369,6 +369,13 @@ export type SimEvent =
       readonly reason: KnockoutReason;
       readonly by: SeatIndex | null;
     }
+  | {
+      readonly type: "combo";
+      readonly seat: SeatIndex;
+      readonly comboId: string;
+      readonly openerId: string;
+      readonly finisherId: string;
+    }
   | { readonly type: "sudden-death"; readonly stage: number };
 
 export interface MatchState {

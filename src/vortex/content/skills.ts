@@ -638,7 +638,115 @@ export const ACTIVE_SKILLS = [
       { kind: "steal-spin", amount: 8 },
       { kind: "cooldown-shift", amountSec: -2.5 }
     ]
+  },
+  /* ---- v3 additions: eight actives authored around the combo table and
+     the new pass-through phase. Counts asserted in gates.ts (C07). ---- */
+  {
+    id: "axle-bite",
+    name: "Axle Bite",
+    nameJa: "アクスルバイト",
+    descriptionJa: "軸ごと噛みつくように踏み込み、次の一撃へ全トルクを乗せる。",
+    cooldownSec: 14,
+    charges: 4,
+    condition: { kind: "target-near", distance: 3.4 },
+    effects: [
+      { kind: "impulse", direction: "toward-target", strength: 7 },
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.22, durationSec: 2 }
+    ]
+  },
+  {
+    id: "ghost-lattice",
+    name: "Ghost Lattice",
+    nameJa: "ゴーストラティス",
+    descriptionJa: "格子状の位相場で一瞬だけ実体を失い、渦中を通り抜ける。",
+    cooldownSec: 18,
+    charges: 3,
+    condition: { kind: "target-near", distance: 2.6 },
+    effects: [
+      { kind: "phase", durationSec: 0.85 },
+      { kind: "impulse", direction: "toward-target", strength: 6 }
+    ]
+  },
+  {
+    id: "undertow",
+    name: "Undertow",
+    nameJa: "アンダートウ",
+    descriptionJa: "低い引き波で敵の回転を奪い、自分の軸に足す。",
+    cooldownSec: 20,
+    charges: 3,
+    condition: { kind: "target-near", distance: 2.4 },
+    effects: [
+      { kind: "steal-spin", amount: 7 },
+      { kind: "physics-multiplier", stat: "friction", multiplier: 0.85, durationSec: 2 }
+    ]
+  },
+  {
+    id: "static-veil",
+    name: "Static Veil",
+    nameJa: "スタティックヴェール",
+    descriptionJa: "静電の帳で周囲の再使用回路を焼き、行動を遅らせる。",
+    cooldownSec: 26,
+    charges: 2,
+    condition: { kind: "target-near", distance: 3 },
+    effects: [
+      { kind: "cooldown-shift", amountSec: 3, target: "enemies", radius: 3 },
+      { kind: "shield", amount: 30, durationSec: 1.6 }
+    ]
+  },
+  {
+    id: "flywheel-loan",
+    name: "Flywheel Loan",
+    nameJa: "フライホイールローン",
+    descriptionJa: "未来の持久を前借りして、今この瞬間の回転に変える。",
+    cooldownSec: 16,
+    charges: 4,
+    condition: { kind: "spin-below", ratio: 0.6 },
+    effects: [
+      { kind: "spin", amount: 16 },
+      { kind: "stat-multiplier", stat: "stamina", multiplier: 0.9, durationSec: 4 }
+    ]
+  },
+  {
+    id: "keel-cut",
+    name: "Keel Cut",
+    nameJa: "キールカット",
+    descriptionJa: "竜骨で斬り込むような接線加速。壁際の敵に深く刺さる。",
+    cooldownSec: 12,
+    charges: 5,
+    condition: { kind: "always" },
+    effects: [
+      { kind: "impulse", direction: "tangent", strength: 8 },
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.1, durationSec: 1.6 }
+    ]
+  },
+  {
+    id: "ballast-drop",
+    name: "Ballast Drop",
+    nameJa: "バラストドロップ",
+    descriptionJa: "バラストを落として重心を沈め、押し合いを制する。",
+    cooldownSec: 15,
+    charges: 4,
+    condition: { kind: "near-rim", normalizedRadius: 0.7 },
+    effects: [
+      { kind: "physics-multiplier", stat: "mass", multiplier: 1.3, durationSec: 2.4 },
+      { kind: "impulse", direction: "toward-center", strength: 5 }
+    ]
+  },
+  {
+    id: "afterimage-bloom",
+    name: "Afterimage Bloom",
+    nameJa: "残像開花",
+    descriptionJa: "残像を咲かせて離脱し、離れ際に衝撃の花弁を散らす。",
+    cooldownSec: 22,
+    charges: 2,
+    condition: { kind: "target-near", distance: 2 },
+    effects: [
+      { kind: "phase", durationSec: 0.6 },
+      { kind: "impulse", direction: "away-from-target", strength: 9 },
+      { kind: "radial-damage", amount: 16, radius: 1.8 }
+    ]
   }
+
 ] as const satisfies readonly ActiveSkillDef[];
 
 export const PASSIVE_SKILLS = [
@@ -1120,7 +1228,86 @@ export const PASSIVE_SKILLS = [
       { kind: "stat-multiplier", stat: "attack", multiplier: 1.08, durationSec: 10 },
       { kind: "spin", amount: 3 }
     ]
+  },
+  /* ---- v3 additions: eight passives. Counts asserted in gates.ts (C08). ---- */
+  {
+    id: "combo-conductor",
+    name: "Combo Conductor",
+    nameJa: "コンボ指揮者",
+    descriptionJa: "開幕から機動と攻撃をわずかに高める、連携特化の指揮系統。",
+    trigger: "battle-start",
+    effects: [
+      { kind: "stat-multiplier", stat: "mobility", multiplier: 1.08, durationSec: 8 },
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.05, durationSec: 8 }
+    ]
+  },
+  {
+    id: "phantom-hull",
+    name: "Phantom Hull",
+    nameJa: "ファントムハル",
+    descriptionJa: "被弾の瞬間、船体が一拍だけ位相の外へ逃げる。",
+    trigger: "on-take-hit",
+    effects: [{ kind: "phase", durationSec: 0.5 }]
+  },
+  {
+    id: "rim-magnet",
+    name: "Rim Magnet",
+    nameJa: "リムマグネット",
+    descriptionJa: "縁に近づくと中心へ弱く引かれる保険装置。",
+    trigger: "near-rim",
+    threshold: 0.78,
+    effects: [{ kind: "impulse", direction: "toward-center", strength: 2 }]
+  },
+  {
+    id: "scavenger-coil",
+    name: "Scavenger Coil",
+    nameJa: "スカベンジャーコイル",
+    descriptionJa: "敵を撃破するたび、残骸から回転を回収する。",
+    trigger: "elimination",
+    effects: [{ kind: "spin", amount: 10 }]
+  },
+  {
+    id: "cold-start",
+    name: "Cold Start",
+    nameJa: "コールドスタート",
+    descriptionJa: "回転が細ったとき、深いところから捻り戻す。",
+    trigger: "spin-below",
+    threshold: 0.4,
+    effects: [{ kind: "spin", amount: 12 }]
+  },
+  {
+    id: "counterweight",
+    name: "Counterweight",
+    nameJa: "カウンターウェイト",
+    descriptionJa: "被弾のたび、質量をわずかに増して姿勢を守る。",
+    trigger: "on-take-hit",
+    effects: [
+      { kind: "physics-multiplier", stat: "mass", multiplier: 1.06, durationSec: 2 }
+    ]
+  },
+  {
+    id: "spite-thorns",
+    name: "Spite Thorns",
+    nameJa: "スパイトソーン",
+    descriptionJa: "打たれるほど攻撃が研がれる、負けん気の棘。",
+    trigger: "on-take-hit",
+    effects: [
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.07, durationSec: 3 }
+    ]
+  },
+  {
+    id: "closing-argument",
+    name: "Closing Argument",
+    nameJa: "最終弁論",
+    descriptionJa: "耐久が尽きかけたとき、全てを攻撃へ振り替える。",
+    trigger: "durability-below",
+    threshold: 0.3,
+    effects: [
+      { kind: "stat-multiplier", stat: "attack", multiplier: 1.2, durationSec: 5 },
+      { kind: "stat-multiplier", stat: "defense", multiplier: 0.92, durationSec: 5 }
+    ]
   }
+
 ] as const satisfies readonly PassiveSkillDef[];
 
 /** Explicitly curated playful skills. Gates verify every ID is assigned to real parts. */

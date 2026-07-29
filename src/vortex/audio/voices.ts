@@ -97,6 +97,11 @@ export const EVENT_VOICES = {
     wave: "square", from: 70, to: 46, durationSec: 0.4, gain: 0.5,
     noise: 0.5, noiseCutoffHz: 500,
   },
+  combo: {
+    // Rising major arpeggio silhouette — a REWARD sound, unlike any skill's.
+    wave: "triangle", from: 523, to: 1046, secondHz: 262,
+    durationSec: 0.5, gain: 0.5,
+  },
   launch: {
     wave: "sawtooth", from: 190, to: 640, durationSec: 0.35, gain: 0.4,
   },

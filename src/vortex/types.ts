@@ -336,6 +336,8 @@ export interface VortexRoomSettings {
   cpuCount: number;
   seed: number;
   draftTurnSec: 12;
+  /** Protocol v2: CPU aggression level, chosen by the host for the room. */
+  cpuLevel: 1 | 2 | 3;
 }
 
 export interface PartSearchFilters {

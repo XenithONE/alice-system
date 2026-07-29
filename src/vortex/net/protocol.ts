@@ -17,7 +17,14 @@ import type {
   SkillSlot,
 } from "../sim/types";
 
-export const VORTEX_PROTOCOL_VERSION = 1;
+/*
+ * 2 since v3: SimEvent gained the `combo` variant. A v1 guest joining a v2
+ * host would drop every combo event on the floor — worse, session.ts:1955
+ * silently returns on an unrecognised event, freezing the guest on the last
+ * good snapshot with no error. The version handshake turns that silent
+ * freeze into an explicit refusal at join time.
+ */
+export const VORTEX_PROTOCOL_VERSION = 2;
 export const VORTEX_ROOM_PREFIX = "vc-";
 export type VortexSessionEndReason = "host-left" | "host-ended";
 
@@ -286,11 +293,17 @@ function isRoomSettings(value: unknown): value is VortexRoomSettings {
     !isIntegerBetween(value.cpuCount, 0, 3) ||
     (value.cpuCount as number) >= (value.playerCount as number) ||
     !isIntegerBetween(value.seed, 0, 0xffff_ffff) ||
-    value.draftTurnSec !== 12
+    value.draftTurnSec !== 12 ||
+    // v2: the host's CPU aggression level rides with the room.
+    !isIntegerBetween(value.cpuLevel, 1, 3)
   ) {
     return false;
   }
-  if (value.mode === "endless" && value.cpuCount !== 0) return false;
+  /*
+   * v1 forbade CPUs in endless because endless demanded a full human squad.
+   * v3 made vacant endless seats CPU wingmates, so the old refusal would
+   * reject exactly the rooms the game now creates.
+   */
   return true;
 }
 
@@ -628,6 +641,20 @@ function isSimEvent(value: unknown): value is SimEvent {
         typeof value.reason === "string" &&
         KNOCKOUT_REASONS.has(value.reason) &&
         (value.by === null || isSeatIndex(value.by))
+      );
+    case "combo":
+      /*
+       * Forgetting this case is the nastiest failure in the codebase: the
+       * guest-side dispatcher silently returns on events this predicate
+       * rejects, so hosts and solo players look fine while every guest
+       * freezes on their last snapshot. comboSelftest round-trips a combo
+       * event through this exact predicate.
+       */
+      return (
+        isSeatIndex(value.seat) &&
+        isBoundedString(value.comboId, MAX_PART_ID_LENGTH, 1) &&
+        isBoundedString(value.openerId, MAX_PART_ID_LENGTH, 1) &&
+        isBoundedString(value.finisherId, MAX_PART_ID_LENGTH, 1)
       );
     case "sudden-death":
       return isIntegerBetween(value.stage, 1, 6);

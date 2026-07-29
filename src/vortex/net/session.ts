@@ -76,6 +76,7 @@ export const DEFAULT_VORTEX_ROOM_SETTINGS: VortexRoomSettings = {
   cpuCount: 3,
   seed: 1,
   draftTurnSec: 12,
+  cpuLevel: 2,
 };
 
 export interface SessionCallbacks {
@@ -202,6 +203,8 @@ function copySettings(
           ),
     seed: Number.isFinite(source.seed) ? source.seed >>> 0 : 1,
     draftTurnSec: 12,
+    cpuLevel:
+      source.cpuLevel === 1 || source.cpuLevel === 3 ? source.cpuLevel : 2,
   };
 }
 
@@ -506,13 +509,20 @@ function mixWaveSeed(seed: number, wave: number): number {
 
 abstract class AuthoritativeLoop {
   protected sim: VortexSim | null = null;
+  /*
+   * The room's CPU aggression (protocol v2). Lives on the base because the
+   * loop is where aiActivation runs; both subclasses set it from their
+   * settings when the loop starts.
+   */
+  protected cpuLevel: 1 | 2 | 3 = 2;
   private loopTimer: ReturnType<typeof setTimeout> | null = null;
   private lastLoopAt = 0;
   private accumulator = 0;
   private stepsSinceSnapshot = 0;
   protected stopped = false;
 
-  protected beginLoop(sim: VortexSim): void {
+  protected beginLoop(sim: VortexSim, cpuLevel: 1 | 2 | 3 = 2): void {
+    this.cpuLevel = cpuLevel;
     this.sim = sim;
     this.lastLoopAt = nowMilliseconds();
     this.accumulator = 0;
@@ -554,7 +564,7 @@ abstract class AuthoritativeLoop {
       if (sim.tick % 12 === 0) {
         for (let seat = 0; seat < 8; seat += 1) {
           const typedSeat = seatIndex(seat);
-          const slot = aiActivation(sim, typedSeat);
+          const slot = aiActivation(sim, typedSeat, this.cpuLevel);
           if (slot !== null) sim.activate(typedSeat, slot);
         }
       }
@@ -695,7 +705,7 @@ class SoloSessionImpl extends AuthoritativeLoop implements VortexSession {
       sim.dispose();
       return;
     }
-    this.beginLoop(sim);
+    this.beginLoop(sim, this.settings.cpuLevel);
   }
 
   activate(slot: SkillSlot): SkillActivationResult | null {
@@ -1458,7 +1468,7 @@ class HostSessionImpl extends AuthoritativeLoop implements VortexSession {
     this.matchStarted = true;
     this.starting = false;
     this.completingDraft = false;
-    this.beginLoop(sim);
+    this.beginLoop(sim, this.settings.cpuLevel);
   }
 
   private failStart(error: unknown): void {

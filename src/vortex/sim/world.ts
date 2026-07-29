@@ -20,6 +20,7 @@ import {
   OUTSIDE_FALL_Y,
   OUTSIDE_MARGIN,
 } from "./balance";
+import { RESOLVED_COMBOS_BY_OPENER } from "./comboAdapter";
 import { mulberry32 } from "./rng";
 import {
   buildRingSurfaceMesh,
@@ -122,6 +123,14 @@ interface RuntimeTop<TSource> {
   lastHitAt: number;
   lastAttacker: SeatIndex | null;
   reverseOrbitUntil: number;
+  /*
+   * Combo window: opener skill id and the elapsed-seconds deadline. Host-only
+   * by construction — stateFor and snapshotFromSim are hand-written
+   * whitelists, so this field never reaches the wire (measured by
+   * comboSelftest's shape check, not just asserted here).
+   */
+  comboOpenerId: string | null;
+  comboWindowUntil: number;
   /*
    * Pass-through expiry, in `elapsed` seconds — the same clock every other
    * deadline in this simulation uses. Deliberately NOT a TimedModifier: a
@@ -627,6 +636,8 @@ function spawnTop<TSource>(
     lastHitAt: Number.NEGATIVE_INFINITY,
     lastAttacker: null,
     reverseOrbitUntil: 0,
+    comboOpenerId: null,
+    comboWindowUntil: 0,
     phaseUntil: 0,
     phasing: false,
     timed: [],
@@ -1540,6 +1551,44 @@ export function createVortexSim<TSource = unknown>(
         slot,
         skillId: member.def.id,
       });
+    }
+    /*
+     * Combo resolution. Order is the invariant here (ARCHITECTURE_V2 §4):
+     * the finisher check reads the window BEFORE the opener check writes it,
+     * so a skill that is both a valid finisher and an opener can complete
+     * one combo and immediately open the next, while the same activation
+     * can never combo with ITSELF — A+A needs no special case because the
+     * window A would satisfy is not written until after A's check ran.
+     */
+    const firedId = members[0]?.def.id ?? null;
+    if (firedId) {
+      if (top.comboOpenerId && top.comboWindowUntil > elapsed) {
+        const candidates =
+          RESOLVED_COMBOS_BY_OPENER.get(top.comboOpenerId) ?? [];
+        const match = candidates.find(
+          (combo) => combo.finisher === firedId,
+        );
+        if (match) {
+          // Consumed: one opener pays for one finisher.
+          top.comboOpenerId = null;
+          top.comboWindowUntil = 0;
+          for (const effect of match.effects) applyEffect(top, effect);
+          events.push({
+            type: "combo",
+            seat,
+            comboId: match.id,
+            openerId: match.opener,
+            finisherId: firedId,
+          });
+        }
+      }
+      // Window write LAST — see the invariant above.
+      if (RESOLVED_COMBOS_BY_OPENER.has(firedId)) {
+        const windows = RESOLVED_COMBOS_BY_OPENER.get(firedId)!;
+        const longest = Math.max(...windows.map((combo) => combo.windowSec));
+        top.comboOpenerId = firedId;
+        top.comboWindowUntil = elapsed + longest;
+      }
     }
     return checked;
   }

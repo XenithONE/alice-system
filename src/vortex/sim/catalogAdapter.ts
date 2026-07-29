@@ -98,7 +98,9 @@ function conditionFromCatalog(
   }
 }
 
-function effectsFromCatalog(
+/** Exported for comboAdapter: combo bonuses go through the SAME dialect
+    bridge as every skill, so a third private conversion cannot appear. */
+export function effectsFromCatalog(
   effect: SkillEffectDef,
   rank: SkillRank,
 ): readonly SkillEffect[] {

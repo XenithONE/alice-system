@@ -808,7 +808,14 @@ export function createVortexBattleScene(
           const family = fxFamilyForSkill(event.skillId);
           return { event, family, priority: family ? FX_FAMILY_SPECS[family].priority : 1 };
         }
-        const priority = event.type === "knockout" ? 9 : event.type === "sudden-death" ? 8 : 5;
+        const priority =
+          event.type === "knockout"
+            ? 9
+            : event.type === "sudden-death"
+              ? 8
+              : event.type === "combo"
+                ? 7
+                : 5;
         return { event, family: null as FxFamily | null, priority };
       })
       .sort((a, b) => b.priority - a.priority);
@@ -869,6 +876,23 @@ export function createVortexBattleScene(
           shake = Math.min(0.6, shake + 0.34);
           fovPunch = Math.min(4, fovPunch + 2.4);
           audio?.cue({ kind: "knockout", reason: event.reason });
+          break;
+        }
+        case "combo": {
+          /*
+           * A combo is the game rewarding sequenced play — it must read
+           * bigger than either skill alone: double ring, gold, and a lifted
+           * burst, at the comboing top.
+           */
+          const at = seatPosition(event.seat);
+          const gold = 0xffe066;
+          spawnCue("ring", at, gold, 0.3, 2.6, 0.6);
+          spawnCue("ring", at, gold, 0.15, 1.4, 0.45);
+          spawnCue("shell", at, gold, 0.4, 0.9, 0.5, new THREE.Vector3(0, 1, 0), 2.2);
+          burstAt(at, gold, lowPower ? 10 : 24, "up");
+          shake = Math.min(0.5, shake + 0.16);
+          fovPunch = Math.min(3.4, fovPunch + 1);
+          audio?.cue({ kind: "combo" });
           break;
         }
         case "sudden-death": {

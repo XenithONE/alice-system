@@ -26,6 +26,7 @@ export type AudioCue =
   | { readonly kind: "shockwave" }
   | { readonly kind: "knockout"; readonly reason: "ring-out" | "destroyed" }
   | { readonly kind: "sudden-death"; readonly stage: number }
+  | { readonly kind: "combo" }
   | { readonly kind: "launch" }
   | { readonly kind: "deny" };
 
@@ -53,6 +54,8 @@ export function recipeForCue(cue: AudioCue): VoiceRecipe | null {
       return EVENT_VOICES[
         `knockout-${cue.reason}` as EventVoiceName
       ];
+    case "combo":
+      return EVENT_VOICES.combo;
     case "launch":
       return EVENT_VOICES.launch;
     case "deny":

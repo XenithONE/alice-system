@@ -151,14 +151,14 @@ function catalogGates(): void {
   );
 
   check(
-    "[C07] Active辞書は49件でID一意",
-    ACTIVE_SKILLS.length === 49 &&
+    "[C07] Active辞書は57件でID一意",
+    ACTIVE_SKILLS.length === 57 &&
       new Set(ACTIVE_SKILLS.map((skill) => skill.id)).size === ACTIVE_SKILLS.length,
     `${ACTIVE_SKILLS.length} definitions`
   );
   check(
-    "[C08] Passive辞書は49件でID一意",
-    PASSIVE_SKILLS.length === 49 &&
+    "[C08] Passive辞書は57件でID一意",
+    PASSIVE_SKILLS.length === 57 &&
       new Set(PASSIVE_SKILLS.map((skill) => skill.id)).size === PASSIVE_SKILLS.length,
     `${PASSIVE_SKILLS.length} definitions`
   );
