@@ -8,6 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
+    "sitemap": "npx tsx scripts/sitemap.ts",
+    "site:gates": "npx tsx src/portfolio/bentoSelftest.ts && npx tsx scripts/sitemap.ts --check && node scripts/measure_closure.mjs",
     "vortex:content-gates": "npx tsx src/vortex/content/gates.ts",
     "vortex:endless-gates": "npx tsx src/vortex/endless/selftest.ts",
     "vortex:launch-gates": "npx tsx src/vortex/launch/selftest.ts",

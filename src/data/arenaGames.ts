@@ -1,6 +1,16 @@
-// Games that can only be entered through the harbor arena.
-// Keep this catalog separate from WORKS: arena titles must not appear in the
-// portfolio gallery, LIVE count, or sitemap.
+// The two arena titles.
+//
+// This catalogue stays separate from WORKS, but the reason has narrowed. It is
+// no longer "these must not be shown" — the harbour became a hidden page, and
+// hiding the only way in would have made two finished games unreachable. They
+// are now in the works grid, through the ARENA_AS_WORKS adapter in bento.ts.
+//
+// Separate because merging them would move numbers that are about WORKS:
+// STUDIO_TALLY.live is the studio's own count and the sitemap lists the pages
+// the site advertises. bentoSelftest [D1] holds that line — it asserts the
+// tally still counts WORKS only while the catalogue counts more.
+//
+// So: show them, do not adopt them.
 
 export type ArenaGameId = "scrap-crown" | "vortex-crown";
 
