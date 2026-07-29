@@ -70,7 +70,6 @@ import {
 import {
   createVortexBattleScene,
   type BattleArenaVisual,
-  type BattleEventVisual,
   type BattleSnapshotVisual,
   type VortexBattleScene
 } from "./render/battleScene";
@@ -1223,33 +1222,6 @@ function NetworkDraftScreen({
   );
 }
 
-function eventToVisual(event: SimEvent, state: MatchState): BattleEventVisual {
-  if (event.type === "impact") {
-    return {
-      type: "impact",
-      x: event.point[0],
-      y: event.point[1],
-      z: event.point[2],
-      seat: event.attacker,
-      target: event.victim,
-      power: Math.min(8, Math.max(1, event.impulse * 0.4))
-    };
-  }
-  const seat = "seat" in event ? event.seat : 0;
-  const top = state.tops.find((candidate) => candidate.seat === seat);
-  return {
-    type:
-      event.type === "knockout"
-        ? event.reason === "ring-out" ? "ringout" : "destroy"
-        : event.type,
-    x: top?.position[0] ?? 0,
-    y: top?.position[1] ?? 0.2,
-    z: top?.position[2] ?? 0,
-    seat,
-    power: event.type === "shockwave" ? event.radius : event.type === "knockout" ? 6 : 3
-  };
-}
-
 function stateToVisual(
   state: MatchState,
   events: readonly SimEvent[]
@@ -1271,7 +1243,9 @@ function stateToVisual(
       hp: top.hp,
       spin: top.spin
     })),
-    events: events.map((event) => eventToVisual(event, state))
+    // Straight through. Translating these into a second shape is what lost
+    // shockwave, sudden-death and skillId in the first place.
+    events
   };
 }
 
@@ -1324,6 +1298,10 @@ function MatchScreen({
     let accumulator = 0;
     const scene = createVortexBattleScene(canvas);
     sceneRef.current = scene;
+    /* Verification seam. The battle canvas cannot be screenshotted from the
+       harness, so the only way to check what is actually in the scene — draw
+       calls, triangles, whether the arcade got built — is to ask it. */
+    (window as unknown as { __vortexScene?: unknown }).__vortexScene = scene;
     const arena = RING_ARENAS.find((candidate) => candidate.id === settings.arenaId)!;
     const visualBuilds = builds.map(buildToVisual);
     scene.setup(visualBuilds, builds.map((build) => build.name), arenaVisual(arena), 0);

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { makeArcade, type BattleArenaVisual } from "./battleScene";
 import {
   PARTS,
   TOP_LINEAGES,
@@ -127,8 +128,39 @@ for (const result of [regularBattle, signatureBattle, signatureLow]) {
   assertEqual(result.shadowCasters, 0, "battle LOD must not add shadow-map draws");
 }
 
-// Main pass: four tops, eight arena surfaces, labels/trails, one pooled FX draw.
-const maximumBattleCalls = signatureBattle.meshes * 4 + 8 + 4 + 4 + 1;
+const GATE_ARENA: BattleArenaVisual = {
+  id: "gate",
+  radius: 7.38,
+  lipHeight: 0.35,
+  profile: [[0, -0.62], [0.5, -0.3], [1, 0.54]],
+};
+
+/*
+ * The arcade and the FX pools are counted, not assumed.
+ *
+ * This line used to read `+ 8 + 4 + 4 + 1` with a comment naming what those
+ * numbers were. That is an accounting model, and a model does not notice when
+ * someone adds three meshes to the arena — it keeps reporting the old total
+ * while the real scene grows. Building the arcade here and counting its
+ * children means the arena part of the budget is measured.
+ */
+const arcadeFull = makeArcade(GATE_ARENA, false);
+const arcadeLite = makeArcade(GATE_ARENA, true);
+const arcadeCalls = arcadeFull.children.length;
+assert(
+  arcadeCalls <= 3,
+  `arcade costs ${arcadeCalls} draw calls; the budget is three`,
+);
+assert(
+  arcadeLite.children.length < arcadeCalls,
+  "lite detail must drop arcade draws, not keep them",
+);
+
+// Two pooled FX draws: one ring pool, one shell pool. See battleScene.
+const fxPoolCalls = 2;
+// Main pass: four tops, arena surfaces, the arcade, labels/trails, FX pools.
+const maximumBattleCalls =
+  signatureBattle.meshes * 4 + 8 + arcadeCalls + 4 + 4 + 1 + fxPoolCalls;
 assert(
   maximumBattleCalls <= 150,
   `four-player battle requires ${maximumBattleCalls} structural draw calls`,
