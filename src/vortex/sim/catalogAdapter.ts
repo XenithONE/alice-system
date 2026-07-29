@@ -217,11 +217,14 @@ function effectsFromCatalog(
     case "cleanse":
       return [{ type: "cleanse" }];
     case "phase":
-      return [{
-        type: "shield",
-        durationSec: effect.durationSec,
-        damageMultiplier: 0.12,
-      }];
+      /*
+       * Was `{ type: "shield", damageMultiplier: 0.12 }`. That erased the
+       * effect's identity, hardcoded a multiplier rank could not touch, and
+       * left the passive path — which kept `phase` — roughly eight times
+       * stronger when stacked with a real shield, because the two land in
+       * separately-clamped buckets.
+       */
+      return [{ type: "phase", durationSec: effect.durationSec * scale }];
     case "steal-spin":
       return [
         {

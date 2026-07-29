@@ -518,6 +518,12 @@ function scaleActiveEffect(
         durationSec:
           effect.durationSec * Math.max(0.25, contributionScale)
       };
+    case "phase":
+      return {
+        ...effect,
+        durationSec:
+          effect.durationSec * Math.max(0.25, contributionScale)
+      };
     case "cleanse":
       return effect;
   }

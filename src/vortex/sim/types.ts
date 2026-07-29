@@ -126,6 +126,13 @@ export type SkillEffect =
       readonly radius: number;
     }
   | { readonly type: "cleanse" }
+  /*
+   * Pass-through, not damage reduction. The active union had no `phase`
+   * member, which is why catalogAdapter rewrote it into a `shield` — the
+   * identity was erased at the boundary and six skills whose text promises
+   * すり抜け quietly became tougher instead of intangible.
+   */
+  | { readonly type: "phase"; readonly durationSec: number }
   | { readonly type: "reverse-orbit"; readonly durationSec: number };
 
 export interface ResolvedActiveSkill {

@@ -335,9 +335,19 @@ async function main(): Promise<void> {
         Math.hypot(...victimBefore.velocity) + 0.05,
       "on-take-hit tangent impulse did not change velocity",
     );
+    /*
+     * Inverted in v3. This used to assert damage < 30, which held only
+     * because the victim's `test-phase` passive multiplied damage by 0.12 —
+     * the old, wrong meaning of phase. Phase is now pass-through (the skill
+     * text always said すり抜け) and mitigates nothing; this hit measures
+     * 52.7 at full strength. Asserting the drop is LARGE is the regression
+     * gate: if a damage-reduction phase ever creeps back in, damage falls to
+     * ~6 and this fires. The pass-through itself is proven by contact in
+     * phaseSelftest [P10], not by hp arithmetic here.
+     */
     assert(
-      victimAfter.hp > victimAfter.hpMax - 30,
-      "phase/shield runtime mitigation was not applied",
+      victimBefore.hp - victimAfter.hp > 30,
+      "phase mitigated damage again — the 0.12 multiplier is back",
     );
 
     const finish = sim.activate(0, 2);

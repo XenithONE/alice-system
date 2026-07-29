@@ -712,7 +712,7 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
     }
   }
 
-  /** One silhouette per family — see content/fxFamily.ts for why these eight. */
+  /** One silhouette per family — see content/fxFamily.ts for the roster. */
   function playSkillCue(family: FxFamily, seat: number, target: number | null): void {
     const spec = FX_FAMILY_SPECS[family];
     const at = seatPosition(seat);
@@ -744,6 +744,17 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
         spawnCue("shell", at, tint, 0.5, 0.75, spec.duration, new THREE.Vector3(0, 1, 0), 3.4);
         burstAt(at, tint, spec.sparks, "up");
         return;
+      case "phaseshift":
+        /*
+         * The inverse of aegis on purpose: a shield GROWS around the top
+         * (0.3 → 1.15), so intangibility COLLAPSES into it (1.2 → 0.35) —
+         * the silhouette reads as the body withdrawing from the world, and
+         * the ripple it leaves behind is all that stays touchable.
+         */
+        spawnCue("shell", at, tint, 1.2, 0.35, spec.duration);
+        spawnCue("ring", at, tint, 0.9, 1.6, spec.duration);
+        burstAt(at, tint, spec.sparks, "sphere");
+        return;
       case "lance":
       case "siphon": {
         // Both draw a line between two tops; the direction is what differs.
@@ -761,6 +772,13 @@ export function createVortexBattleScene(canvas: HTMLCanvasElement): VortexBattle
         );
         return;
       }
+      default:
+        /*
+         * void switch, so without this a new FxFamily member compiles and
+         * simply never draws — which is precisely how phaseshift shipped
+         * blank for the few minutes before this arm existed.
+         */
+        assertNever(family);
     }
   }
 

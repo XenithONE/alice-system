@@ -78,7 +78,6 @@ interface RuntimePassive {
 
 type TimedModifierKind =
   | "shield"
-  | "phase"
   | "attack"
   | "defense"
   | "stamina"
@@ -119,6 +118,21 @@ interface RuntimeTop<TSource> {
   lastHitAt: number;
   lastAttacker: SeatIndex | null;
   reverseOrbitUntil: number;
+  /*
+   * Pass-through expiry, in `elapsed` seconds — the same clock every other
+   * deadline in this simulation uses. Deliberately NOT a TimedModifier: a
+   * modifier is a multiplier applied to a number, and intangibility is not a
+   * number. Keeping it here is what stops the old 0.12 damage multiplier from
+   * coming back by accident.
+   */
+  phaseUntil: number;
+  /*
+   * What the colliders are currently set to. Rapier has no cheap read-back
+   * that distinguishes our two masks, and re-issuing setCollisionGroups on ten
+   * colliders every frame would wake the body needlessly, so the desired state
+   * is compared against this before touching physics.
+   */
+  phasing: boolean;
   timed: TimedModifier[];
 }
 
@@ -279,6 +293,35 @@ function compoundHull(
   );
 }
 
+/*
+ * Collision filtering for pass-through.
+ *
+ * Rapier tests a pair with a symmetric AND: they interact only if
+ * `A.membership & B.filter` AND `B.membership & A.filter` are both non-zero.
+ * So clearing ONE side's bit is enough to make a pair pass through, which is
+ * what makes the safety property below expressible.
+ *
+ * `phase` must let a top pass through other TOPS ONLY. If it could also pass
+ * the floor or the rim, a phasing top would fall out of the world and the
+ * ring-out rules would be built on a lie. That is guaranteed structurally
+ * rather than by care: a top's membership never changes, and both of its two
+ * possible filters are built by OR-ing onto GROUP_ARENA — the arena bit cannot
+ * be absent from a filter that is defined as containing it.
+ */
+const GROUP_ARENA = 0x0001;
+const GROUP_TOP = 0x0002;
+
+/** membership in the high half, filter in the low half. */
+const groups = (membership: number, filter: number): number =>
+  ((membership & 0xffff) << 16) | (filter & 0xffff);
+
+/** The arena collides with everything that exists. */
+const ARENA_GROUPS = groups(GROUP_ARENA, GROUP_ARENA | GROUP_TOP);
+/** Normal: floor, rim, and other tops. */
+const TOP_GROUPS_SOLID = groups(GROUP_TOP, GROUP_ARENA | GROUP_TOP);
+/** Phasing: floor and rim, and nothing else. */
+const TOP_GROUPS_PHASING = groups(GROUP_TOP, GROUP_ARENA);
+
 function addRing(world: RAPIER.World, arena: SimRingArena): RAPIER.Collider {
   // The bowl and its low retaining lip live in one trimesh collider. The lip
   // catches ordinary orbital drift while still allowing a sufficiently hard
@@ -348,7 +391,8 @@ function addRing(world: RAPIER.World, arena: SimRingArena): RAPIER.Collider {
   return world.createCollider(
     RAPIER.ColliderDesc.trimesh(vertices, indices)
       .setFriction(arena.friction)
-      .setRestitution(arena.restitution),
+      .setRestitution(arena.restitution)
+      .setCollisionGroups(ARENA_GROUPS),
     body,
   );
 }
@@ -452,7 +496,8 @@ function spawnTop<TSource>(
         clamp(part.restitution * resolvedRestitutionScale, 0, 0.95),
       )
       .setActiveEvents(RAPIER.ActiveEvents.CONTACT_FORCE_EVENTS)
-      .setContactForceEventThreshold(0);
+      .setContactForceEventThreshold(0)
+      .setCollisionGroups(TOP_GROUPS_SOLID);
 
   for (const layout of layouts) {
     const { part, height, radius: partRadius, y: localY } = layout;
@@ -578,6 +623,8 @@ function spawnTop<TSource>(
     lastHitAt: Number.NEGATIVE_INFINITY,
     lastAttacker: null,
     reverseOrbitUntil: 0,
+    phaseUntil: 0,
+    phasing: false,
     timed: [],
   };
 }
@@ -866,6 +913,33 @@ export function createVortexSim<TSource = unknown>(
     };
   }
 
+  /**
+   * Opens the pass-through window. Both the active and the passive path call
+   * this, so the two cannot drift apart again — that split is exactly how the
+   * active path ended up silently rewritten into a shield.
+   */
+  function applyPhase(top: RuntimeTop<TSource>, durationSec: number): void {
+    top.phaseUntil = Math.max(
+      top.phaseUntil,
+      elapsed + clamp(finite(durationSec, 0), 0, 12),
+    );
+  }
+
+  /**
+   * Pushes the phase window down to Rapier. Called once per step before the
+   * solver runs, so a skill fired between steps takes effect on the very next
+   * frame rather than one frame late.
+   */
+  function syncPhaseColliders(): void {
+    for (const top of tops) {
+      const wanted = top.alive && top.phaseUntil > elapsed;
+      if (wanted === top.phasing) continue;
+      top.phasing = wanted;
+      const mask = wanted ? TOP_GROUPS_PHASING : TOP_GROUPS_SOLID;
+      for (const collider of top.colliders) collider.setCollisionGroups(mask);
+    }
+  }
+
   function addTimed(
     top: RuntimeTop<TSource>,
     kind: TimedModifierKind,
@@ -924,11 +998,6 @@ export function createVortexSim<TSource = unknown>(
       "shield",
       elapsed,
     );
-    const phaseGuard = modifierAt(
-      victim as RuntimeTop<unknown>,
-      "phase",
-      elapsed,
-    );
     const defenseStat =
       victim.build.stats.defense *
       modifierAt(victim as RuntimeTop<unknown>, "defense", elapsed);
@@ -946,7 +1015,6 @@ export function createVortexSim<TSource = unknown>(
       rawDamage *
         victimMods.damageTaken *
         shield *
-        phaseGuard *
         suddenMultiplier /
         defense /
         durabilityGuard,
@@ -1144,6 +1212,9 @@ export function createVortexSim<TSource = unknown>(
             modifier.kind !== "friction" || modifier.value <= 1,
         );
         return;
+      case "phase":
+        applyPhase(top, effect.durationSec);
+        return;
       case "reverse-orbit":
         top.reverseOrbitUntil = Math.max(
           top.reverseOrbitUntil,
@@ -1339,12 +1410,7 @@ export function createVortexSim<TSource = unknown>(
         );
         return;
       case "phase":
-        addPassiveModifier(
-          top,
-          "phase",
-          0.12,
-          effect.durationSec * (1 + (passive.rank - 1) * 0.08),
-        );
+        applyPhase(top, effect.durationSec * (1 + (passive.rank - 1) * 0.08));
         return;
       case "steal-spin": {
         const victim =
@@ -1891,6 +1957,7 @@ export function createVortexSim<TSource = unknown>(
         for (const top of tops) updateConditionalPassives(top);
         for (const top of tops) applyTrackingAndSpin(top);
       }
+      syncPhaseColliders();
       world.step(queue);
       tick += 1;
       if (phase === "countdown") {

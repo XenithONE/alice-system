@@ -270,6 +270,11 @@ function scaleEnemyEffect(effect: SkillEffect, scale: number): SkillEffect {
         ...effect,
         durationSec: effect.durationSec * Math.sqrt(scale)
       };
+    case "phase":
+      return {
+        ...effect,
+        durationSec: effect.durationSec * Math.sqrt(scale)
+      };
     case "cleanse":
       return effect;
   }

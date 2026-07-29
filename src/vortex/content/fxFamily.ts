@@ -22,7 +22,8 @@ export type FxFamily =
   | "aegis"
   | "overclock"
   | "siphon"
-  | "reboot";
+  | "reboot"
+  | "phaseshift";
 
 export const FX_FAMILIES: readonly FxFamily[] = [
   "lance",
@@ -32,7 +33,8 @@ export const FX_FAMILIES: readonly FxFamily[] = [
   "aegis",
   "overclock",
   "siphon",
-  "reboot"
+  "reboot",
+  "phaseshift"
 ];
 
 /** Silhouette first, decoration second — see ARCHITECTURE_V2.md §2. */
@@ -71,7 +73,11 @@ export const FX_FAMILY_SPECS: Record<FxFamily, FxFamilySpec> = {
   // Violet thread from victim to caster — you can see who was robbed.
   siphon: { color: 0xc08bff, duration: 0.6, sparks: 6, priority: 3, labelJa: "吸収" },
   // Green, never warm: repair must not be mistaken for a hit.
-  reboot: { color: 0x6effb2, duration: 0.8, sparks: 8, priority: 2, labelJa: "再起" }
+  reboot: { color: 0x6effb2, duration: 0.8, sparks: 8, priority: 2, labelJa: "再起" },
+  /* Cold teal, and deliberately not reboot's mint: 0x2ee8d0 measured only 74
+     units away, and "I cannot be touched" must not read as "I healed". At
+     0x00e5c0 the nearest neighbour is reboot at 114. */
+  phaseshift: { color: 0x00e5c0, duration: 0.55, sparks: 10, priority: 3, labelJa: "透過" }
 };
 
 type EffectLike = { readonly kind: string; readonly direction?: string };
@@ -94,7 +100,16 @@ export function fxFamilyForEffects(effects: readonly EffectLike[]): FxFamily | n
   if (has("steal-spin") || has("cooldown-shift")) return "siphon";
   if (has("durability") && has("cleanse")) return "reboot";
   if (has("radial-damage")) return "shockring";
-  if (has("shield") || has("phase")) return "aegis";
+  /*
+   * Shield is tested before phase, and the two are no longer the same look.
+   * `phase` used to be folded in here because the simulation folded it in too
+   * — the active path was literally rewritten into a shield. Now that it is a
+   * real pass-through, defence and intangibility are different things the
+   * opponent has to read differently. `monday-override` carries both and stays
+   * aegis, which is right: it is a shield that also lets you slip.
+   */
+  if (has("shield")) return "aegis";
+  if (has("phase")) return "phaseshift";
   if (has("reverse-orbit") || impulse?.direction === "tangent") return "orbit";
   if (impulse?.direction === "toward-target") return "lance";
   if (impulse?.direction === "toward-center" || impulse?.direction === "away-from-target") {
