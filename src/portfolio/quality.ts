@@ -1,8 +1,26 @@
-// Hero-scene quality detection (portfolio only). Same priority pattern as the game's
-// detectQuality(): ?q= URL override > silent auto-detect. No localStorage, no visible UI.
+// Hero-scene quality (harbour + atelier). Priority: ?q= override > the visible
+// experience control > auto-detect.
 
+/**
+ * Capabilities, not a single label.
+ *
+ * The old shape had one `tier` and 42 places asking `tier === "low"`, which
+ * made the whole scene two-valued: balanced was high in everything but name —
+ * same MSAA, same shadow pass, same geometry. A phone with 4 GB landed on
+ * balanced and drew a desktop scene.
+ *
+ * Naming the capabilities lets a device turn off what costs it most while
+ * keeping what it can afford, and lets each call site say what it actually
+ * needs rather than guessing from a label.
+ */
 export interface HeroQuality {
+  /** Kept for the places that add richness at the top end, not for gating. */
   tier: "high" | "balanced" | "low";
+  /** What `tier === "low"` used to mean: fewer segments, simpler geometry. */
+  detail: "full" | "lite";
+  antialias: boolean;
+  shadows: boolean;
+  shadowMapSize: number;
   dpr: number;
   radialSegments: number;
   tubularSegments: number;
@@ -18,28 +36,42 @@ function build(tier: "high" | "balanced" | "low", reducedMotion: boolean, coarse
       dpr: Math.min(1.5, window.devicePixelRatio || 1),
       radialSegments: 16,
       tubularSegments: 128,
-      maxFps: 60 as const
+      maxFps: 60 as const,
+      detail: "full" as const,
+      antialias: true,
+      shadows: true,
+      shadowMapSize: 2048
     },
     balanced: {
       dpr: Math.min(1.25, window.devicePixelRatio || 1),
       radialSegments: 12,
       tubularSegments: 88,
-      maxFps: 60 as const
+      maxFps: 60 as const,
+      detail: "full" as const,
+      antialias: true,
+      shadows: true,
+      shadowMapSize: 1024
     },
     low: {
       dpr: 1,
       radialSegments: 8,
       tubularSegments: 56,
-      maxFps: 30 as const
+      maxFps: 30 as const,
+      detail: "lite" as const,
+      // The two whole passes a weak GPU should not be running at all.
+      antialias: false,
+      shadows: false,
+      shadowMapSize: 1024
     }
   }[tier];
   return {
     tier,
     ...table,
-    // Phones ship 2–3x screens: the desktop dpr caps (1.25/1.5) render a
-    // visibly blurry hero there. Capable coarse devices get a higher cap;
-    // genuinely weak ones stay on the low tier's dpr 1.
-    dpr: coarse && tier !== "low" ? Math.min(1.75, window.devicePixelRatio || 1) : table.dpr,
+    // Phones ship 2-3x screens and the desktop caps render a visibly soft
+    // scene there, so the bump stays — but 1.75 was above the desktop
+    // balanced cap of 1.25, i.e. 1.96x the pixels of the machine it was
+    // meant to be gentler than. 1.5 keeps the sharpness and loses the joke.
+    dpr: coarse && tier !== "low" ? Math.min(1.5, window.devicePixelRatio || 1) : table.dpr,
     // Reduced motion keeps the real 3D composition visible by default, but
     // freezes ambient looping motion and uses the lower frame-rate budget.
     maxFps: reducedMotion ? 30 : table.maxFps,
@@ -70,9 +102,18 @@ export function detectHeroQuality(): HeroQuality {
   const memory = typeof navigator !== "undefined" && "deviceMemory" in navigator
     ? Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 4)
     : 4;
-  // "low" is for genuinely weak hardware only — a small touch screen alone is
-  // NOT low-end (blanket-classing phones as low made the hero blurry there).
-  const low = memory < 3;
+  /*
+   * Screen size counts, and the sibling detectQuality() in src/lib/webgl.ts has
+   * always said so. This file deliberately dropped it — "a small touch screen
+   * alone is NOT low-end" — to stop phones going blurry, and fixed the blur by
+   * raising their dpr instead. So a phone got the low tier's reason to exist
+   * and the high tier's pixel count, which is the wrong half of both.
+   *
+   * The blur is handled above by the dpr bump. This can go back to meaning what
+   * it says.
+   */
+  const mobile = window.innerWidth < 780 || (coarse && window.innerWidth < 980);
+  const low = memory < 3 || mobile;
   const high = !low && !coarse && memory >= 4;
   return build(high ? "high" : low ? "low" : "balanced", reducedMotion, coarse);
 }

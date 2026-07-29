@@ -281,10 +281,10 @@ function createClouds(quality: HeroQuality): THREE.Group {
     opacity: 0.82,
     depthWrite: false
   });
-  const cloudCount = quality.tier === "low" ? 6 : 11;
+  const cloudCount = quality.detail === "lite" ? 6 : 11;
   for (let i = 0; i < cloudCount; i += 1) {
     const cloud = new THREE.Group();
-    const puffCount = quality.tier === "low" ? 3 : 5;
+    const puffCount = quality.detail === "lite" ? 3 : 5;
     for (let puff = 0; puff < puffCount; puff += 1) {
       const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 1), material);
       mesh.position.set((puff - (puffCount - 1) / 2) * 1.45, Math.sin(puff * 1.7) * 0.45, (puff % 2) * 0.34);
@@ -338,7 +338,7 @@ function createRockIsland(
 
 function createMountains(materials: HarborMaterials, quality: HeroQuality): THREE.Group {
   const root = new THREE.Group();
-  const count = quality.tier === "low" ? 10 : 18;
+  const count = quality.detail === "lite" ? 10 : 18;
   for (let i = 0; i < count; i += 1) {
     const height = 13 + (i % 5) * 4.8;
     const radius = 5.5 + (i % 4) * 1.1;
@@ -372,7 +372,7 @@ function createLantern(materials: HarborMaterials, quality: HeroQuality): THREE.
   roof.position.y = 2.91;
   roof.rotation.y = Math.PI / 4;
   root.add(roof);
-  if (quality.tier !== "low") {
+  if (quality.detail === "full") {
     const light = new THREE.PointLight(0xff9f3d, 1.5, 5.5, 2);
     light.position.y = 2.48;
     root.add(light);
@@ -485,7 +485,7 @@ export function createHarborScene(
 ): HarborScene {
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: quality.tier !== "low",
+    antialias: quality.antialias,
     powerPreference: "high-performance",
     alpha: false
   });
@@ -510,11 +510,11 @@ function initHarbor(
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.08;
-  renderer.shadowMap.enabled = quality.tier !== "low";
+  renderer.shadowMap.enabled = quality.shadows;
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xbddce6, quality.tier === "low" ? 0.0095 : 0.0072);
+  scene.fog = new THREE.FogExp2(0xbddce6, quality.detail === "lite" ? 0.0095 : 0.0072);
   const camera = new THREE.PerspectiveCamera(quality.coarse ? 56 : 48, 1, 0.1, 260);
   camera.position.set(0, 6.3, 27);
 
@@ -523,11 +523,11 @@ function initHarbor(
   scene.add(sky);
   scene.add(createSun());
   scene.add(createClouds(quality));
-  scene.add(new THREE.HemisphereLight(0xa8d9f4, 0x81522c, quality.tier === "low" ? 1.65 : 1.95));
-  const key = new THREE.DirectionalLight(0xffd098, quality.tier === "low" ? 3.1 : 4.1);
+  scene.add(new THREE.HemisphereLight(0xa8d9f4, 0x81522c, quality.detail === "lite" ? 1.65 : 1.95));
+  const key = new THREE.DirectionalLight(0xffd098, quality.detail === "lite" ? 3.1 : 4.1);
   key.position.set(-28, 42, 26);
   key.castShadow = renderer.shadowMap.enabled;
-  key.shadow.mapSize.set(quality.tier === "high" ? 2048 : 1024, quality.tier === "high" ? 2048 : 1024);
+  key.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
   key.shadow.camera.left = -45;
   key.shadow.camera.right = 45;
   key.shadow.camera.top = 45;
@@ -541,7 +541,7 @@ function initHarbor(
   scene.add(rim);
 
   const waterTexture = makeWaterTexture();
-  const waterSegments = quality.tier === "high" ? 128 : quality.tier === "low" ? 48 : 84;
+  const waterSegments = quality.tier === "high" ? 128 : quality.detail === "lite" ? 48 : 84;
   const waterGeometry = new THREE.PlaneGeometry(150, 170, waterSegments, waterSegments);
   const waterPositions = waterGeometry.attributes.position as THREE.BufferAttribute;
   const waterBase = new Float32Array(waterPositions.array as Float32Array);
@@ -594,7 +594,7 @@ function initHarbor(
   scene.add(createFloatingIslands(materials, quality.tier));
   scene.add(createMountains(materials, quality));
 
-  const lanternCount = quality.tier === "low" ? 7 : 13;
+  const lanternCount = quality.detail === "lite" ? 7 : 13;
   for (let i = 0; i < lanternCount; i += 1) {
     const lantern = createLantern(materials, quality);
     lantern.position.set(-7.45, 0.54, -35.4 + i * (34 / Math.max(1, lanternCount - 1)));
@@ -700,7 +700,7 @@ function initHarbor(
       z: portal.model.root.position.z,
       r: 0.72
     })),
-    ...Array.from({ length: quality.tier === "low" ? 3 : 5 }, (_, index) => ({
+    ...Array.from({ length: quality.detail === "lite" ? 3 : 5 }, (_, index) => ({
       x: -17.1,
       z: -4.5 - index * 5.5,
       r: 1.35
@@ -900,7 +900,7 @@ function initHarbor(
         Math.sin((x + y) * 0.095 + time * 0.33) * 0.055;
     }
     waterPositions.needsUpdate = true;
-    if (quality.tier !== "low") waterGeometry.computeVertexNormals();
+    if (quality.detail === "full") waterGeometry.computeVertexNormals();
     waterTexture.offset.x = (time * 0.008) % 1;
     waterTexture.offset.y = (time * 0.004) % 1;
   }

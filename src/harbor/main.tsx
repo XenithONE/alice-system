@@ -1,6 +1,7 @@
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { HarborPage } from "./HarborPage";
+import { applyStoredExperience } from "./experience";
 import type { Work } from "../data/works";
 import { GameDetail } from "../portfolio/components/GameDetail";
 import "../portfolio/theme.css";
@@ -26,6 +27,9 @@ function HarborApp() {
     </>
   );
 }
+
+// Before the first render, so HeroRoot never boots a scene it must tear down.
+applyStoredExperience();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

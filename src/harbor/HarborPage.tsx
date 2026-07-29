@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HeroRoot } from "./HeroRoot";
 import { ArcadeOverlay, type ArcadeHouse } from "./ArcadeOverlay";
+import { is3dOff, set3dOff } from "./experience";
 import type {
   HarborLandmark,
   HarborScene,
@@ -188,6 +189,9 @@ export function HarborPage({ onOpenDetail }: { onOpenDetail: (work: Work) => voi
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [glLive, setGlLive] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  // Read once: the class is applied before React mounts and only ever
+  // changes by way of a reload, so watching it would be watching a constant.
+  const [gl3dOff] = useState(is3dOff);
   const [arcadeHouse, setArcadeHouse] = useState<ArcadeHouse | null>(null);
 
   const harborWorks = useMemo<HarborWorkItem[]>(
@@ -265,8 +269,16 @@ export function HarborPage({ onOpenDetail }: { onOpenDetail: (work: Work) => voi
       sceneRef.current.goToLandmark(index);
       return;
     }
-    const target = document.querySelector<HTMLElement>(LANDMARKS[index]!.href);
-    target?.scrollIntoView({ behavior: "smooth" });
+    /*
+     * The hash doubles as a selector, which worked while the harbour and those
+     * sections were one page. Here the lookup always misses, so this silently
+     * did nothing outside cinematic mode. Send the visitor to the section on
+     * the page that actually has it.
+     */
+    const hash = LANDMARKS[index]!.href;
+    const target = document.querySelector<HTMLElement>(hash);
+    if (target) target.scrollIntoView({ behavior: "smooth" });
+    else window.location.href = `${BASE}${hash}`;
   };
 
   const modeAnnouncement =
@@ -317,12 +329,34 @@ export function HarborPage({ onOpenDetail }: { onOpenDetail: (work: Work) => voi
         <a className="harbor-wordmark" href="#top" aria-label="AlicE sYsTeM ホーム">
           AlicE sYsTeM
         </a>
+        {/*
+         * These three were bare hashes, which was right when the harbour was
+         * the top page's hero and those sections were below it. On its own
+         * page they pointed at nothing: #games, #ai-lab and #prompts all
+         * resolve to no element here, so every one of them was a dead click.
+         */}
         <nav className="harbor-primary-nav" aria-label="主要セクション">
-          <a href="#games">WORKS</a>
-          <a href="#ai-lab">AI LAB</a>
-          <a href="#prompts">PROMPT ARCHIVE</a>
+          <a href={`${BASE}#games`}>WORKS</a>
+          <a href={`${BASE}#ai-lab`}>AI LAB</a>
+          <a href={`${BASE}#prompts`}>PROMPT ARCHIVE</a>
           <button type="button" onClick={() => setMapOpen((open) => !open)} aria-expanded={mapOpen}>
             MAP
+          </button>
+          {/*
+           * The escape hatch. `experience-3d-off` was read in three places and
+           * written in none, so a device that could not run the scene had no
+           * way to say so except typing ?q=low into the address bar.
+           */}
+          <button
+            type="button"
+            onClick={() => {
+              set3dOff(!gl3dOff);
+              window.location.reload();
+            }}
+            aria-pressed={gl3dOff}
+            title={gl3dOff ? "3Dを有効にして読み込み直します" : "3Dを止めて静止画にします"}
+          >
+            {gl3dOff ? "3D ON" : "3D OFF"}
           </button>
         </nav>
         <button

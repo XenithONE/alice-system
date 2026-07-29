@@ -628,14 +628,14 @@ export function createTown(
   const trimMaterial = brickMaterial.clone();
   trimMaterial.roughness = 0.52;
   ownedMaterials.push(brickMaterial, trimMaterial);
-  const buildings = new BrickBatcher(brickMaterial, quality.tier === "low" ? 6 : 8);
-  const trim = new BrickBatcher(trimMaterial, quality.tier === "low" ? 6 : 8);
+  const buildings = new BrickBatcher(brickMaterial, quality.detail === "lite" ? 6 : 8);
+  const trim = new BrickBatcher(trimMaterial, quality.detail === "lite" ? 6 : 8);
   BUILDINGS.forEach((building, index) => addBuilding(buildings, trim, building, index));
-  addTownProps(trim, quality.tier === "low");
+  addTownProps(trim, quality.detail === "lite");
 
   const arena = addArena(buildings, trim, quality.tier);
 
-  const buildingBatch = buildings.build(quality.tier !== "low");
+  const buildingBatch = buildings.build(quality.detail === "full");
   const trimBatch = trim.build(false);
   group.add(buildingBatch.group, trimBatch.group);
 
@@ -655,7 +655,7 @@ export function createTown(
 
   const arenaLight = new THREE.PointLight(
     0xffb85c,
-    quality.tier === "low" ? 0.55 : 1.1,
+    quality.detail === "lite" ? 0.55 : 1.1,
     7,
     2
   );
@@ -709,7 +709,7 @@ export function createTown(
   });
   pennantMesh.instanceMatrix.needsUpdate = true;
   if (pennantMesh.instanceColor) pennantMesh.instanceColor.needsUpdate = true;
-  pennantMesh.castShadow = quality.tier !== "low";
+  pennantMesh.castShadow = quality.detail === "full";
   group.add(pennantMesh);
   ownedGeometries.push(pennantGeometry);
   ownedMaterials.push(pennantMaterial);
@@ -733,8 +733,8 @@ export function createTown(
     setArenaHighlight(on: boolean) {
       glowMaterial.opacity = on ? 0.82 : 0.34;
       arenaLight.intensity = on
-        ? (quality.tier === "low" ? 1.25 : 2.8)
-        : (quality.tier === "low" ? 0.55 : 1.1);
+        ? (quality.detail === "lite" ? 1.25 : 2.8)
+        : (quality.detail === "lite" ? 0.55 : 1.1);
       glow.scale.setScalar(on ? 1.12 : 1);
       brazierMaterial.opacity = on ? 0.95 : 0.5;
       for (const flame of brazierGlows) flame.scale.setScalar(on ? 1.2 : 1);

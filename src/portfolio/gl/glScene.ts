@@ -53,7 +53,7 @@ export function createGlScene(canvas: HTMLCanvasElement, quality: HeroQuality): 
   const renderer = new THREE.WebGLRenderer({
     canvas,
     alpha: false,
-    antialias: quality.tier !== "low",
+    antialias: quality.detail === "full",
     powerPreference: "high-performance"
   });
   try {
@@ -70,7 +70,7 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
-  renderer.shadowMap.enabled = quality.tier !== "low";
+  renderer.shadowMap.enabled = quality.detail === "full";
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
@@ -164,7 +164,7 @@ function init(canvas: HTMLCanvasElement, renderer: THREE.WebGLRenderer, quality:
   scene.add(sun);
 
   // ------------------------------------------------------------- composer
-  const useBloom = quality.tier !== "low";
+  const useBloom = quality.detail === "full";
   let composer: EffectComposer | null = null;
   let bloomPass: UnrealBloomPass | null = null;
   if (useBloom) {

@@ -210,7 +210,7 @@ export function createHouses(
     const windowMaterial = material(new THREE.MeshStandardMaterial({
       color: 0xffd98b,
       emissive: 0xffa62e,
-      emissiveIntensity: quality.tier === "low" ? 1.15 : 1.8,
+      emissiveIntensity: quality.detail === "lite" ? 1.15 : 1.8,
       roughness: 0.35,
       toneMapped: false
     }));
