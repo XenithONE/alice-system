@@ -964,6 +964,57 @@ export function createVortexSim<TSource = unknown>(
     return damage;
   }
 
+  /**
+   * Shifts cooldowns on whoever the effect names.
+   *
+   * Both handlers used to walk `top.skills` unconditionally — the caster's own
+   * slots — so pulse-jammer, which promises to delay 周囲の相手, delayed itself.
+   * The enemy branch reuses the radius fan-out that shockwave and
+   * target-spin-drain already use, guard for guard.
+   */
+  function shiftCooldowns(
+    top: RuntimeTop<TSource>,
+    seconds: number,
+    target: "self" | "enemies",
+    radius: number,
+  ): void {
+    const shiftOne = (victim: RuntimeTop<TSource>): void => {
+      for (const runtime of victim.skills) {
+        for (const member of runtime.members) {
+          /*
+           * A penalty counts from now; a discount counts from the existing
+           * deadline.
+           *
+           * The old formula was `max(elapsed, cooldownUntil + seconds)` for
+           * both. A ready skill has a cooldownUntil in the past, so +4s on it
+           * resolved to max(now, past + 4) — which is just `now` once the match
+           * is more than four seconds old. The jammer would have delayed
+           * nothing at all for all but the opening seconds, and the targeting
+           * gate is what surfaced it: the victim gained 3.483s instead of 4.
+           *
+           * A discount keeps the old shape deliberately: shortening a cooldown
+           * that already expired must not push a ready skill into the future.
+           */
+          const base =
+            seconds >= 0 ? Math.max(elapsed, member.cooldownUntil) : member.cooldownUntil;
+          member.cooldownUntil = Math.max(elapsed, base + seconds);
+        }
+      }
+    };
+    if (target === "self") {
+      shiftOne(top);
+      return;
+    }
+    const reach = Math.max(0, radius);
+    const origin = top.body.translation();
+    for (const other of tops) {
+      if (!other.alive || other === top || !areEnemies(top, other)) continue;
+      const position = other.body.translation();
+      if (Math.hypot(position.x - origin.x, position.z - origin.z) > reach) continue;
+      shiftOne(other);
+    }
+  }
+
   function applyEffect(top: RuntimeTop<TSource>, effect: SkillEffect): void {
     const target = nearestTarget(top, tops);
     const position = top.body.translation();
@@ -1085,14 +1136,7 @@ export function createVortexSim<TSource = unknown>(
         return;
       }
       case "cooldown-shift":
-        for (const runtime of top.skills) {
-          for (const member of runtime.members) {
-            member.cooldownUntil = Math.max(
-              elapsed,
-              member.cooldownUntil + effect.seconds,
-            );
-          }
-        }
+        shiftCooldowns(top, effect.seconds, effect.target, effect.radius);
         return;
       case "cleanse":
         top.timed = top.timed.filter(
@@ -1286,14 +1330,7 @@ export function createVortexSim<TSource = unknown>(
         });
         return;
       case "cooldown-shift":
-        for (const runtime of top.skills) {
-          for (const member of runtime.members) {
-            member.cooldownUntil = Math.max(
-              elapsed,
-              member.cooldownUntil + effect.amountSec * scale,
-            );
-          }
-        }
+        shiftCooldowns(top, effect.amountSec * scale, effect.target, effect.radius);
         return;
       case "cleanse":
         top.timed = top.timed.filter(

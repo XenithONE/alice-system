@@ -224,7 +224,7 @@ async function main(): Promise<void> {
       threshold: null,
       effects: [
         { type: "steal-spin", amount: 3 },
-        { type: "cooldown-shift", amountSec: -0.8 },
+        { type: "cooldown-shift", amountSec: -0.8, target: "self", radius: 0 },
       ],
     },
     {

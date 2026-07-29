@@ -343,7 +343,9 @@ function scaledPassiveEffect(
     case "cooldown-shift":
       return {
         type: "cooldown-shift",
-        amountSec: effect.amountSec * contributionScale
+        amountSec: effect.amountSec * contributionScale,
+        target: effect.target ?? "self",
+        radius: effect.radius ?? 0
       };
     case "cleanse":
       return { type: "cleanse" };

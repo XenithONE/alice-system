@@ -107,7 +107,25 @@ export type SkillEffectDef =
   | { kind: "durability"; amount: number }
   | { kind: "shield"; amount: number; durationSec: number }
   | { kind: "radial-damage"; amount: number; radius: number }
-  | { kind: "cooldown-shift"; amountSec: number }
+  /*
+   * `target` says who the shift lands on, because the host cannot infer it.
+   * Both handlers walked the CASTER's own slots, so pulse-jammer — whose text
+   * promises to delay 周囲の相手 — added +4s to all seven of its own, scaled by
+   * rank, on a 30s cooldown. The four self-targeted users were correct and stay
+   * correct: omitting the field means "self".
+   *
+   * Not inferred from the sign (+ enemy / − self) even though today's data
+   * happens to line up that way. A reader could not tell what an effect does
+   * without knowing the convention, and "slow the enemy's cooldown recovery"
+   * would become inexpressible.
+   */
+  | {
+      kind: "cooldown-shift";
+      amountSec: number;
+      target?: "self" | "enemies";
+      /** Required when target is "enemies"; ignored otherwise. */
+      radius?: number;
+    }
   | { kind: "cleanse" }
   | { kind: "phase"; durationSec: number }
   | { kind: "steal-spin"; amount: number }

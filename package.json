@@ -13,7 +13,7 @@
     "vortex:content-gates": "npx tsx src/vortex/content/gates.ts && npx tsx src/vortex/content/fxSelftest.ts",
     "vortex:endless-gates": "npx tsx src/vortex/endless/selftest.ts",
     "vortex:launch-gates": "npx tsx src/vortex/launch/selftest.ts",
-    "vortex:sim-gates": "npx tsx src/vortex/sim/headlessSelftest.ts && npx tsx src/vortex/sim/passiveSelftest.ts && npx tsx src/vortex/sim/teamSelftest.ts && npm run vortex:launch-gates",
+    "vortex:sim-gates": "npx tsx src/vortex/sim/headlessSelftest.ts && npx tsx src/vortex/sim/passiveSelftest.ts && npx tsx src/vortex/sim/targetingSelftest.ts && npx tsx src/vortex/sim/teamSelftest.ts && npm run vortex:launch-gates",
     "vortex:net-gates": "npx tsx src/vortex/net/wireSelftest.ts",
     "vortex:render-gates": "npx tsx src/vortex/render/topFactorySelftest.ts && npx tsx src/vortex/render/ringSurfaceSelftest.ts",
     "vortex:perf": "npx tsx src/vortex/sim/perfSelftest.ts",

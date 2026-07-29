@@ -206,7 +206,14 @@ function effectsFromCatalog(
         damage: effect.amount * scale,
       }];
     case "cooldown-shift":
-      return [{ type: "cooldown-shift", seconds: effect.amountSec * scale }];
+      return [{
+        type: "cooldown-shift",
+        seconds: effect.amountSec * scale,
+        target: effect.target ?? "self",
+        // Reach is authored, not earned: rank scales the magnitude, not the
+        // radius, exactly as radial-damage already does above.
+        radius: effect.radius ?? 0,
+      }];
     case "cleanse":
       return [{ type: "cleanse" }];
     case "phase":
@@ -289,7 +296,12 @@ function passiveEffectFromCatalog(
         radius: effect.radius,
       };
     case "cooldown-shift":
-      return { type: "cooldown-shift", amountSec: effect.amountSec };
+      return {
+        type: "cooldown-shift",
+        amountSec: effect.amountSec,
+        target: effect.target ?? "self",
+        radius: effect.radius ?? 0,
+      };
     case "cleanse":
       return { type: "cleanse" };
     case "phase":

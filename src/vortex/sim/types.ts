@@ -119,7 +119,12 @@ export type SkillEffect =
     }
   | { readonly type: "center-pull"; readonly impulse: number }
   | { readonly type: "orbit-dash"; readonly impulse: number }
-  | { readonly type: "cooldown-shift"; readonly seconds: number }
+  | {
+      readonly type: "cooldown-shift";
+      readonly seconds: number;
+      readonly target: "self" | "enemies";
+      readonly radius: number;
+    }
   | { readonly type: "cleanse" }
   | { readonly type: "reverse-orbit"; readonly durationSec: number };
 
@@ -184,7 +189,12 @@ export type ResolvedPassiveEffect =
       readonly amount: number;
       readonly radius: number;
     }
-  | { readonly type: "cooldown-shift"; readonly amountSec: number }
+  | {
+      readonly type: "cooldown-shift";
+      readonly amountSec: number;
+      readonly target: "self" | "enemies";
+      readonly radius: number;
+    }
   | { readonly type: "cleanse" }
   | { readonly type: "phase"; readonly durationSec: number }
   | { readonly type: "steal-spin"; readonly amount: number }

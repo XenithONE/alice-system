@@ -315,7 +315,10 @@ export const ACTIVE_SKILLS = [
     condition: { kind: "target-near", distance: 2.8 },
     effects: [
       { kind: "radial-damage", amount: 18, radius: 2.8 },
-      { kind: "cooldown-shift", amountSec: 4 }
+      // The only enemy-targeting cooldown-shift in the catalogue. The radius
+      // matches this skill's own radial-damage and its target-near condition,
+      // both 2.8 — one reach, authored once.
+      { kind: "cooldown-shift", amountSec: 4, target: "enemies", radius: 2.8 }
     ]
   },
   {
