@@ -122,3 +122,15 @@ export function fxFamilyForSkill(skillId: string | undefined): FxFamily | null {
   if (!skillId) return null;
   return FX_FAMILY_BY_SKILL_ID.get(skillId) ?? null;
 }
+
+/**
+ * The same eight colours as CSS, derived rather than retyped — a hex written
+ * once in the renderer and again in the stylesheet is two facts that drift,
+ * and the whole point is that the button matches the effect it fires.
+ */
+export const FX_FAMILY_TINTS: Record<FxFamily, string> = Object.fromEntries(
+  FX_FAMILIES.map((family) => [
+    family,
+    `#${FX_FAMILY_SPECS[family].color.toString(16).padStart(6, "0")}`
+  ])
+) as Record<FxFamily, string>;

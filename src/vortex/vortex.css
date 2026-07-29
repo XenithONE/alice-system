@@ -818,11 +818,24 @@ button { color: inherit; }
   left: 50%;
   bottom: max(14px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  width: min(780px, calc(100% - 24px));
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* auto-fit, not repeat(7): the dock renders only equipped slots now, and a
+     fixed seven-column track would leave the gaps it used to fill with
+     "NO ACTIVE" buttons. */
+  max-width: min(780px, calc(100% - 24px));
+  display: flex;
+  justify-content: center;
   gap: 6px;
 }
+.vc-skills--empty p {
+  margin: 0;
+  padding: 7px 14px;
+  border: 1px solid var(--vc-line);
+  background: rgba(3,8,11,.7);
+  backdrop-filter: blur(12px);
+  color: var(--vc-muted);
+  font: 500 10px var(--vc-body);
+}
+
 .vc-skill {
   position: relative;
   min-width: 0;
@@ -832,22 +845,38 @@ button { color: inherit; }
   display: flex;
   flex-direction: column;
   justify-content: space-between;
+  width: 104px;
   border: 1px solid var(--vc-line);
-  background: rgba(3,8,11,.8);
+  /* The family colour bleeds up from the base, so the button and the effect it
+     fires are the same colour. Learning one teaches the other. */
+  border-bottom: 2px solid var(--family, var(--vc-cyan));
+  background:
+    linear-gradient(0deg, color-mix(in srgb, var(--family, var(--vc-cyan)) 16%, transparent), transparent 62%),
+    rgba(3,8,11,.8);
   backdrop-filter: blur(12px);
   cursor: pointer;
+  transition: transform .12s ease, border-color .12s ease;
 }
+
+/* Ready is a state you should be able to catch in peripheral vision. */
+.vc-skill[data-ready="yes"]:not(:disabled) { border-color: color-mix(in srgb, var(--family) 55%, transparent); }
+.vc-skill[data-ready="yes"]:not(:disabled):hover { transform: translateY(-2px); }
 .vc-skill::before {
   content: "";
   position: absolute;
   left: 0; right: 0; bottom: 0;
   height: var(--cooldown, 0%);
-  background: rgba(98,221,255,.14);
+  background: color-mix(in srgb, var(--family, var(--vc-cyan)) 18%, transparent);
   pointer-events: none;
+  transition: height .18s linear;
 }
 .vc-skill:hover, .vc-skill:focus-visible { outline: none; border-color: var(--vc-cyan); }
 .vc-skill:disabled { opacity: .38; cursor: not-allowed; }
-.vc-skill__key { color: var(--vc-cyan); font: 600 9px var(--vc-mono); }
+.vc-skill__key {
+  color: var(--family, var(--vc-cyan));
+  font: 600 9px var(--vc-mono);
+  opacity: .85;
+}
 .vc-skill strong { position: relative; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 700 10px var(--vc-body); }
 .vc-skill small { position: relative; color: var(--vc-muted); font: 500 8px var(--vc-mono); }
 .vc-match__message {
@@ -966,7 +995,7 @@ button { color: inherit; }
   .vc-fighter { padding: 5px 7px; }
   .vc-fighter__head { font-size: 8px; }
   .vc-skills { bottom: max(8px, env(safe-area-inset-bottom)); gap: 3px; width: calc(100% - 10px); }
-  .vc-skill { height: 58px; padding: 5px 3px; }
+  .vc-skill { height: 58px; padding: 5px 3px; width: 74px; }
   .vc-skill strong { font-size: 8px; }
   .vc-skill small { display: none; }
   .vc-result__row { grid-template-columns: 28px 1fr repeat(2, 54px); }

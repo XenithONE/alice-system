@@ -6,6 +6,8 @@ import {
   useState,
   type CSSProperties
 } from "react";
+import { FX_FAMILY_TINTS, fxFamilyForSkill } from "./content/fxFamily";
+import type { SkillRuntimeState } from "./sim/types";
 import {
   ACTIVE_SKILLS,
   LINEAGE_META,
@@ -1249,6 +1251,87 @@ function stateToVisual(
   };
 }
 
+/**
+ * The skill dock, once.
+ *
+ * There were two of these — one in MatchScreen, one in NetworkMatchView — and
+ * they had already drifted: only the network copy showed the stacked-slot sync
+ * count, and only the solo copy carried an aria-label. Two copies of one
+ * control means every fix lands in one of them.
+ *
+ * Empty slots are not rendered. Seven buttons reading "NO ACTIVE" told the
+ * player nothing except that the dock has seven positions, and pushed the ones
+ * that do something to the edge of a row they did not need to share.
+ */
+function SkillDock({
+  skills,
+  disabled,
+  onActivate
+}: {
+  skills: readonly SkillRuntimeState[] | undefined;
+  disabled: boolean;
+  onActivate: (slot: SkillSlot) => void;
+}) {
+  const equipped = Array.from({ length: 7 }, (_, index) => ({
+    index,
+    skill: skills?.[index]
+  })).filter((entry) => entry.skill?.skillId);
+
+  /* A build really can carry no active skills — QUICK LAUNCH produces one.
+     Seven disabled buttons said that badly; saying nothing at all says it
+     worse, because the player cannot tell the dock from a bug. */
+  if (equipped.length === 0) {
+    return (
+      <div className="vc-skills vc-skills--empty" aria-label="アクティブスキル">
+        <p>この機体にアクティブスキルはありません</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="vc-skills" aria-label="アクティブスキル">
+      {equipped.map(({ index, skill }) => {
+        const definition = skill?.skillId ? getActiveSkill(skill.skillId) : undefined;
+        const totalCooldown = definition?.cooldownSec ?? 1;
+        const remaining = Math.max(0, skill?.cooldownRemaining ?? 0);
+        const family = fxFamilyForSkill(skill?.skillId ?? undefined);
+        const stacked = (skill?.groupSize ?? 1) > 1;
+        return (
+          <button
+            className="vc-skill"
+            key={index}
+            data-family={family ?? undefined}
+            data-ready={skill?.ready ? "yes" : "no"}
+            disabled={!skill?.ready || disabled}
+            onClick={() => onActivate((index + 1) as SkillSlot)}
+            style={
+              {
+                "--cooldown": `${Math.min(100, (remaining / totalCooldown) * 100)}%`,
+                /* The button wears the colour its effect will be, so the dock
+                   and the arena teach each other. */
+                "--family": family ? FX_FAMILY_TINTS[family] : "var(--vc-cyan)"
+              } as CSSProperties
+            }
+            aria-label={`${index + 1} ${skill?.name ?? ""}${skill?.ready ? "" : " 使用不可"}`}
+          >
+            <span className="vc-skill__key">{index + 1}</span>
+            <strong>{skill?.name}</strong>
+            <small>
+              {stacked
+                ? `${skill?.readyCount ?? 0}/${skill?.groupSize} SYNC`
+                : remaining > 0.05
+                  ? `${remaining.toFixed(1)}s`
+                  : (skill?.chargesRemaining ?? -1) < 0
+                    ? "∞"
+                    : `×${skill?.chargesRemaining}`}
+            </small>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function MatchScreen({
   builds,
   settings,
@@ -1453,32 +1536,7 @@ function MatchScreen({
           )}
         </div>
       )}
-      <div className="vc-skills" aria-label="Activeスキル">
-        {Array.from({ length: 7 }, (_, index) => {
-          const skill = me?.skills[index];
-          const cooldown = skill ? Math.max(0, skill.cooldownRemaining) : 0;
-          const definition = skill?.skillId ? getActiveSkill(skill.skillId) : undefined;
-          const totalCooldown = definition?.cooldownSec ?? 1;
-          return (
-            <button
-              className="vc-skill"
-              key={index}
-              disabled={!skill?.ready || paused}
-              onClick={() => activate((index + 1) as SkillSlot)}
-              style={{ "--cooldown": `${Math.min(100, cooldown / totalCooldown * 100)}%` } as CSSProperties}
-              aria-label={`${index + 1} ${skill?.name ?? "スキルなし"}`}
-            >
-              <span className="vc-skill__key">KEY {index + 1}</span>
-              <strong>{skill?.name ?? "NO ACTIVE"}</strong>
-              <small>
-                {skill?.skillId
-                  ? skill.chargesRemaining < 0 ? "∞" : `×${skill.chargesRemaining}`
-                  : SLOT_META[TOP_SLOTS[index]!].name}
-              </small>
-            </button>
-          );
-        })}
-      </div>
+      <SkillDock skills={me?.skills} disabled={paused} onActivate={activate} />
     </main>
   );
 }
@@ -1802,37 +1860,7 @@ function NetworkMatchView({
           )}
         </div>
       )}
-      <div className="vc-skills" aria-label="Activeスキル">
-        {Array.from({ length: 7 }, (_, index) => {
-          const skill = me?.skills[index];
-          const totalCooldown = skill?.skillId
-            ? getActiveSkill(skill.skillId)?.cooldownSec ?? 1
-            : 1;
-          return (
-            <button
-              className="vc-skill"
-              key={index}
-              disabled={!skill?.ready || menuOpen}
-              onClick={() => session.activate((index + 1) as SkillSlot)}
-              style={{
-                "--cooldown": `${Math.min(100, (skill?.cooldownRemaining ?? 0) / totalCooldown * 100)}%`
-              } as CSSProperties}
-            >
-              <span className="vc-skill__key">KEY {index + 1}</span>
-              <strong>{skill?.name ?? "NO ACTIVE"}</strong>
-              <small>
-                {skill?.skillId
-                  ? (skill.groupSize ?? 1) > 1
-                    ? `${skill.readyCount ?? 0}/${skill.groupSize} SYNC`
-                    : skill.chargesRemaining < 0
-                      ? "∞"
-                      : `×${skill.chargesRemaining}`
-                  : SLOT_META[TOP_SLOTS[index]!].name}
-              </small>
-            </button>
-          );
-        })}
-      </div>
+      <SkillDock skills={me?.skills} disabled={menuOpen} onActivate={(slot) => session.activate(slot)} />
     </main>
   );
 }
