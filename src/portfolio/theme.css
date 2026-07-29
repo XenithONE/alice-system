@@ -49,6 +49,8 @@
   --dev: #6849bf;
   --rec: #c91a09;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --tile-scrim: rgba(4, 18, 32, 0.92);
+  --chip-bg: rgba(6, 28, 49, 0.78);
   --studs: radial-gradient(circle at 50% 42%, rgba(23, 27, 33, 0.05) 20%, transparent 22%);
 }
 
@@ -77,22 +79,15 @@ body {
   padding-bottom: clamp(84px, 10vw, 154px);
 }
 
-.section-index,
-.group-eyebrow {
+.section-index {
   color: #e6ad46;
 }
 
-.section-head h2,
-.game-group h3,
-.prompts-editorial h2 {
+.section-head h2,.prompts-editorial h2 {
   color: #f6f1e7;
   font-family: var(--serif);
   font-weight: 500;
   letter-spacing: -0.025em;
-}
-
-.games-section {
-  background: #061c31;
 }
 
 .catalog-filter {
@@ -122,42 +117,11 @@ body {
   box-shadow: none;
 }
 
-.shelf-grid,
-.shelf-strip {
-  gap: 1px;
-  background: rgba(246, 241, 231, 0.16);
-  border: 1px solid rgba(246, 241, 231, 0.16);
-}
-
-.game-card {
-  border: 0;
-  border-radius: 0;
-  background: #0a2944;
-  box-shadow: none;
-}
-
-.game-card:hover,
-.game-card:focus-within {
-  z-index: 1;
-  transform: translateY(-4px);
-  box-shadow: 0 18px 48px rgba(1, 17, 31, 0.44);
-}
-
-.gc-media,
-.gc-body {
-  background: #0a2944;
-}
-
-.gc-title,
 .detail-title {
   color: #f6f1e7;
 }
 
-.gc-ja,
-.gc-desc,
-.made-with,
-.detail-desc,
-.detail-tags {
+.made-with,.detail-desc,.detail-tags {
   color: #b9c5ce;
 }
 
@@ -395,8 +359,11 @@ body {
   margin: clamp(26px, 4vh, 36px) 0 0;
 }
 
-/* The sticky bar would otherwise cover whatever a #hash jump lands on. */
-section[id] {
+/* The sticky bar would otherwise cover whatever a #hash jump lands on.
+   The tiles need it too: each one now carries id={work.id}, so #huntcontract
+   and #demiurge resolve for the first time — and landed under the bar. */
+section[id],
+.bento-tile[id] {
   scroll-margin-top: 76px;
 }
 
@@ -409,4 +376,215 @@ section[id] {
   @keyframes hero-rise {
     from { opacity: 0; transform: translateY(14px); }
   }
+}
+
+/* ── works bento ──────────────────────────────────────────────────────────
+ * Six columns. Tile size encodes importance, and bento.ts derives that size
+ * from the work rather than from a position table, so appending a Work to
+ * works.ts still updates the site.
+ *
+ * No grid-auto-flow: dense. Dense closes gaps by reordering tiles visually
+ * without touching the DOM, which desynchronises the tab order and the screen
+ * reader from what is on screen. bento.ts packs bands that fill six columns
+ * with matching heights instead, and bentoSelftest walks the cells to prove
+ * there are no holes.
+ */
+.bento-grid {
+  /* Tuned so a 4x4 and a 2x2 tile both land on 16:10, which is the exact
+     shape of every cover — the row height is the only free variable and the
+     two tiers disagree by about two pixels, which is nothing. */
+  --bento-row: clamp(90px, 7.85vw, 118px);
+  --bento-gap: clamp(10px, 1.1vw, 16px);
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-auto-rows: var(--bento-row);
+  gap: var(--bento-gap);
+  list-style: none;
+  margin: clamp(28px, 4vw, 44px) auto 0;
+  padding: 0 var(--gutter);
+  max-width: var(--page-max);
+}
+.bt-xl { grid-column: span 4; grid-row: span 4; }
+.bt-l  { grid-column: span 4; grid-row: span 3; }
+.bt-p  { grid-column: span 2; grid-row: span 4; }
+.bt-m  { grid-column: span 2; grid-row: span 3; }
+.bt-s  { grid-column: span 2; grid-row: span 2; }
+
+/* A filtered view is a subset, and a subset has no ranking within the whole
+   catalogue — so every tile is the same size and no hole can appear. */
+.bento-grid[data-mode="filtered"] > .bento-tile {
+  grid-column: span 2;
+  grid-row: span 3;
+}
+
+/*
+ * Two invariants hold this together, and they are the same invariant:
+ * .bento-tile is the ONLY positioned box, so .bt-link::after{inset:0} and the
+ * absolutely-placed .bt-detail always measure themselves against the tile.
+ *
+ * They used to measure against .bt-body, which was position:relative purely to
+ * win the paint order over an absolute .bt-media. In overlay mode the body is
+ * full height, so that was invisibly correct; in caption mode and in the
+ * stacked layout under 560px it was not, and the picture — most of the tile —
+ * silently took no clicks on sixteen tiles. Stacking with grid areas instead
+ * of positioning gets the same paint order with nothing left to get wrong.
+ */
+.bento-tile {
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  transition: transform 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+@media (min-width: 560px) {
+  .bt-overlay { grid-template-areas: "stack"; }
+  .bt-overlay > .bt-media,
+  .bt-overlay > .bt-body { grid-area: stack; }
+}
+.bt-media { min-width: 0; min-height: 0; }
+.bt-media img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform 0.24s var(--ease);
+}
+.bento-tile:hover { transform: translateY(-4px); border-color: var(--hairline-strong); }
+.bento-tile:hover .bt-media img { transform: scale(1.04); }
+
+.bt-body {
+  display: flex; flex-direction: column; justify-content: flex-end;
+  min-height: 0;
+  padding: clamp(12px, 1.4vw, 20px);
+  gap: 4px;
+}
+.bt-overlay .bt-body {
+  background: linear-gradient(
+    0deg,
+    var(--tile-scrim) 0%,
+    color-mix(in srgb, var(--tile-scrim) 55%, transparent) 42%,
+    transparent 78%
+  );
+}
+
+/* m stacks text under a whole picture instead of over a cropped one: a 2x3
+   overlay would cut a third of the width off a 16:10 cover.
+ *
+ * The picture claims its 16:10 first and the caption takes the remainder —
+ * the other way round (media: 1fr) let the text decide how much picture you
+ * got, and the text won: the image ended up 342x115, a 2.96 letterbox, a
+ * harder crop than the overlay this mode exists to avoid.
+ *
+ * That leaves about 115px for the caption, so it carries what a figure
+ * caption carries — status, title, Japanese title — and the prose moves to
+ * the detail dialog, which every m tile has a button for. */
+.bt-caption { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.bt-caption .bt-media { aspect-ratio: 16 / 10; }
+.bt-caption .bt-body {
+  background: var(--raised);
+  padding: 10px clamp(12px, 1.4vw, 20px) 12px;
+  gap: 2px;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.bt-caption .bt-desc { display: none; }
+.bt-caption .bt-meta { opacity: 1; transform: none; }
+/* The badge sits on the picture rather than in the caption. In the caption it
+   cost 30px of a 114px strip and the text clipped by 9; on the picture it is
+   free, and a status sticker on the image is where a catalogue puts it. */
+.bt-caption .bt-badges {
+  position: absolute; top: 10px; left: 10px; z-index: 2; margin: 0;
+}
+
+.bt-badges { margin: 0 0 2px; }
+.bt-title { margin: 0; font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.05; }
+.bt-xl .bt-title { font-size: clamp(1.5rem, 2.6vw, 2.6rem); }
+.bt-l  .bt-title { font-size: clamp(1.3rem, 2vw, 2rem); }
+.bt-p  .bt-title,
+.bt-m  .bt-title { font-size: clamp(1.05rem, 1.3vw, 1.3rem); }
+.bt-s  .bt-title { font-size: clamp(0.98rem, 1.1vw, 1.14rem); }
+.bt-title .bt-link { color: var(--ink); background: none; border: 0; padding: 0; font: inherit; text-align: left; cursor: pointer; }
+/* One target per tile: the anchor covers the whole rectangle, so the tab stop
+   and the touch area are the tile itself rather than a title-sized sliver. */
+.bt-link::after { content: ""; position: absolute; inset: 0; z-index: 2; }
+.bt-ja { margin: 0; color: var(--text-dim); font-family: var(--jp); font-size: 0.82rem; }
+.bt-s .bt-ja { display: none; }
+
+.bt-meta {
+  display: grid; gap: 6px;
+  opacity: 0; transform: translateY(8px);
+  transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.bento-tile:hover .bt-meta,
+.bento-tile:focus-within .bt-meta { opacity: 1; transform: none; }
+.bt-desc { margin: 0; color: var(--text-dim); font-family: var(--jp); font-size: 0.82rem; line-height: 1.6; }
+.bt-s .bt-desc, .bt-p .bt-desc { display: none; }
+.bt-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.bt-year { font-family: var(--mono); font-size: 0.66rem; color: var(--text-faint); letter-spacing: 0.08em; }
+
+.bt-detail {
+  position: absolute; z-index: 3; right: 10px; top: 10px;
+  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-dim); background: var(--chip-bg);
+  border: 1px solid var(--hairline); border-radius: 999px; padding: 6px 11px; cursor: pointer;
+  opacity: 0; transition: opacity 0.2s var(--ease), color 0.2s var(--ease);
+}
+.bento-tile:hover .bt-detail,
+.bento-tile:focus-within .bt-detail { opacity: 1; }
+.bt-detail:hover { color: var(--ink); border-color: var(--hairline-strong); }
+
+/* Frame the whole tile, and only for keyboard focus — a mouse press should not
+   light it up. */
+.bento-tile:has(.bt-link:focus-visible) {
+  outline: 3px solid var(--red);
+  outline-offset: 3px;
+}
+
+/* A phone has no hover, so the progressive disclosure above would never fire
+   and half of each tile's text would be permanently invisible. This is the
+   most common way a bento grid goes wrong. */
+@media (hover: none) {
+  .bt-meta { opacity: 1; transform: none; }
+  .bt-detail { opacity: 1; }
+}
+
+@media (max-width: 1179px) {
+  .bento-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .bt-xl, .bt-l { grid-column: span 4; }
+  .bt-p, .bt-m, .bt-s { grid-column: span 2; }
+}
+@media (max-width: 879px) {
+  .bento-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bt-xl, .bt-l, .bt-p { grid-column: span 2; }
+  .bt-m, .bt-s { grid-column: span 1; }
+}
+/* Below this a bento is unreadable — six columns of nothing. Plain stack. */
+@media (max-width: 559px) {
+  .bento-grid,
+  .bento-grid[data-mode="filtered"] {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+  }
+  .bento-grid > .bento-tile,
+  .bento-grid[data-mode="filtered"] > .bento-tile {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+  .bento-tile { display: grid; grid-template-rows: auto auto; }
+  .bt-media { aspect-ratio: 16 / 10; }
+  /* 2:3, the posters' own shape. It said 3/4 — a number written a second time
+     and wrong, cropping 11% off art that a single column can show whole. */
+  .bt-p .bt-media { aspect-ratio: 2 / 3; }
+  .bt-body { background: var(--raised); }
+  .bt-overlay .bt-body { background: var(--raised); }
+  .bt-s .bt-ja, .bt-s .bt-desc, .bt-p .bt-desc { display: block; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bento-tile, .bt-media img, .bt-meta, .bt-detail { transition: none; }
+  .bento-tile:hover { transform: none; }
+  .bento-tile:hover .bt-media img { transform: none; }
+  /* Pin the disclosure open rather than snapping it — a hard cut on hover is
+     harder to read than no motion at all. */
+  .bt-meta { opacity: 1; transform: none; }
+  .bt-detail { opacity: 1; }
 }

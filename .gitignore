@@ -6,3 +6,12 @@ dist/
 .vite/
 .codex-*.log
 .codex-*.err.log
+
+# Scratch from local runs: vite logs, pid files, release staging.
+.qa/
+
+# Concept art is kept as the 1200px WebP next to it; the 2.5 MB PNGs the
+# generator emitted are working files. Phase 1 of this rebuild deleted 6 MB of
+# unused images from the repo - re-adding 7.7 MB of decided-on concepts would
+# undo that on the same day.
+docs/design/**/*.png
