@@ -95,6 +95,16 @@ export function aiActivation(
   const distance = nearestEnemyDistance(state, seat);
   const hurting = top.hp < top.hpMax * 0.45;
   const window = top.comboWindow;
+  /*
+   * Ids this top has equipped, for the finisher-hold rule below. Without it
+   * the probe measured the policy WASTING finishers: at spawn range the
+   * offence-hold fired the neutral finisher first, so by the time its
+   * opener created a window the finisher was deep in cooldown — 14 opener
+   * fires, zero combos, again, with combo-seeking supposedly on.
+   */
+  const equippedIds = new Set(
+    top.skills.map((slot) => slot.skillId).filter((id) => id !== null),
+  );
   const scored = ordered
     .map((skill, index) => {
       /*
@@ -129,6 +139,33 @@ export function aiActivation(
         );
         if (finishes) score += 300;
       }
+      /*
+       * The mirror of the window bonus: a finisher whose PAIRED opener is
+       * also equipped is worth more inside a window than outside one, so
+       * outside one it waits — mildly, not absolutely, or a build with
+       * nothing else would deadlock into passivity.
+       */
+      const wastesFinisher =
+        skill.skillId !== null &&
+        (!window ||
+          !(RESOLVED_COMBOS_BY_OPENER.get(window.opener) ?? []).some(
+            (combo) => combo.finisher === skill.skillId,
+          )) &&
+        [...RESOLVED_COMBOS_BY_OPENER.values()].some((combos) =>
+          combos.some(
+            (combo) =>
+              combo.finisher === skill.skillId &&
+              equippedIds.has(combo.opener),
+          ),
+        );
+      /*
+       * -12, not a lockout: at -60 the hold outweighed every positional
+       * reason to fire, and the probe showed the pilot losing MORE games
+       * than the combo bonus won back — kinetic skills have value beyond
+       * their pair. A mild preference keeps ~half the finishers for their
+       * windows without distorting the fight.
+       */
+      if (wastesFinisher) score -= 12;
       return { slot: skill.slot, score };
     })
     .sort((first, second) => second.score - first.score);

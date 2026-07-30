@@ -10,6 +10,10 @@
  * the simulation's clock is `elapsed` seconds — the adapter converts ONCE at
  * resolve time (ticks are cadence, never deadlines; see ARCHITECTURE_V2 §7).
  *
+ * Windows were tightened x0.6 in v3.1 (3s -> ~1.1-1.8s): a deliberate
+ * sequencer measured 92% finisher success against the original windows,
+ * which made the "combo" a formality rather than a timing skill.
+ *
  * The pair (opener, finisher) must be two DIFFERENT skills. Same-slot
  * self-pairs are structurally impossible in the simulation anyway — the
  * window is written after detection runs — but the gate refuses them here
@@ -36,7 +40,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "旋回爆圏",
     opener: "vortex-dash",
     finisher: "shock-ring",
-    withinTicks: 150,
+    withinTicks: 90,
     effects: [{ kind: "radial-damage", amount: 26, radius: 2.6 }],
   },
   {
@@ -44,7 +48,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "狩王の裁き",
     opener: "hunter-lunge",
     finisher: "crown-breaker",
-    withinTicks: 120,
+    withinTicks: 72,
     effects: [
       { kind: "stat-multiplier", stat: "attack", multiplier: 1.35, durationSec: 3 },
     ],
@@ -54,7 +58,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "位相反撃",
     opener: "phase-skid",
     finisher: "counter-spin",
-    withinTicks: 110,
+    withinTicks: 66,
     effects: [
       { kind: "shield", amount: 60, durationSec: 2.2 },
       { kind: "spin", amount: 9 },
@@ -65,7 +69,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "重錨特異点",
     opener: "anchor-drop",
     finisher: "gravity-well",
-    withinTicks: 160,
+    withinTicks: 96,
     effects: [
       { kind: "stat-multiplier", stat: "stability", multiplier: 1.4, durationSec: 3 },
     ],
@@ -75,7 +79,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "連鎖起動",
     opener: "burst-drive",
     finisher: "kinetic-pulse",
-    withinTicks: 130,
+    withinTicks: 78,
     effects: [{ kind: "spin", amount: 14 }],
   },
   {
@@ -83,7 +87,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "縁の返し",
     opener: "rim-brake",
     finisher: "edge-reversal",
-    withinTicks: 140,
+    withinTicks: 84,
     effects: [
       { kind: "impulse", direction: "toward-center", strength: 7 },
       { kind: "stat-multiplier", stat: "mobility", multiplier: 1.2, durationSec: 2.5 },
@@ -94,7 +98,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "収奪処刑",
     opener: "momentum-siphon",
     finisher: "execution-drive",
-    withinTicks: 150,
+    withinTicks: 90,
     effects: [
       { kind: "stat-multiplier", stat: "attack", multiplier: 1.25, durationSec: 2.5 },
       { kind: "spin", amount: 8 },
@@ -105,7 +109,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "近点強襲",
     opener: "slipstream",
     finisher: "periapsis-lance",
-    withinTicks: 120,
+    withinTicks: 72,
     effects: [{ kind: "impulse", direction: "toward-target", strength: 8 }],
   },
   {
@@ -113,7 +117,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "モーニングラッシュ",
     opener: "coffee-overfill",
     finisher: "deadline-dash",
-    withinTicks: 180,
+    withinTicks: 108,
     effects: [
       { kind: "spin", amount: 10 },
       { kind: "stat-multiplier", stat: "mobility", multiplier: 1.3, durationSec: 2 },
@@ -124,7 +128,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "過熱共鳴",
     opener: "heat-vent",
     finisher: "resonance-burst",
-    withinTicks: 150,
+    withinTicks: 90,
     effects: [{ kind: "radial-damage", amount: 20, radius: 2.2 }],
   },
   {
@@ -132,7 +136,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "二段再起",
     opener: "gyroscopic-reset",
     finisher: "core-reboot",
-    withinTicks: 170,
+    withinTicks: 102,
     effects: [{ kind: "durability", amount: 26 }],
   },
   {
@@ -140,7 +144,7 @@ export const COMBOS: readonly ComboDef[] = [
     nameJa: "蝕の激突",
     opener: "eclipse-step",
     finisher: "torque-spike",
-    withinTicks: 120,
+    withinTicks: 72,
     effects: [
       { kind: "stat-multiplier", stat: "attack", multiplier: 1.3, durationSec: 2 },
     ],

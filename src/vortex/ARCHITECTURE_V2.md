@@ -294,3 +294,49 @@ A / B / A+B / A+B+Combo の4条件を同一 seed 群で比較。
 フィクスチャ（damage 82・半径10m）の産物で、**実プレイの分布ではない**。
 本番同等ビルドの実測は場外90%・即決着多発・正規時間内破壊ゼロだった。
 数字の出典となるフィクスチャを確認せずに設計判断へ引用しないこと。
+
+
+---
+
+## 13. v3.1 品質ラウンド（2026-07-30・敵対的レビュー3系統）
+
+sim / net / presentation の3レビュアーが v3 全差分を検分。確定所見のみ修正し、
+「沈黙死」級には必ずゲートを添えた。
+
+### 確定P1（5件）
+
+| 所見 | 根本原因 | ゲート |
+|---|---|---|
+| CPU L3 が L2 とバイト同一 | 分類正規表現が英名を見るが adapter が nameJa に差し替え＝**57本中一致0** | aiSelftest AI0（実カタログで攻10/守9を要求） |
+| スタック枠のコンボ沈黙 | 検出が `members[0]` のみ＝エンドレス報酬ループの通常形で不発 | comboSelftest CB8 |
+| エンドレス経済の無補償2.8倍 | 0.18時代の敵曲線を踏み抜き | **contact専用modifier対**を新設（一般 damageTaken を触るとスキル火力まで歪む） |
+| ゲスト戦績のホスト視点破損 | `winner===0` を「勝ち」と固定 | ResultScreen が mySeat を受ける |
+| ソロREMATCHが同一編成 | `launch(finished.builds)` は nonce を通らない | launchCurrent 経由へ |
+
+### 実測で昇格したP1（レビュー時はUNVERIFIED）
+
+**位相明けの貫通課金**：明けと重なりが一致（gap 0.315）すると押し出しが
+**1発75・合計143.5ダメージ**として課金される。修正＝「重なりが解けるまで
+実体化を保留（上限+1.5s）」。phaseSelftest P12 が 75.0→0.0 を固定。
+
+**CPUはコンボを狙わない**：§9-5計測が opener 98発・成立0回を出した。
+クールダウン位相が偶然噛み合う以外に成立経路が無い。修正＝`TopState.comboWindow`
+（ホスト専用・非直列化）を L3 が読み、開窓中の finisher を最優先（+300）。
+aiSelftest AI1/AI2 が「窓内は常に finisher／L2 は別の選択」を固定。
+
+### 設計判断のメモ
+
+- **接触専用modifier対（contactDamageDealt/Taken）**：エンドレス補正を
+  一般 damageTaken でやると対エンジェミーのスキルダメージまで 0.36 倍になり、
+  直す対象より大きい歪みになる。分離は原理の要求
+- **検証器のバージョン精密化**：`isIntegerBetween(v,0,1000)` は何も検証して
+  いなかった。hello/welcome は `=== VORTEX_PROTOCOL_VERSION`、ゲストは検証前に
+  明示エラー＋切断（旧実装は表示だけして配信を受け続けた）
+- **旧「endlessはCPU0」検証則は削除**：v3の空席CPU僚機と正面衝突するため。
+  solo endless start は wireSelftest に専用ゲート
+
+### v3.1 その他
+protocol v3（TopSnapshot.phasing＝全peerでゴースト描画・実機で opacity 0.35→1.0 を確認）／
+ビルダー COMBO FORECAST（12組・装備状態3段階・CB7=全組が別スロットで装備可能）／
+phantom-hull 系リアクティブ位相に6sクールダウン／flywheel-loan のコストを表現可能な drag へ／
+記録は endless を勝敗集計から分離＋数値強制。
