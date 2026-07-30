@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SiteNav } from "./components/SiteNav";
 import { EditorialHero } from "./components/EditorialHero";
+import { FeaturedStrip } from "./components/FeaturedStrip";
 import { WorksBento } from "./components/WorksBento";
 import { GameDetail } from "./components/GameDetail";
 import { AiLab } from "./components/AiLab";
@@ -60,6 +61,7 @@ export default function PortfolioApp() {
       <SiteNav />
       <main id="main-content">
         <EditorialHero />
+        <FeaturedStrip />
         <WorksBento onOpenDetail={setDetail} />
         <AiLab />
         <Prompts />

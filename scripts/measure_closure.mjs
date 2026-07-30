@@ -29,7 +29,7 @@ const BANNED = {
 };
 
 /** Budget in gzip bytes for the first-load JS closure. */
-const BUDGET = { "index.html": 78_000 };
+const BUDGET = { "index.html": 85_000 }; // v3.2: featured strip + canvas hero (still no three.js)
 
 const gz = (p) => gzipSync(readFileSync(p)).length;
 

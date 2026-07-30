@@ -30,7 +30,7 @@ export function WorksBento({ onOpenDetail }: { onOpenDetail: (w: Work) => void }
   return (
     <section id="games" className="section works-section" aria-labelledby="games-title">
       <header className="section-head" data-reveal>
-        <p className="section-index">01 / WORKS — 全{CATALOG.length}作品</p>
+        <p className="section-index">02 / WORKS — 全{CATALOG.length}作品</p>
         <h2 id="games-title">
           遊べるものは、いま。
           <br />

@@ -6,7 +6,7 @@ export function Footer() {
   return (
     <footer id="closing" className="site-footer" aria-labelledby="closing-title">
       <section className="closing-cta">
-        <p className="section-index">05 / NEXT TITLE</p>
+        <p className="section-index">06 / NEXT TITLE</p>
         <h2 id="closing-title">
           次のタイトルを、
           <br />

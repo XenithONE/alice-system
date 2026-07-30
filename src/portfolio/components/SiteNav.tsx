@@ -32,6 +32,7 @@ export function SiteNav() {
         </p>
 
         <nav className="site-primary-nav" aria-label="主要セクション">
+          <a href="#featured" data-magnetic>FEATURED</a>
           <a href="#games" data-magnetic>WORKS</a>
           <a href="#ai-lab" data-magnetic>LAB</a>
           <a href="#prompts" data-magnetic>PROMPTS</a>

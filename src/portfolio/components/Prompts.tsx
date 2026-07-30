@@ -19,7 +19,7 @@ export function Prompts() {
   return (
     <section id="prompts" className="section prompt-archive" data-chapter aria-labelledby="prompts-title">
       <header className="prompts-editorial" data-reveal>
-        <p className="section-index">03 / PROMPT ARCHIVE</p>
+        <p className="section-index">04 / PROMPT ARCHIVE</p>
         <h2 id="prompts-title">
           制作の裏側を、
           <br />

@@ -1,33 +1,22 @@
 import { CATALOG } from "../bento";
 import { AI_TOOLS, STUDIO_TALLY } from "../../data/works";
+import { HeroCanvas } from "./HeroCanvas";
 
 /*
- * The masthead carries no image.
+ * Masthead with a lazy WebGL signal behind the type.
  *
- * The page it replaces preloaded a 384 KB poster at fetchpriority="high" and
- * then pulled in three.js to animate a walkable harbour behind it — 656 KB
- * before a visitor could read what this studio makes. Moving the LCP element
- * from a picture to a line of type is the shortest possible answer to "it got
- * heavy", and it happens to be what an editorial front page wants anyway.
- *
- * It is a two-column masthead because the one-column version left the right
- * 55% of the fold empty — measured on the shipped page at 1440. A magazine
- * puts the contents there, so this does: the folio series the sections
- * already carry, with the count each one holds. That also closes a real gap,
- * because the nav omits STACK and NEXT TITLE and they were unreachable
- * without scrolling the whole document.
- *
- * Every number is derived. The headline used to say WORKS.length (14) while
- * the works section said CATALOG.length (16) two screens below it — the same
- * page contradicting itself, because the arena games are works on this page
- * and were not in that array.
+ * Content numbers still come from CATALOG / STUDIO_TALLY so the page never
+ * contradicts itself. The 3D layer is optional: no WebGL, reduced motion, and
+ * narrow viewports fall back to a cover collage without layout shift.
  */
+
 const CONTENTS = [
-  { folio: "01", label: "WORKS", href: "#games" },
-  { folio: "02", label: "AI LAB", href: "#ai-lab" },
-  { folio: "03", label: "PROMPT ARCHIVE", href: "#prompts" },
-  { folio: "04", label: "STACK", href: "#stack" },
-  { folio: "05", label: "NEXT TITLE", href: "#closing" },
+  { folio: "01", label: "FEATURED", href: "#featured" },
+  { folio: "02", label: "WORKS", href: "#games" },
+  { folio: "03", label: "AI LAB", href: "#ai-lab" },
+  { folio: "04", label: "PROMPT ARCHIVE", href: "#prompts" },
+  { folio: "05", label: "STACK", href: "#stack" },
+  { folio: "06", label: "NEXT TITLE", href: "#closing" },
 ] as const;
 
 export function EditorialHero() {
@@ -37,6 +26,8 @@ export function EditorialHero() {
 
   return (
     <section className="hero" id="hero">
+      <HeroCanvas />
+
       <div className="hero-lockup">
         <p className="section-index hero-folio">00 / MASTHEAD</p>
 
@@ -69,9 +60,6 @@ export function EditorialHero() {
         </p>
       </div>
 
-      {/* The contents column. Mono, hung on a rule, numbered like the folios
-          it points at — so the numbering that runs down the document is
-          introduced before you meet it. */}
       <nav className="hero-contents" aria-label="目次">
         <p className="hero-contents-label">IN THIS ISSUE</p>
         <ul>

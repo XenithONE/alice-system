@@ -213,7 +213,7 @@ export function AiLab() {
     <section id="ai-lab" className="section lab-notebook" data-chapter aria-labelledby="lab-title">
       <div className="lab-notebook-grid">
         <div className="lab-editorial" data-reveal>
-          <p className="section-index">02 / AI LAB</p>
+          <p className="section-index">03 / AI LAB</p>
           <h2 id="lab-title">
             同じ問いを、
             <br />
