@@ -100,12 +100,23 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .made-with { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em; }
 .made-with b { color: var(--amber); font-weight: 400; }
 
-/* ── CTA system ───────────────────────────────────────────────────────────── */
-.cta { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-weight: 700; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 10px 15px; border: 1.5px solid currentColor; border-radius: var(--r-2); white-space: nowrap; transition: transform var(--dur-1) var(--ease-out), box-shadow var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out); }
-.cta.lg { font-size: 0.82rem; padding: 13px 20px; }
-.cta.live { color: var(--live-ink); background: var(--live); border-color: var(--live); box-shadow: 0 4px 0 var(--live-shadow); }
-.cta.live:hover { transform: translateY(calc(var(--lift) * -0.5)); box-shadow: 0 6px 0 var(--live-shadow); }
-.cta.live:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--live-shadow); }
+/*
+ * ── CTA system ────────────────────────────────────────────────────────────
+ * Rules, not toy bricks.
+ *
+ * These were 8px-rounded chips with a hard `0 4px 0` offset shadow that
+ * translated down on press — the brick-press gesture from the retired
+ * light "toy studio" theme, and by the time the rest of the page had gone
+ * flat and square they were the loudest surviving piece of it, sitting
+ * directly under the masthead.
+ *
+ * The primary action is a filled rectangle. Everything else is a ruled word:
+ * an underline that thickens, which is what a link does in print.
+ */
+.cta { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-weight: 700; font-size: var(--t--1); letter-spacing: 0.12em; text-transform: uppercase; padding: 12px 20px; border: 1px solid currentColor; border-radius: var(--r-0); white-space: nowrap; transition: color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
+.cta.lg { font-size: var(--t-0); padding: 15px 26px; }
+.cta.live { color: var(--live-ink); background: var(--live); border-color: var(--live); }
+.cta.live:hover { background: var(--live-shadow); border-color: var(--live-shadow); }
 /* Ink uses the -text value; the hover FILL keeps the saturated one, which is
    the pair those two values exist to express. */
 .cta.wishlist { color: var(--wishlist-text); }
@@ -113,10 +124,12 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .cta.download { color: var(--download-text); }
 .cta.download:hover { background: var(--download); color: var(--live-ink); border-color: var(--download); }
 .cta.dev { color: var(--dev-text); border-style: dashed; }
-.cta.ghost { color: var(--text-dim); border-color: var(--hairline-strong); }
-.cta.ghost:hover { color: var(--ink); border-color: var(--ink); }
+/* The secondary action carries no box at all — a magazine does not put a
+   button next to a headline, it sets the second option as a ruled word. */
+.cta.ghost { color: var(--ink); border: 0; border-bottom: 1px solid var(--amber); padding-inline: 0; padding-block: 12px 6px; }
+.cta.ghost:hover { border-bottom-width: 3px; padding-bottom: 4px; }
 .cta.is-static { cursor: default; }
-.cta.is-static:hover { transform: none; box-shadow: none; background: transparent; }
+.cta.is-static:hover { background: transparent; }
 .cta.dev.is-static:hover { color: var(--dev-text); }
 .catalog-filter { display: flex; flex-wrap: wrap; margin-bottom: clamp(28px, 4vw, 44px); }
 .filter-tab { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; transition: color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
@@ -167,10 +180,10 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .lab-matrix thead th { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; }
 .lab-matrix td { font-family: var(--mono); font-size: 0.66rem; }
 .lab-matrix-note { font-size: 0.78rem; margin-top: 10px; }
-.lab-empty { border: 2px dashed var(--hairline-strong); padding: clamp(28px, 5vw, 52px); text-align: center; }
+.lab-empty { border: 2px dashed var(--hairline-strong); padding: clamp(28px, 5vw, 52px); }
 .lab-empty-label { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.18em; color: var(--dev); }
 .lab-empty h3 { text-transform: uppercase; font-size: clamp(1.3rem, 3vw, 2rem); margin: 12px 0; line-height: 1.2; }
-.lab-empty p { max-width: 34em; margin-inline: auto; }
+.lab-empty p { max-width: 34em; }
 .lab-results { display: flex; flex-direction: column; gap: 32px; }
 .lab-result { border: 1px solid var(--hairline); padding: 22px; }
 .lab-result-header p { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.1em; }
@@ -219,7 +232,7 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .closing-cta h2 { margin: 14px 0 18px; }
 .closing-copy { max-width: 26em; }
 .footer-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0; }
-.reel-end { display: inline-flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.reel-end { display: inline-flex; flex-direction: column; gap: 4px; margin-top: clamp(28px, 4vw, 48px); }
 .reel-end-mark { font-family: var(--mono); letter-spacing: 0.28em; color: var(--amber); font-size: 0.8rem; }
 .reel-end-caption { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em; }
 .footer-shell { max-width: var(--page-max); margin: clamp(40px, 6vw, 72px) auto 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; padding-top: 24px; border-top: 1px solid var(--hairline); }

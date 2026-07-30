@@ -1,3 +1,5 @@
+import { CATALOG } from "../bento";
+
 const GITHUB_REPOSITORY = "https://github.com/XenithONE/alice-system";
 
 export function Footer() {
@@ -23,9 +25,34 @@ export function Footer() {
           </a>
         </div>
 
+        {/*
+          * A colophon. The footer carried three unrelated fragments — END OF
+          * REEL, a copyright line and a giant wordmark — and on a site whose
+          * subject is "made with AI", naming its own tools is the one closing
+          * device that ties 04 / STACK to the end of the document.
+          * Every value is already imported or literal: no new JS.
+          */}
+        <dl className="colophon" data-reveal>
+          <div>
+            <dt>TYPESET IN</dt>
+            <dd>Barlow Condensed · Shippori Mincho · Noto Sans JP · Space Mono</dd>
+          </div>
+          <div>
+            <dt>BUILT WITH</dt>
+            <dd>React · Vite · TypeScript</dd>
+          </div>
+          <div>
+            <dt>WORKS</dt>
+            <dd>{CATALOG.length}</dd>
+          </div>
+          <div>
+            <dt>VERSION</dt>
+            <dd>v{__APP_VERSION__}</dd>
+          </div>
+        </dl>
+
         <div className="reel-end" data-reveal aria-hidden="true">
           <span className="reel-end-mark">END OF REEL</span>
-          <span className="reel-end-caption">AlicE sYsTeM — BUILT WITH AI · 2026</span>
         </div>
       </section>
 

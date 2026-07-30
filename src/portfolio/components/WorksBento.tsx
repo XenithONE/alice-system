@@ -37,9 +37,23 @@ export function WorksBento({ onOpenDetail }: { onOpenDetail: (w: Work) => void }
           次のタイトルは、もうすぐ。
         </h2>
         <p className="section-lede">
-          タイルの大きさは、その作品にかけた重さです。ブラウザで今すぐ遊べる作品と、Unityで制作中のタイトル。
+          ブラウザで今すぐ遊べる作品と、Unity で制作中のタイトル。
+          <br />
+          大きいタイルほど、長く手をかけています。
         </p>
       </header>
+
+      {/*
+        * The one line worth setting large. It was the first clause of the
+        * lede — the sentence that explains the whole grid, buried at 16px in
+        * a paragraph nobody reads before they start looking at pictures.
+        * Promoting it is what an editor does with a lede's best sentence.
+        */}
+      <p className="pull-quote" data-reveal>
+        タイルの大きさは、
+        <br />
+        その作品にかけた重さです。
+      </p>
 
       <div className="catalog-filter" role="group" aria-label="ライブラリの絞り込み">
         {FILTERS.map((f) => (
