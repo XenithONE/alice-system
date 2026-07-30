@@ -461,7 +461,17 @@ body {
   background: var(--paper);
 }
 
+/*
+ * Every folio that sits on paper, not just the lab's.
+ *
+ * The stack strip had no folio until this version — the series ran 01, 02,
+ * 03, 05 — so adding "04 / STACK" put an amber number on --paper-deep at
+ * 1.45:1. The rule that fixes it was already here and scoped to one section,
+ * which is the same shape of mistake as the status colours: an ink chosen for
+ * one ground applied on the other side of the fold.
+ */
 .lab-notebook .section-index,
+.stack-rail .section-index,
 .lab-notebook .lab-preparation-header p,
 .lab-notebook .lab-result-header p {
   color: var(--gold-ink);
