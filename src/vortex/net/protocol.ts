@@ -24,7 +24,12 @@ import type {
  * good snapshot with no error. The version handshake turns that silent
  * freeze into an explicit refusal at join time.
  */
-export const VORTEX_PROTOCOL_VERSION = 2;
+/*
+ * 3 since v3.1: TopSnapshot gained `phasing`. The validator is strict about
+ * top fields, so a v2 peer would reject every v3 snapshot — the handshake
+ * refusing the join is the honest version of that failure.
+ */
+export const VORTEX_PROTOCOL_VERSION = 3;
 export const VORTEX_ROOM_PREFIX = "vc-";
 export type VortexSessionEndReason = "host-left" | "host-ended";
 
@@ -42,6 +47,8 @@ export interface SkillSnapshot {
 export interface TopSnapshot {
   readonly seat: SeatIndex;
   readonly alive: boolean;
+  /** v3: pass-through window open (rendered as a ghost on every peer). */
+  readonly phasing: boolean;
   readonly hp: number;
   readonly hpMax: number;
   readonly spin: number;
@@ -167,8 +174,7 @@ export type ClientMessage =
       readonly t: "skill";
       readonly seq: number;
       readonly slot: SkillSlot;
-    }
-  | { readonly t: "rematch" };
+    };
 
 export type HostMessage =
   | {
@@ -578,6 +584,7 @@ function isTopSnapshot(value: unknown): value is TopSnapshot {
     !isRecord(value) ||
     !isSeatIndex(value.seat) ||
     typeof value.alive !== "boolean" ||
+    typeof value.phasing !== "boolean" ||
     !isFiniteNumber(value.hp) ||
     value.hp < 0 ||
     !isFiniteNumber(value.hpMax) ||
@@ -720,7 +727,13 @@ export function isClientMessage(value: unknown): value is ClientMessage {
   switch (value.t) {
     case "hello":
       return (
-        isIntegerBetween(value.v, 0, 1_000) &&
+        /*
+         * Exact version, not a range. The range check let any v through and
+         * left enforcement to session code — where the guest side showed an
+         * error but kept dispatching, so a mismatched host could keep
+         * driving a guest that had already "rejected" it.
+         */
+        value.v === VORTEX_PROTOCOL_VERSION &&
         isBoundedString(value.name, MAX_NAME_LENGTH, 1) &&
         isTopBuildMessage(value.build)
       );
@@ -754,8 +767,6 @@ export function isClientMessage(value: unknown): value is ClientMessage {
         isIntegerBetween(value.seq, 0, Number.MAX_SAFE_INTEGER) &&
         isSkillSlot(value.slot)
       );
-    case "rematch":
-      return true;
     default:
       return false;
   }
@@ -767,7 +778,7 @@ export function isHostMessage(value: unknown): value is HostMessage {
     switch (value.t) {
       case "welcome":
         return (
-          isIntegerBetween(value.v, 0, 1_000) &&
+          value.v === VORTEX_PROTOCOL_VERSION &&
           isSeatIndex(value.seat) &&
           isRoomSettings(value.settings)
         );

@@ -228,6 +228,9 @@ function monotonicEnemyStats(
   ) as unknown as TopStats;
 }
 
+/** 0.18 / 0.5 — see the modifiers block below. */
+const CONTACT_RESCALE = 0.36;
+
 function scaleEnemyEffect(effect: SkillEffect, scale: number): SkillEffect {
   switch (effect.type) {
     case "spin-boost":
@@ -404,6 +407,16 @@ export function generateEndlessEnemy(
       damageTaken:
         baseResolved.modifiers.damageTaken /
         (1 + progress * 0.012 + retainedBossSteps * 0.025),
+      /*
+       * CONTACT_RESCALE compensates for CONTACT_DAMAGE_SCALE 0.18 -> 0.5
+       * (v3). The endless curve — wave-clear feel, enemy hit weight — was
+       * tuned under 0.18, and the global change silently made players clear
+       * waves ~2.8x faster while taking ~2.8x contact hits. Applied to the
+       * CONTACT-only pair so skill damage against enemies keeps its v3
+       * meaning; the general damageTaken above stays the tuned wave curve.
+       */
+      contactDamageDealt: CONTACT_RESCALE,
+      contactDamageTaken: CONTACT_RESCALE,
       spinDrain:
         baseResolved.modifiers.spinDrain * (1 + progress * 0.004),
       tracking:

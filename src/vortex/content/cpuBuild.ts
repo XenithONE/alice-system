@@ -64,13 +64,23 @@ export function makeCpuBuild(
         const secondValue = secondTheme + partScore(second) / Math.max(1, second.cost) * 50;
         return secondValue - firstValue || first.id.localeCompare(second.id);
       });
-    const chosen = choices[(seed + seat + slotIndex) % Math.min(4, choices.length)] ?? choices[0]!;
+    /*
+     * A budget below the cheapest completable build empties `choices`, and
+     * modulo zero is NaN — the original then dereferenced undefined.
+     * Falling back to the slot's cheapest parts keeps the picker total: it
+     * may overrun an impossible budget, but a CPU with a build always
+     * beats a crash, and validateBuild still reports the overrun.
+     */
+    const pool = choices.length > 0
+      ? choices
+      : [...getPartsForSlot(slot)].sort((first, second) => first.cost - second.cost);
+    const chosen = pool[(seed + seat + slotIndex) % Math.min(4, pool.length)] ?? pool[0]!;
     parts[slot] = chosen.id;
     spent += chosen.cost;
   }
   return {
     v: 1,
-    name: `CPU-${String(seat).padStart(2, "0")} ${TOP_LINEAGES[(seat + seed) % 9]!.toUpperCase()}`,
+    name: `CPU-${String(seat).padStart(2, "0")} ${TOP_LINEAGES[(seat + seed) % TOP_LINEAGES.length]!.toUpperCase()}`,
     paint: 0,
     parts
   };

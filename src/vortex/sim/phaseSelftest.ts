@@ -357,6 +357,112 @@ async function main(): Promise<void> {
       `最接近 ${round(passivePhasing.minGap)}m（対照 ${round(solid.minGap)}m）`
   );
 
+  /*
+   * The renderer's ghost look reads TopState.phasing; if that flag lies, the
+   * player sees solid tops passing through each other — which is
+   * indistinguishable from a physics bug. Measured on its own sim so the
+   * window boundaries are exact.
+   */
+  {
+    const sim = await createVortexSim({
+      seed: 0x9c31a3,
+      builds: [
+        createSimFixtureBuild(0, { activeGroups: { crown: [GHOST] } }),
+        createSimFixtureBuild(1),
+      ],
+      teamIds: [0, 1],
+      launchPower: [1, 1],
+      cpuSeats: [],
+      arenaId: "wide-dish",
+      countdownSec: 0,
+      suddenDeathSec: 600,
+      maxDurationSec: 600,
+    });
+    try {
+      for (let step = 0; step < 30; step += 1) sim.step();
+      const before = sim.getState().tops[0]!.phasing;
+      // crown is TOP_SLOTS[1] -> slot 2. The first draft fired slot 1 (an
+      // empty crest), ignored the refusal, and P11 correctly went red —
+      // which is also the proof this check notices a flag that stays false.
+      const fired = sim.activate(0 as SeatIndex, 2);
+      if (!fired.ok) throw new Error(`P11 fixture refused: ${fired.reason}`);
+      sim.step();
+      const during = sim.getState().tops[0]!.phasing;
+      // GHOST lasts 6s; step past it.
+      for (let step = 0; step < 6.2 * 60; step += 1) sim.step();
+      const after = sim.getState().tops[0]!.phasing;
+      check(
+        "[P11] TopState.phasing が窓の開閉を正確に映す",
+        !before && during && !after,
+        `発動前 ${before} → 窓内 ${during} → 期限後 ${after}（false/true/false を期待）`
+      );
+    } finally {
+      sim.dispose();
+    }
+  }
+
+  /*
+   * Expiry inside an enemy. Before the daylight-hold, a phase timed to end
+   * at gap 0.315 handed the depenetration to the damage pipeline: one
+   * 75-damage impact, 143 hp total — a third of a health bar billed for
+   * the solver's ejection. The window now stretches (max +1.5s) until the
+   * pair separates, so the worst post-expiry hit must be an ordinary one.
+   */
+  {
+    const sim = await createVortexSim({
+      seed: 0x9c31a1,
+      builds: [
+        createSimFixtureBuild(0, {
+          activeGroups: {
+            crest: [CHARGE],
+            crown: [
+              {
+                id: "gate-ghost-090",
+                name: "Gate Ghost 0.90",
+                cooldownSec: 60,
+                charges: -1,
+                conditions: [],
+                effects: [{ type: "phase", durationSec: 0.9 }],
+              },
+            ],
+          },
+        }),
+        createSimFixtureBuild(1),
+      ],
+      teamIds: [0, 1],
+      launchPower: [1, 1],
+      cpuSeats: [],
+      arenaId: "wide-dish",
+      countdownSec: 0,
+      suddenDeathSec: 600,
+      maxDurationSec: 600,
+    });
+    try {
+      for (let step = 0; step < 30; step += 1) {
+        sim.step();
+        sim.drainEvents();
+      }
+      sim.activate(0 as SeatIndex, 2);
+      sim.activate(0 as SeatIndex, 1);
+      let worstPostExpiry = 0;
+      for (let step = 0; step < 200; step += 1) {
+        sim.step();
+        for (const event of sim.drainEvents()) {
+          if (event.type === "impact" && step >= 52) {
+            worstPostExpiry = Math.max(worstPostExpiry, event.damage);
+          }
+        }
+      }
+      check(
+        "[P12] 重なったまま位相が明けても押し出しが課金されない",
+        worstPostExpiry < 20,
+        `明け後の最大ダメージ ${worstPostExpiry.toFixed(1)}（修正前は75.0）`
+      );
+    } finally {
+      sim.dispose();
+    }
+  }
+
   const allRuns: Record<string, Trace> = {
     solid, phasing, expiring, rimSolid, rimPhasing, passivePhasing,
   };

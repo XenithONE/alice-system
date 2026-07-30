@@ -1971,13 +1971,30 @@ class GuestSessionImpl implements VortexSession {
   }
 
   private receive(payload: unknown): void {
+    /*
+     * Version mismatch must be an ERROR before validation, not a silent
+     * drop after it. The validator is version-exact since protocol 3, so a
+     * welcome from another version fails isHostMessage — and the guest
+     * would hang forever at "FETCHING RULES" with nothing on screen to say
+     * why. This also closes the session: the old in-switch check showed the
+     * error but kept dispatching, so a mismatched host could keep driving a
+     * guest that had already "rejected" it.
+     */
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      (payload as { t?: unknown }).t === "welcome" &&
+      (payload as { v?: unknown }).v !== VORTEX_PROTOCOL_VERSION
+    ) {
+      this.callbacks.onError?.(
+        `プロトコル版が違います（部屋 v${String((payload as { v?: unknown }).v)} / この版 v${VORTEX_PROTOCOL_VERSION}）。ページを更新してください。`,
+      );
+      this.dispose();
+      return;
+    }
     if (!isHostMessage(payload)) return;
     switch (payload.t) {
       case "welcome":
-        if (payload.v !== VORTEX_PROTOCOL_VERSION) {
-          this.callbacks.onError?.("Protocol version mismatch");
-          return;
-        }
         this.currentSeat = payload.seat;
         this.callbacks.onRoomSettings?.(payload.settings);
         return;

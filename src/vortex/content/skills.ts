@@ -703,7 +703,14 @@ export const ACTIVE_SKILLS = [
     condition: { kind: "spin-below", ratio: 0.6 },
     effects: [
       { kind: "spin", amount: 16 },
-      { kind: "stat-multiplier", stat: "stamina", multiplier: 0.9, durationSec: 4 }
+      /*
+       * The loan's cost. Originally stamina x0.9, but the active-effect
+       * dialect has no stamina bucket — it silently fell through to a
+       * friction modifier that any cleanse erased, making the loan free.
+       * Drag is expressible, survives cleanse, and means the same thing:
+       * you spin down faster while repaying.
+       */
+      { kind: "physics-multiplier", stat: "drag", multiplier: 1.18, durationSec: 4 }
     ]
   },
   {

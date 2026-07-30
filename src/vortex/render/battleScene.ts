@@ -37,6 +37,7 @@ export interface BattleArenaVisual {
 export interface BattleBotVisualState {
   readonly seat: number;
   readonly alive: boolean;
+  readonly phasing?: boolean;
   readonly x: number;
   readonly y: number;
   readonly z: number;
@@ -112,6 +113,15 @@ interface BotVisual {
   target: BattleBotVisualState | null;
   previous: BattleBotVisualState | null;
   blend: number;
+  /*
+   * 0..1 render-side fade toward the ghost look. Interpolated so the top
+   * dissolves in and out over ~150ms rather than popping — the window
+   * itself is authoritative on the host; this is presentation only.
+   */
+  ghost: number;
+  /* Materials whose opacity the ghost fade touches, collected once at build
+     time — traversing the whole subtree per frame per bot would be waste. */
+  readonly ghostMaterials: THREE.Material[];
   readonly presentation: BattleSeatPresentation;
   /* Render-only kick on being hit. The simulation's position is authoritative;
      this is added on top of it and decays, so the top flinches without the
@@ -612,6 +622,25 @@ export function createVortexBattleScene(
         })
       );
       fxRoot.add(trail);
+      /*
+       * Collected once: every unique material under the top's root. The
+       * ghost fade mutates opacity on these; trails and auras keep their
+       * own blending and are deliberately excluded (they are already
+       * transparent and additive).
+       */
+      const ghostMaterials: THREE.Material[] = [];
+      root.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh || object.name === "energy-aura") return;
+        const materials = Array.isArray(mesh.material)
+          ? mesh.material
+          : [mesh.material];
+        for (const material of materials) {
+          if (material && !ghostMaterials.includes(material)) {
+            ghostMaterials.push(material);
+          }
+        }
+      });
       bots.set(seat, {
         root,
         trail,
@@ -619,6 +648,8 @@ export function createVortexBattleScene(
         target: null,
         previous: null,
         blend: 1,
+        ghost: 0,
+        ghostMaterials,
         presentation: seatPlan,
         recoil: new THREE.Vector3(),
         recoilLife: 0,
@@ -974,6 +1005,33 @@ export function createVortexBattleScene(
       const from = new THREE.Quaternion(previous.qx, previous.qy, previous.qz, previous.qw);
       const to = new THREE.Quaternion(state.qx, state.qy, state.qz, state.qw);
       visual.root.quaternion.slerpQuaternions(from, to, t);
+      /*
+       * Pass-through ghost. While `phasing` the whole top sinks to 35%
+       * opacity with the phaseshift family's teal — the persistent version
+       * of the one-shot cue, so intangibility is readable for its entire
+       * window on every peer, not just at activation.
+       */
+      const ghostTarget = state.phasing ? 1 : 0;
+      if (visual.ghost !== ghostTarget) {
+        visual.ghost = THREE.MathUtils.clamp(
+          visual.ghost + (ghostTarget === 1 ? dt / 0.15 : -dt / 0.15),
+          0,
+          1,
+        );
+        const opacity = 1 - visual.ghost * 0.65;
+        for (const material of visual.ghostMaterials) {
+          const standard = material as THREE.MeshStandardMaterial;
+          if (visual.ghost > 0 && !standard.transparent) {
+            standard.transparent = true;
+            standard.needsUpdate = true;
+          } else if (visual.ghost === 0 && standard.transparent) {
+            standard.transparent = false;
+            standard.opacity = 1;
+            standard.needsUpdate = true;
+          }
+          if (standard.transparent) standard.opacity = opacity;
+        }
+      }
       const spinGlow = THREE.MathUtils.clamp(state.spin / 100, 0.2, 1.5);
       visual.root.children.forEach((child) => {
         if (child.name === "energy-aura") {
@@ -1175,6 +1233,18 @@ export function createVortexBattleScene(
           shells: shellInstances.count,
           sparks: sparks.length,
         },
+        /* Ghost fade per seat: the pane cannot screenshot this canvas, so
+           intangibility's look is verified by reading the value the fade
+           writes, exactly like the fx pool counts above. */
+        ghosts: [...bots.entries()].map(([seat, visual]) => ({
+          seat,
+          ghost: Number(visual.ghost.toFixed(2)),
+          opacity: Number(
+            (
+              (visual.ghostMaterials[0] as { opacity?: number })?.opacity ?? 1
+            ).toFixed(2),
+          ),
+        })),
         arena: arenaRoot.children.flatMap((group) =>
           group.children.flatMap((child) =>
             child.name === "arena-arcade"

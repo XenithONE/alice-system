@@ -23,6 +23,8 @@
  * Run: npx tsx src/vortex/sim/comboSelftest.ts
  */
 import { RESOLVED_COMBOS } from "./comboAdapter";
+import { getActiveSkill, getPartsForSlot } from "../content";
+import { TOP_SLOTS } from "./types";
 import { createVortexSim } from "./index";
 import { createSimFixtureBuild } from "./selftestFixture";
 import { isHostMessage, VORTEX_PROTOCOL_VERSION } from "../net/protocol";
@@ -100,7 +102,12 @@ async function main(): Promise<void> {
         (combo) =>
           combo.opener !== combo.finisher &&
           combo.windowSec > 0 &&
-          combo.effects.length > 0,
+          combo.effects.length > 0 &&
+          // The label always claimed 実在スキルを指し; now the predicate does
+          // too — a typo'd id previously passed every gate and simply never
+          // fired, the exact silent-inert failure class this repo hunts.
+          getActiveSkill(combo.opener) !== undefined &&
+          getActiveSkill(combo.finisher) !== undefined,
       ) &&
       new Set(RESOLVED_COMBOS.map((combo) => combo.id)).size === 12,
     `${RESOLVED_COMBOS.length} 組・窓 ${Math.min(
@@ -254,6 +261,82 @@ async function main(): Promise<void> {
     } finally {
       sim.dispose();
     }
+  }
+
+  /*
+   * Stacked slots: the endless reward loop appends members to one slot, and
+   * one press fires them ALL. The first implementation judged only
+   * members[0], so a finisher stacked behind a filler never comboed. This
+   * fixture is that exact shape: slot 2 = [filler, finisher].
+   */
+  {
+    const sim = await createVortexSim({
+      seed: 0xc0b1,
+      builds: [
+        createSimFixtureBuild(0, {
+          activeGroups: {
+            crest: [fixtureSkill(COMBO.opener)],
+            crown: [fixtureSkill("stack-filler"), fixtureSkill(COMBO.finisher)],
+          },
+        }),
+        createSimFixtureBuild(1),
+      ],
+      teamIds: [0, 1],
+      launchPower: [1, 1],
+      cpuSeats: [],
+      arenaId: "wide-dish",
+      countdownSec: 0,
+      suddenDeathSec: 300,
+      maxDurationSec: 600,
+    });
+    try {
+      for (let step = 0; step < 10; step += 1) sim.step();
+      sim.drainEvents();
+      sim.activate(0 as SeatIndex, 1);
+      sim.step();
+      sim.activate(0 as SeatIndex, 2);
+      sim.step();
+      const events = drainComboEvents(sim);
+      check(
+        "[CB8] スタック枠の2番目のメンバーでもコンボが成立する",
+        events.length === 1,
+        `filler+finisher のスタック発動 → combo ${events.length} 件（members[0]だけ見る旧実装は0件）`,
+      );
+    } finally {
+      sim.dispose();
+    }
+  }
+
+  /*
+   * Reachability: both halves of every combo must exist on catalog parts,
+   * on DIFFERENT slots — a pair whose halves only ship on the same slot can
+   * never be equipped together, which is dead content the builder's
+   * forecast panel would dangle in front of the player forever.
+   */
+  {
+    const carriers = new Map<string, Set<string>>();
+    for (const slot of TOP_SLOTS) {
+      for (const part of getPartsForSlot(slot)) {
+        if (!part.activeSkillId) continue;
+        const slots = carriers.get(part.activeSkillId) ?? new Set<string>();
+        slots.add(slot);
+        carriers.set(part.activeSkillId, slots);
+      }
+    }
+    const unreachable = RESOLVED_COMBOS.filter((combo) => {
+      const openerSlots = carriers.get(combo.opener) ?? new Set<string>();
+      const finisherSlots = carriers.get(combo.finisher) ?? new Set<string>();
+      return ![...openerSlots].some((slot) =>
+        [...finisherSlots].some((other) => other !== slot),
+      );
+    });
+    check(
+      "[CB7] 全コンボが別スロットの実パーツで装備可能",
+      unreachable.length === 0,
+      unreachable.length === 0
+        ? "12/12 装備可能"
+        : unreachable.map((combo) => combo.id).join(","),
+    );
   }
 
   if (failures.length > 0) {

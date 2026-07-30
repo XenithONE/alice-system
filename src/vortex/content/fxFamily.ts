@@ -99,6 +99,12 @@ export function fxFamilyForEffects(effects: readonly EffectLike[]): FxFamily | n
 
   if (has("steal-spin") || has("cooldown-shift")) return "siphon";
   if (has("durability") && has("cleanse")) return "reboot";
+  /*
+   * Ordering consequence worth naming: afterimage-bloom carries phase AND
+   * radial-damage, so it reads as shockring — the attack is its headline
+   * and the 0.6s slip is the garnish, mirroring how monday-override's
+   * shield outranks its phase below.
+   */
   if (has("radial-damage")) return "shockring";
   /*
    * Shield is tested before phase, and the two are no longer the same look.

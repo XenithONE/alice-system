@@ -130,7 +130,14 @@ interface RuntimeTop<TSource> {
    * comboSelftest's shape check, not just asserted here).
    */
   comboOpenerId: string | null;
-  comboWindowUntil: number;
+  /*
+   * When the window OPENED (elapsed seconds), not when it closes: with two
+   * combos sharing an opener the deadline differs per candidate, so expiry
+   * is computed per-match as openedAt + candidate.windowSec. All 12 current
+   * openers are distinct, but the shape refuses the latent bug instead of
+   * hosting it.
+   */
+  comboOpenedAt: number;
   /*
    * Pass-through expiry, in `elapsed` seconds — the same clock every other
    * deadline in this simulation uses. Deliberately NOT a TimedModifier: a
@@ -139,6 +146,8 @@ interface RuntimeTop<TSource> {
    * coming back by accident.
    */
   phaseUntil: number;
+  /** Widest part radius — the cheap overlap test at phase expiry needs it. */
+  contactRadius: number;
   /*
    * What the colliders are currently set to. Rapier has no cheap read-back
    * that distinguishes our two masks, and re-issuing setCollisionGroups on ten
@@ -637,8 +646,9 @@ function spawnTop<TSource>(
     lastAttacker: null,
     reverseOrbitUntil: 0,
     comboOpenerId: null,
-    comboWindowUntil: 0,
+    comboOpenedAt: 0,
     phaseUntil: 0,
+    contactRadius: Math.max(...build.parts.map((part) => part.radius)),
     phasing: false,
     timed: [],
   };
@@ -760,6 +770,8 @@ function buildModifiers(build: ResolvedTopBuild<unknown>): RuntimeModifiers {
   return {
     damageDealt: clamp(finite(value.damageDealt, 1), 0.2, 4),
     damageTaken: clamp(finite(value.damageTaken, 1), 0.2, 4),
+    contactDamageDealt: clamp(finite(value.contactDamageDealt, 1), 0.2, 4),
+    contactDamageTaken: clamp(finite(value.contactDamageTaken, 1), 0.2, 4),
     spinDrain: clamp(finite(value.spinDrain, 1), 0.2, 4),
     tracking: clamp(finite(value.tracking, 1), 0.2, 4),
     stability: clamp(finite(value.stability, 1), 0.2, 4),
@@ -833,6 +845,7 @@ export function createVortexSim<TSource = unknown>(
       buildModifiers(top.build as ResolvedTopBuild<unknown>),
     ]),
   );
+  const combosEnabled = opts.combosEnabled ?? true;
   const countdownSec = Math.max(0, opts.countdownSec ?? DEFAULT_COUNTDOWN_SEC);
   const suddenDeathSec = Math.max(1, opts.suddenDeathSec ?? DEFAULT_SUDDEN_DEATH_SEC);
   const maxDurationSec = Math.max(
@@ -947,7 +960,36 @@ export function createVortexSim<TSource = unknown>(
    */
   function syncPhaseColliders(): void {
     for (const top of tops) {
-      const wanted = top.alive && top.phaseUntil > elapsed;
+      let wanted = top.alive && top.phaseUntil > elapsed;
+      /*
+       * Re-solidifying INSIDE an enemy hands the depenetration to the
+       * contact pipeline, which bills it as a hit — measured: a phase
+       * expiring at gap 0.315 produced a single 75-damage impact and 143
+       * total hp of "combat" that was really the solver ejecting two
+       * overlapped hulls. So expiry waits for daylight: while a live enemy
+       * is inside the summed contact radii the top stays phased, up to a
+       * hard +1.5s so cohabitation cannot become a permanent ghost.
+       */
+      if (
+        !wanted &&
+        top.phasing &&
+        top.alive &&
+        elapsed < top.phaseUntil + 1.5
+      ) {
+        const position = top.body.translation();
+        for (const other of tops) {
+          if (other === top || !other.alive || !areEnemies(top, other)) continue;
+          const otherPosition = other.body.translation();
+          const gap = Math.hypot(
+            position.x - otherPosition.x,
+            position.z - otherPosition.z,
+          );
+          if (gap < top.contactRadius + other.contactRadius + 0.05) {
+            wanted = true;
+            break;
+          }
+        }
+      }
       if (wanted === top.phasing) continue;
       top.phasing = wanted;
       const mask = wanted ? TOP_GROUPS_PHASING : TOP_GROUPS_SOLID;
@@ -1311,7 +1353,16 @@ export function createVortexSim<TSource = unknown>(
     switch (passive.trigger) {
       case "on-hit":
       case "on-take-hit":
-        return 0.25;
+        /*
+         * A phase here needs a real cooldown. phantom-hull (on-take-hit,
+         * phase 0.5s) against any sub-0.5s-cadence damage source re-procced
+         * on the 0.25s default and kept its owner intangible to contact
+         * more or less permanently — an uncapped ~85% contact-DPS cut from
+         * a passive, made 2.8x more valuable by the v3 damage scale.
+         */
+        return passive.effects.some((effect) => effect.type === "phase")
+          ? 6
+          : 0.25;
       case "near-rim":
         return 1.25;
       case "spin-below":
@@ -1558,36 +1609,44 @@ export function createVortexSim<TSource = unknown>(
      * so a skill that is both a valid finisher and an opener can complete
      * one combo and immediately open the next, while the same activation
      * can never combo with ITSELF — A+A needs no special case because the
-     * window A would satisfy is not written until after A's check ran.
+     * window A would satisfy is not written until after A's checks ran.
+     *
+     * EVERY fired member participates, not members[0]: stacked slots — the
+     * endless reward loop's whole point — fire several skills per press,
+     * and the first draft judged only the group's first member, so a
+     * finisher stacked behind a filler silently never comboed, and WHICH
+     * member was [0] drifted with cooldown state.
      */
-    const firedId = members[0]?.def.id ?? null;
-    if (firedId) {
-      if (top.comboOpenerId && top.comboWindowUntil > elapsed) {
+    const firedIds = members.map((member) => member.def.id);
+    if (combosEnabled && firedIds.length > 0) {
+      if (top.comboOpenerId !== null) {
         const candidates =
           RESOLVED_COMBOS_BY_OPENER.get(top.comboOpenerId) ?? [];
+        const openedAt = top.comboOpenedAt;
         const match = candidates.find(
-          (combo) => combo.finisher === firedId,
+          (combo) =>
+            elapsed - openedAt <= combo.windowSec &&
+            firedIds.some((id) => id === combo.finisher),
         );
         if (match) {
           // Consumed: one opener pays for one finisher.
           top.comboOpenerId = null;
-          top.comboWindowUntil = 0;
           for (const effect of match.effects) applyEffect(top, effect);
           events.push({
             type: "combo",
             seat,
             comboId: match.id,
             openerId: match.opener,
-            finisherId: firedId,
+            finisherId: match.finisher,
           });
         }
       }
-      // Window write LAST — see the invariant above.
-      if (RESOLVED_COMBOS_BY_OPENER.has(firedId)) {
-        const windows = RESOLVED_COMBOS_BY_OPENER.get(firedId)!;
-        const longest = Math.max(...windows.map((combo) => combo.windowSec));
-        top.comboOpenerId = firedId;
-        top.comboWindowUntil = elapsed + longest;
+      // Window write LAST — see the invariant above. With several openers in
+      // one group, member order decides deterministically.
+      const opener = firedIds.find((id) => RESOLVED_COMBOS_BY_OPENER.has(id));
+      if (opener !== undefined) {
+        top.comboOpenerId = opener;
+        top.comboOpenedAt = elapsed;
       }
     }
     return checked;
@@ -1854,11 +1913,14 @@ export function createVortexSim<TSource = unknown>(
       (0.68 + clamp(attackStat, 0, 400) / 92) *
       attackerMods.damageDealt *
       contactPhysics;
+    const victimContactMods = normalizedModifiers.get(victim.seat)!;
     const raw = Math.min(
       MAX_CONTACT_DAMAGE * 1.7,
       Math.max(0, contact.impulse - CONTACT_DAMAGE_THRESHOLD) *
         CONTACT_DAMAGE_SCALE *
-        attack,
+        attack *
+        attackerMods.contactDamageDealt *
+        victimContactMods.contactDamageTaken,
     );
     if (raw <= 0) return;
     const damage = dealDamage(victim, raw, attacker);
@@ -1998,6 +2060,12 @@ export function createVortexSim<TSource = unknown>(
       seat: top.seat,
       name: top.name,
       alive: top.alive,
+      team: top.team,
+      comboWindow:
+        top.comboOpenerId !== null
+          ? { opener: top.comboOpenerId, openedAt: top.comboOpenedAt }
+          : undefined,
+      phasing: top.alive && top.phaseUntil > elapsed,
       hp: top.hp,
       hpMax: top.hpMax,
       spin: top.spinEnergy,

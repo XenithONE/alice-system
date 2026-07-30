@@ -42,7 +42,8 @@ export const EDGE_EARLY_GUARD_BONUS = 0.55;
  * The steering bonus alone measured 7 → 6 sub-8s finishes: a launch fling is
  * momentum, and a steering force cannot cancel momentum in the half second
  * before the lip. During the guard window the rim therefore also BRAKES:
- * beyond 86% radius, outward radial velocity is damped with this per-second
+ * beyond 80% radius (86% was tried first and left small arenas leaking),
+ * outward radial velocity is damped with this per-second
  * coefficient. Zero effect on inward motion, on the mid-game, or on anything
  * after EDGE_EARLY_GUARD_SEC.
  */

@@ -127,6 +127,7 @@ function scriptedTeamSimFactory(
           seat: seat as SeatIndex,
           name: options.names?.[seat] ?? `TOP ${seat + 1}`,
           alive,
+          phasing: false,
           hp: alive ? 100 : 0,
           hpMax: 100,
           spin: alive ? 80 : 0,
@@ -227,6 +228,7 @@ function snapshot(tick: number, elapsed: number, x: number): VortexSnapshot {
       {
         seat: 0,
         alive: true,
+      phasing: false,
         hp: 100,
         hpMax: 100,
         spin: 80,
@@ -360,7 +362,7 @@ function hostMessageGuardGate(): void {
   const valid: readonly HostMessage[] = [
     {
       t: "welcome",
-      v: 1,
+      v: VORTEX_PROTOCOL_VERSION,
       seat: 1,
       settings,
     },
@@ -1391,6 +1393,71 @@ async function endlessSeatGate(
   }
 }
 
+/**
+ * The one behavior v3 added to session.ts — starting endless with VACANT
+ * seats — shipped with zero coverage: every endless gate seats a full human
+ * squad. This is the solo-host start: one human, no guests, start() must
+ * fill seat 1 with a CPU wingmate, run the launch authority, and produce a
+ * wave-1 payload shaped exactly like the full-squad one.
+ */
+async function endlessSoloStartGate(): Promise<boolean> {
+  const hostWire = createBroadcastChannelWire();
+  const build = createDefaultBuild("ENDLESS-SOLO");
+  let host: VortexSession | null = null;
+  let cpuWingmate = false;
+  let startPayloadOk = false;
+  const launchSeen = new Set<string>();
+  try {
+    host = await createHostSession(
+      {
+        roomCode: "ENSOLO",
+        name: "SOLO HOST",
+        build,
+        settings: {
+          mode: "endless",
+          playerCount: 2,
+          cpuCount: 0,
+          costLimit: 1000,
+          seed: 0xe50101,
+        },
+        wire: hostWire,
+        createSim: scriptedTeamSimFactory([0, 0, 1]),
+      },
+      {
+        onLobby(lobby) {
+          cpuWingmate =
+            cpuWingmate ||
+            (lobby.seats[1]?.occupant === "cpu" &&
+              lobby.seats[1]?.build !== null);
+        },
+        onLaunchPhase(launch) {
+          if (launch.powers[0] === null && !launchSeen.has(launch.phaseId)) {
+            launchSeen.add(launch.phaseId);
+            host?.submitLaunchStop(Math.max(0, 8_000 - launch.remainingMs));
+          }
+        },
+        onStart(payload) {
+          startPayloadOk =
+            startPayloadOk ||
+            (payload.wave === 1 &&
+              payload.builds.length === 3 &&
+              payload.teamIds[0] === 0 &&
+              payload.teamIds[1] === 0 &&
+              payload.teamIds[2] === 1);
+        },
+      },
+    );
+    await host.start();
+    await waitFor(
+      () => cpuWingmate && startPayloadOk,
+      "solo endless start did not fill the vacant seat and launch wave 1",
+    );
+    return true;
+  } finally {
+    host?.dispose();
+  }
+}
+
 async function endlessNetworkGate(): Promise<EndlessNetworkGateResult> {
   const two = await endlessSeatGate(2, false);
   const three = await endlessSeatGate(3, true);
@@ -1800,6 +1867,9 @@ async function main(): Promise<void> {
       throw new Error("launch timeout fallback was not exactly 0.6");
     }
     endless = await endlessNetworkGate();
+    if (!(await endlessSoloStartGate())) {
+      throw new Error("endless solo start gate failed");
+    }
   } catch (error) {
     failures += 1;
     errors.push(error instanceof Error ? error.message : String(error));
@@ -1810,10 +1880,10 @@ async function main(): Promise<void> {
    * constant, and a v1 guest on a v2 host dies as a silent freeze, the
    * worst failure shape this codebase knows.
    */
-  if (VORTEX_PROTOCOL_VERSION !== 2) {
+  if (VORTEX_PROTOCOL_VERSION !== 3) {
     failures += 1;
     errors.push(
-      `protocol version expected 2 (combo events), got ${VORTEX_PROTOCOL_VERSION}`,
+      `protocol version expected 3 (combo events + phasing flag), got ${VORTEX_PROTOCOL_VERSION}`,
     );
   }
   const output = {

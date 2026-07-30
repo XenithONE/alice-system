@@ -237,6 +237,16 @@ export interface ResolvedTopPart {
 export interface RuntimeModifiers {
   readonly damageDealt: number;
   readonly damageTaken: number;
+  /**
+   * CONTACT-only multipliers, applied in processImpact on top of the general
+   * pair. They exist for one honest reason: CONTACT_DAMAGE_SCALE moved
+   * 0.18 → 0.5 for the 1v1 game, and endless was tuned under 0.18. Scaling
+   * an enemy's general damageTaken back down would also nerf SKILL damage
+   * against it — a bigger distortion than the one being fixed. These default
+   * to 1 and only the endless enemy factory sets them.
+   */
+  readonly contactDamageDealt: number;
+  readonly contactDamageTaken: number;
   readonly spinDrain: number;
   readonly tracking: number;
   readonly stability: number;
@@ -248,6 +258,8 @@ export interface RuntimeModifiers {
 export const NEUTRAL_MODIFIERS: RuntimeModifiers = {
   damageDealt: 1,
   damageTaken: 1,
+  contactDamageDealt: 1,
+  contactDamageTaken: 1,
   spinDrain: 1,
   tracking: 1,
   stability: 1,
@@ -332,6 +344,30 @@ export interface TopState {
   readonly seat: SeatIndex;
   readonly name: string;
   readonly alive: boolean;
+  /**
+   * True while the pass-through window is open. Exists so the RENDERER can
+   * keep a phasing top visibly intangible for the whole window — the skill
+   * cue marks the start, but a 1.1s ghost with no persistent look reads as
+   * lag, and guests otherwise have no way to know contact is off.
+   */
+  readonly phasing: boolean;
+  /**
+   * Host-side only (absent in guest-reconstructed states): the whitelists in
+   * snapshotFromSim never copy it, so the wire is untouched. Present so the
+   * CPU policy can tell wingmates from targets.
+   */
+  readonly team?: number;
+  /**
+   * Host-side only, like `team`. The open combo window, so a level-3 CPU can
+   * actually TRY to finish combos. Measured necessity, not speculation: the
+   * §9-5 probe ran 20 CPU matches with a combo pair equipped — 98 opener
+   * fires, ZERO combos, because cooldown phases never happened to align and
+   * nothing was steering them to.
+   */
+  readonly comboWindow?: {
+    readonly opener: string;
+    readonly openedAt: number;
+  };
   readonly hp: number;
   readonly hpMax: number;
   readonly spin: number;
@@ -470,6 +506,12 @@ export interface CreateVortexSimOptions<TSource = unknown> {
    */
   readonly teamIds?: readonly number[];
   readonly arenaId?: SimRingArena["id"];
+  /**
+   * Measurement seam, default true. Exists so the A+B-without-combos leg of
+   * the ARCHITECTURE §9-5 comparison is expressible without sabotaging the
+   * combo table — production code never passes it.
+   */
+  readonly combosEnabled?: boolean;
   readonly arena?: SimRingArena;
   readonly cpuSeats?: readonly SeatIndex[];
   readonly countdownSec?: number;

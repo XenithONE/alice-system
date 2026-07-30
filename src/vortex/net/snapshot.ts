@@ -22,6 +22,7 @@ export function snapshotFromSim(sim: VortexSim): VortexSnapshot {
       (top): TopSnapshot => ({
         seat: top.seat,
         alive: top.alive,
+        phasing: top.phasing,
         hp: quantize(top.hp, 1),
         hpMax: quantize(top.hpMax, 1),
         spin: quantize(top.spin, 2),

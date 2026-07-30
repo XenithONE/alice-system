@@ -8,6 +8,7 @@ import {
 } from "react";
 import { FX_FAMILY_TINTS, fxFamilyForSkill } from "./content/fxFamily";
 import { makeCpuBuild } from "./content/cpuBuild";
+import { COMBOS } from "./content/combos";
 import { vortexAudio } from "./audio/engine";
 import { loadRecords, recordEndlessWave, recordMatch } from "./records";
 import type { CpuLevel } from "./sim/ai";
@@ -326,6 +327,7 @@ function snapshotToMatchState(
       seat: top.seat,
       name: names[top.seat] ?? lobby?.seats[top.seat]?.name ?? `P${top.seat + 1}`,
       alive: top.alive,
+      phasing: top.phasing,
       hp: top.hp,
       hpMax: top.hpMax,
       spin: top.spin,
@@ -616,6 +618,54 @@ function BuilderCanvas({
   }, [exploded]);
 
   return <canvas ref={canvasRef} aria-label="7部位3Dコマプレビュー" />;
+}
+
+/**
+ * The twelve combo pairs, graded against what this build actually equips.
+ * Until this panel existed a combo was discoverable only by accident (gold
+ * flash + sound in battle) — the builder, where loadouts are decided, said
+ * nothing. Reads the same content/combos table the simulation resolves, so
+ * it cannot drift from what actually fires.
+ */
+function ComboForecast({ build }: { build: TopBuildSpec }) {
+  const equipped = useMemo(() => {
+    const ids = new Set<string>();
+    for (const slot of TOP_SLOTS) {
+      const part = getPart(build.parts[slot]);
+      if (part?.activeSkillId) ids.add(part.activeSkillId);
+    }
+    return ids;
+  }, [build]);
+  const graded = COMBOS.map((combo) => {
+    const have =
+      (equipped.has(combo.opener) ? 1 : 0) +
+      (equipped.has(combo.finisher) ? 1 : 0);
+    return { combo, have };
+  }).sort((first, second) => second.have - first.have);
+  const ready = graded.filter((entry) => entry.have === 2).length;
+  return (
+    <div className="vc-stat-block">
+      <div className="vc-kicker">
+        COMBO FORECAST {ready > 0 ? `// ${ready} READY` : ""}
+      </div>
+      <div className="vc-combo-list">
+        {graded.map(({ combo, have }) => (
+          <div className="vc-combo-row" data-have={have} key={combo.id}>
+            <b>{combo.nameJa}</b>
+            <small>
+              {getActiveSkill(combo.opener)?.nameJa ?? combo.opener}
+              {" → "}
+              {getActiveSkill(combo.finisher)?.nameJa ?? combo.finisher}
+              {`（${(combo.withinTicks / 60).toFixed(1)}s以内）`}
+            </small>
+          </div>
+        ))}
+      </div>
+      <small style={{ color: "var(--vc-muted)", display: "block", marginTop: 6 }}>
+        先のスキル発動後、時間内に後のスキルを撃つと追加効果。金色の輪と上昇音が合図。
+      </small>
+    </div>
+  );
 }
 
 function BuilderScreen({
@@ -922,6 +972,7 @@ function BuilderScreen({
               )}
             </div>
           </div>
+          <ComboForecast build={build} />
           {!validation.ok && (
             <ul className="vc-errors">
               {validation.errors.map((error) => <li key={`${error.code}:${error.slot}`}>{error.message}</li>)}
@@ -1224,6 +1275,7 @@ function stateToVisual(
     bots: state.tops.map((top) => ({
       seat: top.seat,
       alive: top.alive,
+      phasing: top.phasing,
       x: top.position[0],
       y: top.position[1],
       z: top.position[2],
@@ -1265,17 +1317,45 @@ const INTRO_STORAGE_KEY = "vc.intro.v1";
  * screen anywhere that said how you WIN — a player could finish matches
  * without learning that the rim is a kill zone or that 1-7 do anything.
  */
-function IntroOverlay() {
+function IntroOverlay({ onOpenChange }: { onOpenChange?: (open: boolean) => void }) {
   const [seen, setSeen] = useState(() => {
     try {
       return localStorage.getItem(INTRO_STORAGE_KEY) === "seen";
     } catch {
-      return true;
+      /*
+       * Storage blocked = show it. Returning true here inverted the whole
+       * feature for sandboxed/blocked-storage browsers: the one overlay
+       * meant for "the first battle a browser ever sees" never appeared.
+       * The dismiss side already survives a throwing setItem, so the worst
+       * case is a once-per-session reshow.
+       */
+      return false;
     }
   });
+  useEffect(() => {
+    onOpenChange?.(!seen);
+    return () => onOpenChange?.(false);
+  }, [seen, onOpenChange]);
+  /*
+   * While open, swallow the game keys in the CAPTURE phase: the match's
+   * window-level handlers still fired behind the scrim, so a reader could
+   * fire skills into a battle they could not see — and pointer input was
+   * blocked while keyboard input was not, the worst of both.
+   */
+  useEffect(() => {
+    if (seen) return;
+    const swallow = (event: KeyboardEvent) => {
+      if (/^[1-7]$/u.test(event.key) || event.key === "Escape" || event.key === "m" || event.key === "M") {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", swallow, { capture: true });
+    return () => window.removeEventListener("keydown", swallow, { capture: true });
+  }, [seen]);
   if (seen) return null;
   return (
-    <div className="vc-intro" role="dialog" aria-label="遊び方">
+    <div className="vc-intro" role="dialog" aria-modal="true" aria-label="遊び方">
       <div className="vc-intro__card">
         <h2>勝利条件</h2>
         <ul>
@@ -1320,8 +1400,11 @@ function AudioToggle() {
       title="M"
       onClick={() => {
         vortexAudio.unlock();
-        vortexAudio.setMuted(!muted);
-        setMutedState(!muted);
+        // Read live, not the render closure: an M-key flip inside the 500ms
+        // poll window made the first click a no-op.
+        const next = !vortexAudio.muted;
+        vortexAudio.setMuted(next);
+        setMutedState(next);
       }}
     >
       {muted ? "SOUND OFF" : "SOUND ON"}
@@ -1625,7 +1708,7 @@ function MatchScreen({
         </div>
       )}
       <div className="vc-legend">1–7 スキル ｜ M 音 ｜ ESC ポーズ</div>
-      <IntroOverlay />
+      <IntroOverlay onOpenChange={(open) => { if (open) setPaused(true); else setPaused(false); }} />
       <SkillDock skills={me?.skills} disabled={paused} onActivate={activate} />
     </main>
   );
@@ -1639,12 +1722,20 @@ const KNOCKOUT_LABEL: Record<string, string> = {
 function ResultScreen({
   match,
   mode = "solo",
+  mySeat = 0,
   onRematch,
   onBuilder,
   onTitle
 }: {
   match: FinishedMatch;
-  mode?: "solo" | "network";
+  mode?: "solo" | "network" | "endless";
+  /*
+   * Seat 0 is always the HOST. The first version hardcoded `winner === 0`
+   * as "win", so a guest who won recorded a loss and vice versa — every
+   * network guest's vc.records.v1 tally was corrupted from their own point
+   * of view, and the VICTORY/DEFEAT banner lied the same way.
+   */
+  mySeat?: SeatIndex;
   onRematch: () => void;
   onBuilder: () => void;
   onTitle: () => void;
@@ -1654,6 +1745,7 @@ function ResultScreen({
     return second.hp - first.hp;
   });
   const winner = match.result.winner;
+  const mine = winner === null ? null : winner === mySeat;
   /*
    * Recorded here rather than at every call site: this screen is the single
    * place a finished match becomes visible, so it is the single place the
@@ -1671,12 +1763,12 @@ function ResultScreen({
         at: Date.now(),
         mode,
         arenaId: match.state.arenaId ?? "",
-        outcome: winner === 0 ? "win" : winner === null ? "draw" : "loss",
+        outcome: mine === null ? "draw" : mine ? "win" : "loss",
         reason: match.result.reason,
         durationSec: match.result.durationSec,
       })
     );
-  }, [match, mode, winner]);
+  }, [match, mode, mine]);
   const clock = (seconds: number) =>
     `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
   return (
@@ -1684,7 +1776,7 @@ function ResultScreen({
       <TopBar onLogo={onTitle} status="MATCH ARCHIVE COMPLETE" />
       <section className="vc-result__card">
         <div className="vc-result__rank">FINAL CLASSIFICATION</div>
-        <h1>{winner === 0 ? "VICTORY" : winner === null ? "DRAW" : "DEFEAT"}</h1>
+        <h1>{mine === null ? "DRAW" : mine ? "VICTORY" : "DEFEAT"}</h1>
         <h2>
           {winner === null ? "生存機なし" : `${match.state.tops.find((top) => top.seat === winner)?.name} が王冠を獲得`}
           {" / "}{match.result.reason === "ring-out" ? "場外決着" : match.result.reason === "destroyed" ? "破壊決着" : "判定"}
@@ -1927,6 +2019,8 @@ function NetworkMatchView({
       if (/^[1-7]$/u.test(event.key)) {
         event.preventDefault();
         const result = session.activate(Number(event.key) as SkillSlot);
+        // Host/solo only: a guest's activate is fire-and-forget (null), so
+        // its refusals stay silent until the host's snapshot reflects them.
         if (result && !result.ok) vortexAudio.cue({ kind: "deny" });
       } else if (event.key === "Escape") {
         event.preventDefault();
@@ -2157,6 +2251,17 @@ function NetworkRoomFlow({
     onEnded(message: string) {
       const active = sessionRef.current;
       sessionRef.current = null;
+      /*
+       * The 900ms result-display delay races room teardown: without these
+       * two lines a result arriving just before the host left would fire
+       * AFTER "host ended" was shown and replace it with a ResultScreen
+       * offering REMATCH into a dead room.
+       */
+      if (resultTimer.current !== null) {
+        window.clearTimeout(resultTimer.current);
+        resultTimer.current = null;
+      }
+      setFinished(null);
       setSession(null);
       setNetworkDraft(null);
       setLaunchPhase(null);
@@ -2273,6 +2378,8 @@ function NetworkRoomFlow({
     onBack();
   };
 
+
+
   /*
    * REMATCH used to be one of three buttons that all called exit — the one
    * labelled rematch quit the room. A session cannot restart a finished
@@ -2294,13 +2401,17 @@ function NetworkRoomFlow({
     setBusy(false);
     setError("");
     setGuestReady(false);
+    setCopied(false);
+    setEditingGuestBuild(false);
+    if (role === "guest") setRoomSettingsReceived(false);
   };
 
   if (finished) {
     return (
       <ResultScreen
         match={finished}
-        mode="network"
+        mode={settings.mode === "endless" ? "endless" : "network"}
+        mySeat={sessionRef.current?.seat ?? 0}
         onRematch={rematch}
         onBuilder={() => {
           rematch();
@@ -2621,9 +2732,10 @@ export default function App() {
     useState<LaunchStopResult | null>(null);
   const [finished, setFinished] = useState<FinishedMatch | null>(null);
   const [guestRoomCode, setGuestRoomCode] = useState("");
-  /* Increments per launch so rematches meet fresh CPU builds. A ref, not
-     state: nothing renders it. */
-  const matchNonce = useRef(0);
+  /* Increments per launch so rematches meet fresh CPU builds; seeded from
+     the clock so match #1 of a session is not the same lineup every day.
+     A ref, not state: nothing renders it. */
+  const matchNonce = useRef(Date.now() % 9973);
 
   const launch = useCallback((builds: readonly TopBuildSpec[]) => {
     const seed = Date.now() >>> 0;
@@ -2817,7 +2929,7 @@ export default function App() {
       {screen === "result" && finished && (
         <ResultScreen
           match={finished}
-          onRematch={() => launch(finished.builds)}
+          onRematch={launchCurrent}
           onBuilder={() => setScreen("builder")}
           onTitle={() => setScreen("title")}
         />

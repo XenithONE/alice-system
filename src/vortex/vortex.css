@@ -998,8 +998,9 @@ button { color: inherit; }
   .vc-skill { height: 58px; padding: 5px 3px; width: 74px; }
   .vc-skill strong { font-size: 8px; }
   /* Was display:none — which deleted the only place cooldown seconds,
-     charges, and the blocked reason are written. Small, not absent. */
-  .vc-skill small { font-size: 7px; letter-spacing: 0; }
+     charges, and the blocked reason are written. 8.5px is the practical
+     floor for CJK; 7px rendered the blocked labels as stroke mush. */
+  .vc-skill small { font-size: 8.5px; letter-spacing: 0; }
   .vc-result__row { grid-template-columns: 28px 1fr repeat(2, 54px); }
   .vc-result__row span:last-child { display: none; }
 }
@@ -1111,3 +1112,37 @@ button { color: inherit; }
   font: 500 10px var(--vc-mono);
   letter-spacing: 0.06em;
 }
+
+.vc-combo-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.vc-combo-row {
+  display: grid;
+  gap: 1px;
+  padding: 6px 9px;
+  border: 1px solid rgba(120, 144, 156, 0.18);
+  background: rgba(10, 18, 22, 0.6);
+  font-size: 11px;
+}
+
+.vc-combo-row b { font: 600 11px var(--vc-mono); letter-spacing: 0.06em; }
+.vc-combo-row small { color: var(--vc-muted); font-size: 9px; }
+
+/* Both halves equipped: lit gold, the same colour the battle cue uses. */
+.vc-combo-row[data-have="2"] {
+  border-color: rgba(255, 224, 102, 0.55);
+  background: rgba(64, 52, 12, 0.35);
+}
+.vc-combo-row[data-have="2"] b { color: #ffe066; }
+
+/* One half: visibly reachable — the row tells you what to hunt for. */
+.vc-combo-row[data-have="1"] { border-color: rgba(98, 221, 255, 0.3); }
+.vc-combo-row[data-have="1"] b { color: var(--vc-cyan); }
+
+/* Neither: present but quiet. */
+.vc-combo-row[data-have="0"] { opacity: 0.55; }

@@ -1,3 +1,4 @@
+import { RESOLVED_COMBOS_BY_OPENER } from "./comboAdapter";
 import type { MatchState, SeatIndex, SkillSlot, VortexSim } from "./types";
 
 /**
@@ -21,12 +22,37 @@ import type { MatchState, SeatIndex, SkillSlot, VortexSim } from "./types";
  */
 export type CpuLevel = 1 | 2 | 3;
 
+/*
+ * Whole id-segments, so substrings cannot misfire. aiSelftest measures these
+ * against the live catalog and fails if either list stops matching — the
+ * exact way the previous name-based version died silently.
+ */
+export const OFFENSIVE_SEGMENTS = [
+  "dash", "lunge", "drive", "breaker", "spike", "lance", "burst",
+  "charge", "strike", "blitz", "execution", "crusher", "bite",
+] as const;
+export const DEFENSIVE_SEGMENTS = [
+  "aegis", "guard", "repair", "brake", "anchor", "shield", "reboot",
+  "armor", "veil", "shell", "ballast",
+] as const;
+
 function nearestEnemyDistance(state: MatchState, seat: SeatIndex): number {
   const self = state.tops.find((top) => top.seat === seat);
   if (!self) return Number.POSITIVE_INFINITY;
   let nearest = Number.POSITIVE_INFINITY;
   for (const other of state.tops) {
     if (other.seat === seat || !other.alive) continue;
+    // Team-blind distance made a co-op CPU read its own wingmate as "in
+    // range" and dump offence at a teammate-shaped shadow. `team` is
+    // host-side state (not serialized); when absent, fall back to
+    // everyone-is-an-enemy, which is correct for the FFA default.
+    if (
+      self.team !== undefined &&
+      other.team !== undefined &&
+      other.team === self.team
+    ) {
+      continue;
+    }
     const dx = other.position[0] - self.position[0];
     const dz = other.position[2] - self.position[2];
     nearest = Math.min(nearest, Math.hypot(dx, dz));
@@ -68,22 +94,41 @@ export function aiActivation(
 
   const distance = nearestEnemyDistance(state, seat);
   const hurting = top.hp < top.hpMax * 0.45;
+  const window = top.comboWindow;
   const scored = ordered
     .map((skill, index) => {
       /*
-       * Names are display data, so this reads them loosely and falls back
-       * to neutral — a classification miss degrades to level-2 behaviour,
-       * never to an error. Effects would be the principled source, but the
-       * runtime skill state deliberately does not carry them across the
-       * wire; the name heuristic keeps level 3 host-side-only data free.
+       * Classified on the skill ID, not the display name. The first version
+       * matched English words against `skill.name` — which the adapter
+       * replaces with nameJa, so against the real catalog the regexes
+       * matched ZERO of 57 skills and level 3 was byte-identical to level 2.
+       * IDs are Latin, stable, and matched as whole hyphen-segments so
+       * "emergency-ramen" does not read as /ram/ and get held at range
+       * while its owner bleeds out. A miss still degrades to level-2
+       * behaviour, never to an error.
        */
-      const name = skill.name ?? "";
-      const offensive = /dash|burst|lance|strike|pulse|drive|charge|blitz|ram/iu.test(name);
-      const defensive = /aegis|shield|guard|repair|regen|mend|ward|brake|anchor/iu.test(name);
+      const segments = new Set((skill.skillId ?? "").split("-"));
+      const offensive = OFFENSIVE_SEGMENTS.some((word) => segments.has(word));
+      const defensive = DEFENSIVE_SEGMENTS.some((word) => segments.has(word));
       let score = ordered.length - index;
       if (offensive && distance > 3.2) score -= 100;
       if (defensive && hurting) score += 100;
       if (defensive && !hurting) score -= 40;
+      /*
+       * Finishing an open combo beats everything else. Without this rule a
+       * CPU never combos at all except by cooldown coincidence — measured:
+       * 98 opener fires, zero combos across twenty matches.
+       */
+      if (window) {
+        const finishes = (
+          RESOLVED_COMBOS_BY_OPENER.get(window.opener) ?? []
+        ).some(
+          (combo) =>
+            combo.finisher === skill.skillId &&
+            state.elapsed - window.openedAt <= combo.windowSec,
+        );
+        if (finishes) score += 300;
+      }
       return { slot: skill.slot, score };
     })
     .sort((first, second) => second.score - first.score);

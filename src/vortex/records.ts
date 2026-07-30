@@ -59,9 +59,21 @@ export function loadRecords(): VortexRecords {
     if (!raw) return EMPTY_RECORDS;
     const parsed = JSON.parse(raw) as Partial<VortexRecords>;
     if (parsed.v !== 1) return EMPTY_RECORDS;
+    // Coerced, not trusted: a tampered stringly `wins` would otherwise flow
+    // through `+ 1` as concatenation, get persisted, and inflate forever.
+    const count = (value: unknown): number =>
+      typeof value === "number" && Number.isFinite(value) && value >= 0
+        ? Math.floor(value)
+        : 0;
     return {
       ...EMPTY_RECORDS,
-      ...parsed,
+      matches: count(parsed.matches),
+      wins: count(parsed.wins),
+      losses: count(parsed.losses),
+      draws: count(parsed.draws),
+      ringOuts: count(parsed.ringOuts),
+      destroys: count(parsed.destroys),
+      bestWave: count(parsed.bestWave),
       recent: Array.isArray(parsed.recent)
         ? parsed.recent.slice(0, RECENT_LIMIT)
         : [],
@@ -82,14 +94,21 @@ function save(records: VortexRecords): VortexRecords {
 
 export function recordMatch(entry: MatchRecordEntry): VortexRecords {
   const current = loadRecords();
+  /*
+   * Endless is co-op waves: its runs always "end", and counting each as a
+   * loss inflated the loss tally with a number that measured persistence,
+   * not defeat. Endless keeps its own score (bestWave) and the recent
+   * list; the W/L line stays a versus record.
+   */
+  const versus = entry.mode !== "endless";
   return save({
     ...current,
     matches: current.matches + 1,
-    wins: current.wins + (entry.outcome === "win" ? 1 : 0),
-    losses: current.losses + (entry.outcome === "loss" ? 1 : 0),
-    draws: current.draws + (entry.outcome === "draw" ? 1 : 0),
-    ringOuts: current.ringOuts + (entry.reason === "ring-out" ? 1 : 0),
-    destroys: current.destroys + (entry.reason === "destroyed" ? 1 : 0),
+    wins: current.wins + (versus && entry.outcome === "win" ? 1 : 0),
+    losses: current.losses + (versus && entry.outcome === "loss" ? 1 : 0),
+    draws: current.draws + (versus && entry.outcome === "draw" ? 1 : 0),
+    ringOuts: current.ringOuts + (versus && entry.reason === "ring-out" ? 1 : 0),
+    destroys: current.destroys + (versus && entry.reason === "destroyed" ? 1 : 0),
     recent: [entry, ...current.recent].slice(0, RECENT_LIMIT),
   });
 }

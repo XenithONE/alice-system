@@ -106,14 +106,27 @@ function makeStorage(initial?: string) {
   };
 }
 
+/*
+ * Record over the one-shot kinds, so the compiler proves exhaustiveness —
+ * `combo` was added to AudioCue and this list silently stopped covering the
+ * union, which quietly demoted A4/A5 from "every cue kind" to "most".
+ */
+const ONE_SHOT_CUES: Record<
+  Exclude<AudioCue["kind"], "sudden-death">,
+  AudioCue
+> = {
+  skill: { kind: "skill", family: "lance" },
+  impact: { kind: "impact", impulse: 20 },
+  shockwave: { kind: "shockwave" },
+  knockout: { kind: "knockout", reason: "ring-out" },
+  combo: { kind: "combo" },
+  launch: { kind: "launch" },
+  deny: { kind: "deny" },
+};
 const EVERY_CUE: readonly AudioCue[] = [
-  { kind: "skill", family: "lance" },
-  { kind: "impact", impulse: 20 },
-  { kind: "shockwave" },
-  { kind: "knockout", reason: "ring-out" },
+  ...Object.values(ONE_SHOT_CUES),
+  // Both knockout flavours, beyond the union-coverage minimum.
   { kind: "knockout", reason: "destroyed" },
-  { kind: "launch" },
-  { kind: "deny" },
 ];
 
 {
