@@ -16,7 +16,8 @@ export function EditorialHero() {
   const { live, inDev } = STUDIO_TALLY;
   return (
     <section className="hero" id="hero">
-      <p className="hero-eyebrow">AlicE sYsTeM — INDIE GAME STUDIO / 2026</p>
+      {/* 00, so the folio series starts where the document does. */}
+      <p className="hero-eyebrow">00 / MASTHEAD — AlicE sYsTeM / INDIE GAME STUDIO / 2026</p>
 
       <h1 className="hero-title">
         <span className="hero-line">{WORKS.length} works.</span>

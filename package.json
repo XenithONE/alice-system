@@ -9,7 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "sitemap": "npx tsx scripts/sitemap.ts",
-    "site:gates": "npx tsx src/portfolio/bentoSelftest.ts && npx tsx src/portfolio/qualitySelftest.ts && npx tsx scripts/sitemap.ts --check && python scripts/optimize_covers.py --check && node scripts/measure_closure.mjs",
+    "site:gates": "npx tsx src/portfolio/bentoSelftest.ts && npx tsx scripts/cssSelftest.ts && npx tsx src/portfolio/qualitySelftest.ts && npx tsx scripts/fonts.ts --check && npx tsx scripts/sitemap.ts --check && python scripts/optimize_covers.py --check && node scripts/measure_closure.mjs",
     "vortex:content-gates": "npx tsx src/vortex/content/gates.ts && npx tsx src/vortex/content/fxSelftest.ts && npx tsx src/vortex/audio/selftest.ts",
     "vortex:endless-gates": "npx tsx src/vortex/endless/selftest.ts",
     "vortex:launch-gates": "npx tsx src/vortex/launch/selftest.ts",

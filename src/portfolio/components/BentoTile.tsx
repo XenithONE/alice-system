@@ -1,5 +1,5 @@
-import { TIERS, artFor, tierOf } from "../bento";
-import { EngineChip, StatusBadge, primaryCta } from "./badges";
+import { CATALOG, TIERS, artFor, tierOf } from "../bento";
+import { EngineChip, StatusBadge, accession, primaryCta } from "./badges";
 import type { Work } from "../../data/works";
 
 const BASE = import.meta.env.BASE_URL;
@@ -38,7 +38,11 @@ export function BentoTile({ work, index, onOpenDetail }: Props) {
   const eager = index < 2;
 
   return (
-    <li className={`bento-tile bt-${tier} bt-${spec.mode}`} id={work.id} data-tier={tier}>
+    // data-reveal makes the tile an entrance of its own. The vertical stagger
+    // then comes free and is physically correct at every breakpoint and in
+    // every filter state, because each tile is observed individually — band 4
+    // arrives when band 4 arrives. Only the within-row offset needs CSS.
+    <li className={`bento-tile bt-${tier} bt-${spec.mode}`} id={work.id} data-tier={tier} data-reveal>
       <div className="bt-media">
         {/*
          * width/height are the source's, not the tile's — they only have to
@@ -102,22 +106,37 @@ export function BentoTile({ work, index, onOpenDetail }: Props) {
           <p className="bt-chips">
             <EngineChip engine={work.engine} />
             <span className="bt-year">{work.year}</span>
+            {/*
+             * A catalogue number, from the helper this file's own module has
+             * exported since the grid was written and nobody ever called.
+             *
+             * WorksBento passes 99 as the index for a filtered view, because a
+             * subset has no ranking within the whole catalogue — so the number
+             * is simply absent there rather than wrong.
+             */}
+            {index < CATALOG.length && (
+              <span className="bt-accession">{accession(index, CATALOG.length)}</span>
+            )}
+            {/*
+             * Only when the tile's own control goes somewhere else. On the two
+             * tiles with no store link the title is already a button opening
+             * this same dialog, so a 詳細 button beside it was a second tab
+             * stop that did the identical thing — announced twice, useful once.
+             *
+             * It used to be a floating pill in the plate's top-right corner:
+             * a second chrome object on the picture, at 9.9px, fighting the
+             * status sticker for the corners. In the caption row it is a
+             * caption-row control, which is what it always was.
+             */}
+            {tier !== "s" && cta.href && (
+              <button type="button" className="bt-detail" onClick={() => onOpenDetail(work)}>
+                詳細
+                <span className="visually-hidden">（{work.title}）</span>
+              </button>
+            )}
           </p>
         </div>
       </div>
-
-      {/*
-       * Only when the tile's own control goes somewhere else. On the two tiles
-       * with no store link the title is already a button opening this same
-       * dialog, so a 詳細 button beside it was a second tab stop that did the
-       * identical thing — announced twice, useful once.
-       */}
-      {tier !== "s" && cta.href && (
-        <button type="button" className="bt-detail" onClick={() => onOpenDetail(work)}>
-          詳細
-          <span className="visually-hidden">（{work.title}）</span>
-        </button>
-      )}
     </li>
   );
 }

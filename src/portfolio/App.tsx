@@ -11,35 +11,6 @@ import { CursorFX } from "./components/CursorFX";
 import { useReveal } from "./useReveal";
 import type { Work } from "../data/works";
 
-function ScrollProgress() {
-  useEffect(() => {
-    const el = document.querySelector<HTMLElement>(".scroll-progress");
-    if (!el) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-    let raf = 0;
-    const update = (): void => {
-      raf = 0;
-      const y = window.scrollY || 0;
-      const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-      el.style.width = `${Math.min(100, (y / max) * 100)}%`;
-    };
-    const schedule = (): void => {
-      if (!raf) raf = window.requestAnimationFrame(update);
-    };
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule, { passive: true });
-    schedule();
-    return () => {
-      window.cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
-    };
-  }, []);
-
-  return <div className="scroll-progress" aria-hidden="true" />;
-}
-
 export default function PortfolioApp() {
   useReveal();
   const [detail, setDetail] = useState<Work | null>(null);
@@ -77,7 +48,15 @@ export default function PortfolioApp() {
         本文へ移動
       </a>
       <CursorFX />
-      <ScrollProgress />
+      {/*
+       * Driven entirely by CSS: animation-timeline: scroll(root block). What
+       * used to be here was a useEffect, a rAF coalescer, two listeners and a
+       * scrollHeight read that forced layout on every scroll frame — for a
+       * 2px decoration. Where the timeline is unsupported the bar stays at
+       * width 0 and is simply absent, which is also what reduced-motion gets,
+       * so there is one behaviour to reason about rather than two.
+       */}
+      <div className="scroll-progress" aria-hidden="true" />
       <SiteNav />
       <main id="main-content">
         <EditorialHero />
@@ -89,7 +68,6 @@ export default function PortfolioApp() {
 
       <Footer />
       <GameDetail work={detail} onClose={() => setDetail(null)} />
-      <div className="grain" aria-hidden="true" />
     </div>
   );
 }

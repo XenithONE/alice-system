@@ -8,50 +8,232 @@
  * Deleting this with the harbour would revert the whole site to the dormant
  * light theme. It is imported by the top page and by harbor.html.
  */
+
+/*
+ * ── cascade order, declared rather than inherited from the chunk graph ────
+ *
+ * portfolio.css is `base`; this file is `theme`, so this file wins every
+ * same-specificity tie. That has to be stated, because load order had been
+ * deciding it and deciding it wrong: main.tsx imports portfolio.css first,
+ * but this file is a chunk shared with harbor.html, so the bundler emits it
+ * FIRST and the built page handed the cascade back to portfolio.css.
+ *
+ * Sixty-four declarations in this file — counted by parsing both files, not
+ * guessed — never reached a browser. Measured on the built page:
+ *
+ *   .lab-notebook   shipped #0a2944 instead of a paper ground, so the AI Lab
+ *                   headings rendered #061c31 on #0a2944 — contrast 1.16:1.
+ *                   The section heading was invisible.
+ *   .filter-tab.is-active   shipped #fff on #e6ad46 — 2.01:1, an AA failure,
+ *                   where this file's #061c31 on amber is 8.57:1.
+ *   .site-footer    shipped --surface, so the document closed LIGHTER than
+ *                   it opened.
+ *
+ * The same @layer statement heads portfolio.css. Whichever the bundler emits
+ * first establishes the order and the second is a no-op — which is the
+ * property that makes this survive the next change to the chunk graph.
+ * cssSelftest [C1] fails if a selector+property pair is declared in both.
+ */
+@layer base, theme;
+
+@layer theme {
+
 :root {
+  /* ── grounds ──────────────────────────────────────────────────────────
+   * Dark is the gallery wall; paper is where you stop looking and start
+   * reading. Two papers, because a magazine changes stock between the body
+   * and the colophon: --paper is the lab's notebook leaf, --paper-deep the
+   * endpaper the stack strip is printed on. One step apart, not a contrast.
+   *
+   * There was a third, #f6f1e7, on .lab-notebook. That is --ink — the TEXT
+   * colour reused as a ground — which is why the two creams disagreed by
+   * more than a step rather than by design. It never rendered (see above),
+   * so giving the lab a real paper costs the live site nothing.
+   */
   --bg: #061c31;
-  --bg-warm: #efe3d0;
   --surface: #0a2944;
   --raised: #0d3454;
   --panel: rgba(6, 28, 49, 0.92);
+  --ink-deep: #041624;
+  --paper: #efe3d0;
+  --paper-deep: #e7d9c2;
+
   --hairline: rgba(246, 241, 231, 0.14);
   --hairline-strong: rgba(246, 241, 231, 0.3);
+  --rule-paper: rgba(6, 28, 49, 0.18);
+  --rule-paper-soft: rgba(6, 28, 49, 0.09);
+
+  /* ── ink ──────────────────────────────────────────────────────────────
+   * The -paper set exists because contrast is a pair, not a colour: --amber
+   * is 8.57:1 on --bg and 1.60:1 on --paper. Anything that crosses the fold
+   * needs its own value on the other side, and --gold-ink is it.
+   */
   --ink: #f6f1e7;
   --text: #e4dfd6;
   --text-dim: #b9c5ce;
   --text-faint: #9fb0bc;
-  --red: #e6ad46;
-  --red-shadow: #9c6d24;
+  /* The ink on paper IS the dark side's ground — that is the relationship,
+     so it is written as one rather than as a coincidence of two hex strings
+     that a later edit could silently break apart. 13.69:1 on --paper. */
+  --ink-paper: var(--bg);
+  --ink-paper-soft: #3d4b57;
+  --gold-ink: #7a5316;
+
+  /* ── accent + status ─────────────────────────────────────────────────── */
   --amber: #e6ad46;
+  /* The accent has been amber for two versions; half the stylesheet still
+     calls it red. An alias keeps 25 call sites working while they migrate.
+     tokenSelftest [T1] refuses a second PRIMITIVE holding this value, which
+     is the state that made "--red" look like a colour rather than a fossil. */
+  --red: var(--amber);
   --blue: #1767aa;
   --azure: #08a9c5;
-  --display: "Barlow Condensed", "Oswald", "Arial Narrow", sans-serif;
-  --serif: "Shippori Mincho", "Yu Mincho", "Hiragino Mincho ProN", serif;
-  --sans: "Noto Sans JP", "Space Grotesk", "Yu Gothic", sans-serif;
-  --jp: "Noto Sans JP", "Yu Gothic", sans-serif;
-  --mono: "Space Mono", ui-monospace, monospace;
-  --gutter: clamp(20px, 4vw, 72px);
-  --page-max: 1480px;
-  color-scheme: dark;
-
   /*
-   * Carried over from portfolio.css when its :root was retired. These ten
-   * never had a dark counterpart, so they were already the values in use —
-   * the status colours were tuned against light surfaces and are worth
-   * revisiting when the works grid is restyled.
+   * Status colours come in two values, because a colour used as a FILL and
+   * the same colour used as INK are different jobs:
+   *
+   *   --live      #2b7a37   fill, white text on it            5.33:1
+   *   --live-text #57c274   ink, on --raised, the lightest    5.73:1
+   *                         dark ground the page has
+   *
+   * The saturated set was tuned against the retired light theme and has been
+   * shipping as ink on navy. Measured on the built page: PLAYABLE rendered at
+   * 1.66:1 on fourteen tiles, IN DEVELOPMENT at 2.01:1, WISHLIST at 3.67:1.
+   * theme.css's own note said these were "worth revisiting when the works
+   * grid is restyled" — this is that.
+   *
+   * On PAPER the relationship inverts — --dev is 4.82:1 on --paper-deep
+   * while --dev-text is 1.9:1 — so the lab keeps the saturated values as its
+   * ink. The ground decides which one is readable, not the name.
    */
-  --yellow: #f2cd37;
   --live: #2b7a37;
+  --live-text: #57c274;
   --live-shadow: #1f5a28;
   --live-ink: #ffffff;
   --wishlist: #9a6410;
+  --wishlist-text: #d29a38;
   --download: #0c6ba0;
+  --download-text: #57b3e6;
   --dev: #6849bf;
+  --dev-text: #b09bf0;
   --rec: #c91a09;
+
+  /* ── type ─────────────────────────────────────────────────────────────
+   * Only families that can actually paint. "Oswald" sat behind Barlow and
+   * "Space Grotesk" behind Noto Sans JP — both loaded, neither ever able to
+   * render a glyph, because the family in front of them always resolved.
+   * The fallbacks now name fonts the OS has rather than fonts from the same
+   * stylesheet that would have failed alongside them.
+   */
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --serif: "Shippori Mincho", "Yu Mincho", "Hiragino Mincho ProN", serif;
+  --sans: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  /* Japanese body copy and body copy are the same stack on this site, and
+     have been since Space Grotesk stopped resolving. Kept as a separate name
+     because the roles are separate, but as an alias so the two cannot drift. */
+  --jp: var(--sans);
+  --mono: "Space Mono", ui-monospace, monospace;
+
+  /* ── motion ───────────────────────────────────────────────────────────
+   * A numbered scale, not role names: a role scale grows a literal the first
+   * time a rule needs "slightly slower than base". These five ARE the
+   * literals already in the two files, so migrating a rule to a token cannot
+   * change how the site looks — retuning is a separate diff.
+   *
+   *   1  a state flip with no movement   2  a small offset
+   *   3  compound / an image             4  a line of type arriving
+   *   5  a block arriving
+   */
+  --dur-1: 160ms;
+  --dur-2: 200ms;
+  --dur-3: 240ms;
+  --dur-4: 420ms;
+  --dur-5: 600ms;
+  /* Loops are deliberately off the 1-5 ruler: an ambient pulse is not a slow
+     entrance, and putting them on one scale invites a --dur-6. */
+  --dur-loop: 2400ms;
+
+  /* Arriving, leaving, and moving with both ends on screen. All in the
+     cubic-bezier(0.4, 0, 0.2, 1) family and none overshoots: a bounce in a
+     gallery reads as a toy. */
+  --ease-out: cubic-bezier(0.32, 0, 0.16, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  /* Scroll-driven animation must be linear. The timeline IS the user's
+     scroll, which already carries their easing; easing it twice makes the
+     page feel like it is lagging behind the wheel. */
+  --ease-scroll: linear;
+  /* The curve every existing rule uses, kept verbatim so migration is a
+     rename. */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --tile-scrim: rgba(4, 18, 32, 0.92);
+
+  /* Named for axis and direction so they cannot be misread as an X offset:
+     everything on this page enters from below. */
+  --rise-1: 8px;
+  --rise-2: 14px;
+  --rise-3: 20px;
+  --lift: 4px;
+  /* Read against the longest run it drives: a band is at most four tiles, so
+     3 x 32ms = 96ms of offset. There is deliberately no second step size —
+     that is how a stagger stops reading as one gesture. */
+  --stagger: 32ms;
+
+  /* ── shape + depth ────────────────────────────────────────────────────
+   * The dark theme's answer to radius is mostly 0. A 14px corner on a 16:10
+   * photographic cover is the strongest "web-app card" signal on the page,
+   * and a plate on a wall is a rectangle.
+   *
+   * --elev-* is depth, tuned against #061c31 rather than the near-black
+   * rgba(23, 27, 33, ...) left over from the light theme.
+   */
+  --r-0: 0;
+  --r-1: 4px;
+  --r-2: 8px;
+  --r-pill: 999px;
+  --r-round: 50%;
+  --elev-1: 0 1px 2px rgba(1, 14, 25, 0.4);
+  --elev-2: 0 8px 24px rgba(1, 14, 25, 0.45);
+  --elev-3: 0 30px 80px rgba(1, 14, 25, 0.55);
+
+  /* ── measure ──────────────────────────────────────────────────────────
+   * Block rhythm is part of the composition, not a constant: a ground change
+   * substitutes for space, so the paper leaf runs tighter than the dark
+   * movements and reads as continuous.
+   */
+  --space-l: 2.5rem;
+  --space-xl: 4rem;
+  --space-2xl: clamp(4rem, 7vw, 7rem);
+  --space-3xl: clamp(6rem, 11vw, 11rem);
+  --gutter: clamp(20px, 4vw, 72px);
+  --page-max: 1480px;
+
+  /* ── type scale ───────────────────────────────────────────────────────
+   * Two ratios joined at the base — 1.333 above, 1.125 below. One ratio
+   * across a 10x range gives you either too few display steps or too many
+   * meta steps, and this page needs both ends: an 11px accession number and
+   * a 57px heading are not the same instrument.
+   *
+   * The five section headings had been set in FOUR different typefaces at
+   * four unrelated sizes (51.2 / 23.25 / 48 / 35.2 / 67.2px), and the 23.25
+   * was the browser's default h2 — no rule for it existed anywhere.
+   *
+   * Measures are in `em`, not `ch`. `ch` is the advance of "0", about 0.55em
+   * in Noto Sans JP, so `max-width: 46ch` on the hero lede computed to 25
+   * Japanese glyphs: the source said 46 and the reader saw 25.
+   */
+  --t--2: 0.6875rem;
+  --t--1: 0.8125rem;
+  --t-0: 1rem;
+  --t-1: 1.125rem;
+  --t-2: 1.5rem;
+  --t-3: 2rem;
+  --t-4: 2.667rem;
+  --t-5: 3.556rem;
+  --t-h2: clamp(2rem, 1.32rem + 2.8vw, 3.556rem);
+
+  --plate-caption: rgba(4, 18, 32, 0.92);
   --chip-bg: rgba(6, 28, 49, 0.78);
-  --studs: radial-gradient(circle at 50% 42%, rgba(23, 27, 33, 0.05) 20%, transparent 22%);
+  color-scheme: dark;
 }
 
 html,
@@ -63,31 +245,145 @@ body {
   color: var(--text);
 }
 
+/*
+ * Both names, in the file both pages load.
+ *
+ * This rule lived in portfolio.css under one name while HarborPage.tsx:521
+ * used the other — and harbor.html loads theme.css and harbor.css, not
+ * portfolio.css. So the harbour's aria-live region matched no rule on any
+ * page and had been rendering as visible text. Two names for one idea, in a
+ * file only half the site reads.
+ */
+.visually-hidden,
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The whole ring, not just its colour. This file used to state only
+   outline-color and outline-offset and rely on portfolio.css for the width
+   and style — a focus ring assembled from two files, which is one keystroke
+   away from no focus ring at all. */
 :focus-visible {
-  outline-color: #ffc45b;
+  outline: 2px solid #ffc45b;
   outline-offset: 4px;
+  border-radius: var(--r-1);
 }
 
 .scroll-progress {
   height: 2px;
-  background: #e6ad46;
+  background: var(--amber);
   box-shadow: none;
 }
-/* Downstream editorial continuation. */
+/* ══ editorial composition ═══════════════════════════════════════════════
+ *
+ * Block rhythm. Every section used to get the same clamp, which is a
+ * metronome rather than a rhythm — and a magazine does not space by
+ * metronome, it spaces by what you are being asked to do. A change of ground
+ * substitutes for space, so the paper leaf runs tighter than the dark
+ * movements and reads as one continuous act of reading:
+ *
+ *   masthead   large   picture       ->  a wall
+ *   works      large   picture
+ *   ai lab     dense   reading       ->  the page turn does the separating
+ *   prompts    dense   reading
+ *   stack      a beat  colophon strip
+ *   closing    large   picture       ->  and it closes darker than it opened
+ *
+ * At 1280 that is 176 / 176 / 112 / 112 / 64 / 176.
+ */
 .section {
-  padding-top: clamp(84px, 10vw, 154px);
-  padding-bottom: clamp(84px, 10vw, 154px);
+  padding-block: var(--space-3xl);
+}
+#ai-lab.section,
+#prompts.section {
+  padding-block: var(--space-2xl);
 }
 
+/*
+ * The folio. Promoted from "a line above the heading" to a numbered mark
+ * that sits ON the section's top rule, with a patch of the section's own
+ * ground behind it so the rule breaks around the number. That break is the
+ * whole device — it is what separates a running-head rule in a book from an
+ * <hr>. Cheapest thing on this page and the largest "designed publication"
+ * return.
+ *
+ * The series had a hole: 01 WORKS, 02 AI LAB, 03 PROMPT ARCHIVE, then 05
+ * NEXT TITLE. A numbering system with a gap is worse than no numbering, so
+ * #stack gets 04 and the masthead gets 00.
+ */
 .section-index {
-  color: #e6ad46;
+  color: var(--amber);
+  font-size: var(--t--1);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  display: inline-block;
+  position: relative;
+  top: calc(var(--t--1) * -0.72);
+  margin-bottom: calc(var(--t--1) * -0.4);
+  padding-right: 1.1em;
+  background: var(--bg);
 }
+.lab-notebook .section-index { background: var(--paper); }
+.stack-rail .section-index { background: var(--paper-deep); }
+.site-footer .section-index { background: var(--ink-deep); }
 
-.section-head h2,.prompts-editorial h2 {
-  color: #f6f1e7;
+/* The rule the folio breaks. Full-bleed to the section's own gutter. */
+#games.section,
+#ai-lab.section,
+#prompts.section,
+#stack .stack-rail-inner,
+.site-footer .closing-cta {
+  border-top: 1px solid var(--hairline);
+}
+#ai-lab.section { border-top-color: var(--rule-paper); }
+/* #prompts is the same leaf as the lab, not a new one, so its rule is
+   quieter — a paragraph break rather than a page turn. */
+#prompts.section { border-top-color: var(--hairline); }
+#stack .stack-rail-inner { border-top-color: var(--rule-paper); }
+
+/*
+ * One voice for all five section headings.
+ *
+ * Not a taste argument — a mechanical one. This is <html lang="ja"> and the
+ * headings are Japanese sentences. #games h2 was 「遊べるものは、いま。」 set in
+ * Barlow Condensed, which has no CJK glyphs at all, so every character fell
+ * through to whatever Gothic the OS happened to offer: the works heading was
+ * rendering in an unspecified system font. Shippori Mincho sets Japanese and
+ * Latin in one voice, and Barlow keeps what it is actually good at — the
+ * masthead and the tile titles.
+ *
+ * The governing rule that keeps the serif from becoming wallpaper: it
+ * appears only at >= 32px, only for headings and pull quotes. It speaks; it
+ * does not narrate. That is also why it needs exactly one weight.
+ */
+#games-title,
+#lab-title,
+#prompts-title,
+#stack-title,
+#closing-title {
   font-family: var(--serif);
   font-weight: 500;
-  letter-spacing: -0.025em;
+  font-size: var(--t-h2);
+  /* 1.35, not the 1.02 that used to apply to every h2 on the page: a Mincho
+     setting two lines of Japanese at 57px collides with itself at 1.02. */
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  /* uppercase is a no-op on Japanese and ugly on Mincho's Latin. */
+  text-transform: none;
+  color: var(--ink);
+  max-width: 14em;
+}
+.lab-notebook #lab-title,
+.stack-rail #stack-title {
+  color: var(--ink-paper);
 }
 
 .catalog-filter {
@@ -153,22 +449,28 @@ body {
   background: #061c31;
 }
 
+/* ── the fold: everything below sits on paper ─────────────────────────────
+ * Contrast is a pair, not a colour, so every ink that crosses the fold gets
+ * its own value on this side. The two that changed are the two that failed:
+ *   #9c6d24 on paper = 3.61:1  ->  --gold-ink   5.38:1
+ *   #465968 on paper = 5.90:1  ->  --ink-paper-soft 7.06:1
+ */
 .lab-notebook {
-  color: #061c31;
-  border-color: rgba(6, 28, 49, 0.15);
-  background: #f6f1e7;
+  color: var(--ink-paper);
+  border-color: var(--rule-paper);
+  background: var(--paper);
 }
 
 .lab-notebook .section-index,
 .lab-notebook .lab-preparation-header p,
 .lab-notebook .lab-result-header p {
-  color: #9c6d24;
+  color: var(--gold-ink);
 }
 
 .lab-notebook h2,
 .lab-notebook h3,
 .lab-notebook .section-head h2 {
-  color: #061c31;
+  color: var(--ink-paper);
 }
 
 .lab-notebook p,
@@ -177,28 +479,75 @@ body {
 .lab-notebook figcaption,
 .lab-notebook .lab-scroll-hint,
 .lab-notebook .lab-matrix-note {
-  color: #465968;
+  color: var(--ink-paper-soft);
 }
 
+/* Inset panels on paper tint DOWN. The retired value was #efe5d7 — LIGHTER
+   than the leaf — which is backwards: on paper, added ink is darker. */
 .lab-waveform,
 .lab-preparation,
 .lab-empty,
 .lab-result,
 .lab-result-prompt,
 .lab-result-output {
-  border-color: rgba(6, 28, 49, 0.17);
-  border-radius: 0;
-  background: #efe5d7;
+  border-color: var(--rule-paper);
+  border-radius: var(--r-0);
+  background: var(--paper-deep);
 }
 
 .lab-matrix th,
 .lab-matrix td {
-  border-color: rgba(6, 28, 49, 0.2);
+  border-color: var(--rule-paper);
 }
 
 .lab-result-model {
-  color: #061c31;
-  background: #e3d4bf;
+  color: var(--ink-paper);
+  background: var(--paper-deep);
+  border-bottom: 1px solid var(--rule-paper);
+}
+
+/*
+ * The rest of the fold. Each of these is an element whose ink was tuned on
+ * the dark side and which is now on paper, where the same value fails:
+ *
+ *   --amber      on --paper  1.60:1   table heads, the copy button, the
+ *                                     waveform's data points
+ *   --text-dim   on --paper  1.39:1   output text, table caption
+ *   --hairline-strong (bone 30%) on paper — the dashed empty-state frame was
+ *                                     drawing in a colour lighter than its
+ *                                     own background
+ *
+ * These are not new bugs; they are the bugs that were hidden while the whole
+ * section was rendering dark. Landing the paper ground exposes them, so they
+ * land together.
+ */
+.lab-notebook .lab-matrix thead th,
+.lab-notebook .lab-waveform-points circle,
+.lab-notebook .copy-btn {
+  color: var(--gold-ink);
+}
+
+.lab-notebook .lab-waveform-points circle {
+  fill: var(--gold-ink);
+}
+
+.lab-notebook .copy-btn:hover {
+  color: var(--paper);
+  background: var(--gold-ink);
+}
+
+.lab-notebook .lab-output-text,
+.lab-notebook .lab-matrix caption,
+.lab-notebook .prompt-note {
+  color: var(--ink-paper-soft);
+}
+
+.lab-notebook .lab-empty {
+  border-color: var(--rule-paper);
+}
+
+.lab-notebook .lab-waveform-guides line {
+  stroke: var(--rule-paper-soft);
 }
 
 .prompt-archive {
@@ -218,31 +567,35 @@ body {
   background: #0a2944;
 }
 
+/* The endpaper at the back of the book: one step down from the lab's leaf,
+   which is how a colophon strip is set. The stud pattern that used to sit on
+   it was the last toy-brick relic on the page; the tint does that work now. */
 .stack-rail {
-  color: #061c31;
-  border-color: rgba(6, 28, 49, 0.16);
-  background: #efe3d0;
-  background-image: radial-gradient(circle at center, rgba(6, 28, 49, 0.08) 18%, transparent 20%);
+  color: var(--ink-paper);
+  border-color: var(--rule-paper);
+  background: var(--paper-deep);
 }
 
 .stack-rail h2,
 .stack-rail-caption,
 .stack-rail-list li {
-  color: #061c31;
+  color: var(--ink-paper);
 }
 
 .stack-rail-list li {
   border: 0;
-  border-bottom: 1px solid rgba(6, 28, 49, 0.28);
-  border-radius: 0;
+  border-bottom: 1px solid var(--rule-paper);
+  border-radius: var(--r-0);
   background: transparent;
   box-shadow: none;
 }
 
+/* Deeper than the masthead, so the document closes rather than trailing off.
+   It had been shipping --surface, which is LIGHTER than --bg. */
 .site-footer {
   color: #dbe3e8;
-  border-color: rgba(246, 241, 231, 0.14);
-  background: #041624;
+  border-color: var(--hairline);
+  background: var(--ink-deep);
 }
 
 .site-footer h2,
@@ -349,8 +702,8 @@ body {
   height: 8px;
   border-radius: 50%;
 }
-.hero-tally .live i { background: var(--live); }
-.hero-tally .dev i { background: var(--dev); }
+.hero-tally .live i { background: var(--live-text); }
+.hero-tally .dev i { background: var(--dev-text); }
 .hero-tally .tools i { background: var(--azure); }
 .hero-actions {
   display: flex;
@@ -400,9 +753,15 @@ section[id],
   grid-auto-rows: var(--bento-row);
   gap: var(--bento-gap);
   list-style: none;
-  margin: clamp(28px, 4vw, 44px) auto 0;
-  padding: 0 var(--gutter);
-  max-width: var(--page-max);
+  margin: clamp(28px, 4vw, 44px) 0 0;
+  /*
+   * No padding / max-width / margin-inline here. The grid is already inside
+   * .section, which supplies all three — so it was being inset TWICE: the
+   * first tile started at x=102.375 while the section head, lede and filter
+   * row above it started at x=51.19 (measured at 1280). The plate wall did
+   * not share a left margin with its own heading, which is the one alignment
+   * an editorial spread cannot get wrong.
+   */
 }
 .bt-xl { grid-column: span 4; grid-row: span 4; }
 .bt-l  { grid-column: span 4; grid-row: span 3; }
@@ -429,15 +788,28 @@ section[id],
  * silently took no clicks on sixteen tiles. Stacking with grid areas instead
  * of positioning gets the same paint order with nothing left to get wrong.
  */
+/*
+ * Plates on a wall, not cards in an app.
+ *
+ * Radius 0: a 14px corner on a 16:10 photographic cover is the strongest
+ * "web-app card" signal the page had. No border: a grey box drawn around a
+ * photograph. At a 14px gap the pictures' own edges read as a continuous
+ * mosaic, which is what a wall of plates should do.
+ */
 .bento-tile {
   position: relative;
   display: grid;
   overflow: hidden;
-  border-radius: 14px;
-  border: 1px solid var(--hairline);
+  border-radius: var(--r-0);
   background: var(--surface);
-  transition: transform 0.2s var(--ease), border-color 0.2s var(--ease);
+  transition: outline-color var(--dur-2) var(--ease-out);
+  outline: 1px solid transparent;
+  outline-offset: -1px;
 }
+/* The hover gesture is disclosure, not levitation — a plate that lifts 4px
+   is a card again. The frame stays put; the caption opens and the picture
+   breathes. */
+.bento-tile:hover { outline-color: rgba(230, 173, 70, 0.45); }
 @media (min-width: 560px) {
   .bt-overlay { grid-template-areas: "stack"; }
   .bt-overlay > .bt-media,
@@ -446,10 +818,9 @@ section[id],
 .bt-media { min-width: 0; min-height: 0; }
 .bt-media img {
   width: 100%; height: 100%; object-fit: cover; display: block;
-  transition: transform 0.24s var(--ease);
+  transition: scale var(--dur-3) var(--ease-out);
 }
-.bento-tile:hover { transform: translateY(-4px); border-color: var(--hairline-strong); }
-.bento-tile:hover .bt-media img { transform: scale(1.04); }
+.bento-tile:hover .bt-media img { scale: 1.03; }
 
 .bt-body {
   display: flex; flex-direction: column; justify-content: flex-end;
@@ -457,13 +828,22 @@ section[id],
   padding: clamp(12px, 1.4vw, 20px);
   gap: 4px;
 }
-.bt-overlay .bt-body {
-  background: linear-gradient(
-    0deg,
-    var(--tile-scrim) 0%,
-    color-mix(in srgb, var(--tile-scrim) 55%, transparent) 42%,
-    transparent 78%
-  );
+/*
+ * A caption bar, not a scrim.
+ *
+ * The gradient existed only because .bt-body is stretched to the whole grid
+ * area in overlay mode, so it had to fade out or it would have tinted the
+ * entire cover. One declaration fixes the cause: align the body to the end
+ * and it shrinks to its content, at which point a flat bar works and the
+ * picture above it is untinted. The disclosure then grows the bar UPWARD,
+ * which reads better than a fade deepening.
+ */
+.bt-overlay > .bt-body {
+  align-self: end;
+  justify-content: flex-end;
+  background: var(--plate-caption);
+  border-top: 1px solid rgba(230, 173, 70, 0.35);
+  padding: 10px clamp(12px, 1.4vw, 18px) 12px;
 }
 
 /* m stacks text under a whole picture instead of over a cropped one: a 2x3
@@ -480,22 +860,37 @@ section[id],
 .bt-caption { display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .bt-caption .bt-media { aspect-ratio: 16 / 10; }
 .bt-caption .bt-body {
-  background: var(--raised);
+  background: var(--surface);
+  border-top: 1px solid var(--hairline);
   padding: 10px clamp(12px, 1.4vw, 20px) 12px;
   gap: 2px;
   justify-content: flex-start;
   overflow: hidden;
 }
 .bt-caption .bt-desc { display: none; }
-.bt-caption .bt-meta { opacity: 1; transform: none; }
-/* The badge sits on the picture rather than in the caption. In the caption it
-   cost 30px of a 114px strip and the text clipped by 9; on the picture it is
-   free, and a status sticker on the image is where a catalogue puts it. */
-.bt-caption .bt-badges {
+.bt-caption .bt-meta { opacity: 1; translate: none; }
+
+/*
+ * One thing on the picture; everything else in the bar.
+ *
+ * This rule was already here and already argued correctly — "a status sticker
+ * on the image is where a catalogue puts it" — but it was scoped to the one
+ * tier where the caption ran out of room. It is the right answer for all five:
+ * the bar then carries title, Japanese title and meta only, and the corner of
+ * the plate carries the one fact you scan for.
+ */
+.bt-badges {
   position: absolute; top: 10px; left: 10px; z-index: 2; margin: 0;
 }
-
-.bt-badges { margin: 0 0 2px; }
+/* A flat rectangle, not an outlined pill: at 10px a 6px radius is just a
+   blurred edge, and the plate has no other rounded thing left on it. */
+.bt-badges .badge {
+  border-radius: var(--r-0);
+  border-width: 0;
+  padding: 4px 8px;
+  background: var(--chip-bg);
+  backdrop-filter: blur(3px);
+}
 .bt-title { margin: 0; font-family: var(--display); font-weight: 600; text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.05; }
 .bt-xl .bt-title { font-size: clamp(1.5rem, 2.6vw, 2.6rem); }
 .bt-l  .bt-title { font-size: clamp(1.3rem, 2vw, 2rem); }
@@ -509,33 +904,41 @@ section[id],
 .bt-ja { margin: 0; color: var(--text-dim); font-family: var(--jp); font-size: 0.82rem; }
 .bt-s .bt-ja { display: none; }
 
+/* translate, not transform: the tile's own hover owns nothing on transform
+   any more, but CursorFX writes element.style.transform directly on
+   [data-magnetic] and the two must never share a property. */
 .bt-meta {
   display: grid; gap: 6px;
-  opacity: 0; transform: translateY(8px);
-  transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
+  opacity: 0; translate: 0 var(--rise-1);
+  transition: opacity var(--dur-2) var(--ease-out), translate var(--dur-2) var(--ease-out);
 }
 .bento-tile:hover .bt-meta,
-.bento-tile:focus-within .bt-meta { opacity: 1; transform: none; }
+.bento-tile:focus-within .bt-meta { opacity: 1; translate: none; }
 .bt-desc { margin: 0; color: var(--text-dim); font-family: var(--jp); font-size: 0.82rem; line-height: 1.6; }
 .bt-s .bt-desc, .bt-p .bt-desc { display: none; }
 .bt-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
-.bt-year { font-family: var(--mono); font-size: 0.66rem; color: var(--text-faint); letter-spacing: 0.08em; }
-
-.bt-detail {
-  position: absolute; z-index: 3; right: 10px; top: 10px;
-  font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--text-dim); background: var(--chip-bg);
-  border: 1px solid var(--hairline); border-radius: 999px; padding: 6px 11px; cursor: pointer;
-  opacity: 0; transition: opacity 0.2s var(--ease), color 0.2s var(--ease);
+.bt-year { font-family: var(--mono); font-size: var(--t--2); color: var(--text-faint); letter-spacing: 0.08em; }
+/* The catalogue number, pushed to the end of the meta row. */
+.bt-accession {
+  font-family: var(--mono); font-size: var(--t--2); letter-spacing: 0.1em;
+  color: var(--text-faint); margin-left: auto;
 }
-.bento-tile:hover .bt-detail,
-.bento-tile:focus-within .bt-detail { opacity: 1; }
-.bt-detail:hover { color: var(--ink); border-color: var(--hairline-strong); }
+
+/* A caption-row control: underlined mono, no box. It sits above the tile's
+   stretched anchor (z-index 2) so it still takes its own clicks. */
+.bt-detail {
+  position: relative; z-index: 3;
+  font-family: var(--mono); font-size: var(--t--2); letter-spacing: 0.08em;
+  color: var(--amber); background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+  transition: color var(--dur-2) var(--ease-out);
+}
+.bt-detail:hover { color: var(--ink); }
 
 /* Frame the whole tile, and only for keyboard focus — a mouse press should not
    light it up. */
 .bento-tile:has(.bt-link:focus-visible) {
-  outline: 3px solid var(--red);
+  outline: 3px solid var(--amber);
   outline-offset: 3px;
 }
 
@@ -543,8 +946,7 @@ section[id],
    and half of each tile's text would be permanently invisible. This is the
    most common way a bento grid goes wrong. */
 @media (hover: none) {
-  .bt-meta { opacity: 1; transform: none; }
-  .bt-detail { opacity: 1; }
+  .bt-meta { opacity: 1; translate: none; }
 }
 
 @media (max-width: 1179px) {
@@ -574,17 +976,21 @@ section[id],
   /* 2:3, the posters' own shape. It said 3/4 — a number written a second time
      and wrong, cropping 11% off art that a single column can show whole. */
   .bt-p .bt-media { aspect-ratio: 2 / 3; }
-  .bt-body { background: var(--raised); }
-  .bt-overlay .bt-body { background: var(--raised); }
+  .bt-body { background: var(--surface); }
+  .bt-overlay > .bt-body { background: var(--surface); border-top: 1px solid var(--hairline); }
   .bt-s .bt-ja, .bt-s .bt-desc, .bt-p .bt-desc { display: block; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .bento-tile, .bt-media img, .bt-meta, .bt-detail { transition: none; }
-  .bento-tile:hover { transform: none; }
-  .bento-tile:hover .bt-media img { transform: none; }
+  /* scale and translate, not transform: the tile moved to the independent
+     properties so the hover, the reveal and CursorFX's magnetic pull can each
+     own one. A neutraliser naming the old property stops neutralising. */
+  .bento-tile:hover .bt-media img { scale: 1; }
   /* Pin the disclosure open rather than snapping it — a hard cut on hover is
      harder to read than no motion at all. */
-  .bt-meta { opacity: 1; transform: none; }
-  .bt-detail { opacity: 1; }
+  .bt-meta { opacity: 1; translate: none; }
 }
+
+}
+/* ── end @layer theme ─────────────────────────────────────────────────── */
