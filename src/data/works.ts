@@ -114,6 +114,22 @@ export const WORKS: Work[] = [
 
   // ── NOW PLAYING — browser titles (play now) ─────────────────────────────────
   {
+    id: "nitro-crown",
+    title: "NITRO CROWN",
+    titleJa: "3Dカートレース（最大4人対戦）",
+    description:
+      "3コース・8台グリッドのカートレーサー。ドリフトを溜めて3段のミニターボ、8種のアイテムで逆転する。ルームコードだけで最大4人がブラウザ対戦できるP2Pマルチ対応。",
+    href: "nitro-crown.html",
+    cover: "assets/nitro-crown-cover.webp",
+    year: "2026",
+    kind: "game",
+    engine: "Three.js",
+    platform: ["web"],
+    status: "playable",
+    tags: ["RACING", "P2P", "DRIFT"],
+    aiTools: ["Claude"]
+  },
+  {
     id: "relic-road",
     title: "RELIC ROAD",
     titleJa: "カード×ボードRPG（2〜4人）",

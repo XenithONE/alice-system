@@ -89,6 +89,16 @@
       1280
     ]
   },
+  "assets/nitro-crown-cover.webp": {
+    "h": 800,
+    "w": 1280,
+    "widths": [
+      400,
+      720,
+      960,
+      1280
+    ]
+  },
   "assets/relic-road-brick.webp": {
     "h": 800,
     "w": 1280,
