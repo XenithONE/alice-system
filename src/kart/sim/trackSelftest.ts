@@ -35,6 +35,7 @@ import {
   selfProximity,
   TRACK_LIMITS,
   turnRatio,
+  vergeFloor,
 } from "./trackMetrics";
 
 const gate = createGate();
@@ -144,6 +145,47 @@ for (const track of built) {
     `最小余裕 ${gap.toFixed(2)}m（サンプル ${a}↔${b}）`,
   );
 }
+
+// [T14] the inside verge of a corner must not fold through its own centre ───
+/**
+ * The verge is lofted a fixed 20 m past the road edge, so on the inside of a
+ * corner it reaches `radius − half − 20` from the centre of curvature. Once
+ * that is negative the band turns inside out and its normals point at the
+ * ground. [T6] does not cover it: a ratio is scale-free and 20 m is not, so a
+ * corner can pass [T6] at 3.15 and still fold — which is what ALPINE PASS did,
+ * for exactly one vertex out of 3632.
+ *
+ * [R2] catches the result. This catches the cause, and says which sample.
+ */
+for (const track of built) {
+  const { worst, required, index } = vergeFloor(track);
+  gate.check(
+    `[T14:${track.spec.id}] コーナー内側の路肩が折り返さない`,
+    worst > TRACK_LIMITS.minVergeSlack,
+    `最小余裕 ${worst.toFixed(1)}m（sample ${index} は半径 ${required.toFixed(1)}m 以上が必要）`,
+  );
+}
+gate.expectFail(
+  "[T14-neg] 半径24mのヘアピンは路肩を折り返す（T6は通ってしまう）",
+  () => {
+    const tight = buildTrack({
+      ...TRACKS[0]!,
+      id: "verge-control",
+      points: [
+        { x: 0, y: 0, z: 0, width: 15 },
+        { x: 0, y: 0, z: 160, width: 15 },
+        { x: 24, y: 0, z: 184, width: 15 },
+        { x: 48, y: 0, z: 160, width: 15 },
+        { x: 48, y: 0, z: 0, width: 15 },
+        { x: 24, y: 0, z: -24, width: 15 },
+      ],
+      itemBoxes: [],
+      boostPads: [],
+    });
+    return vergeFloor(tight).worst > TRACK_LIMITS.minVergeSlack;
+  },
+  "R≈24m / half=7.5m（T6比 3.2）",
+);
 
 // [T8-neg] a circuit deliberately folded onto itself must be rejected ────────
 const FOLDED: TrackSpec = {

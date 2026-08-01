@@ -351,11 +351,172 @@ const CITY_LOOP: TrackSpec = {
   },
 };
 
+/**
+ * A 1815 m pass with 44 m of relief: descending for the first 45 % of the lap,
+ * flat for 25 %, climbing for the last 30 %.
+ *
+ * That split is deliberate and it is free. Gradient does not touch speed in
+ * this sim — `pitch` only feeds the vertical follow — so a long descent costs
+ * nothing in balance and buys seven tenths of a lap spent looking down at the
+ * road you are about to be on. The climb at the end puts the far side of the
+ * valley in shot from the low point.
+ *
+ * Two hairpins, narrowed to 15 m through the apex. They are 33.9 m at the
+ * tightest, which is far more than [T6]'s ratio demands (4.52 against a
+ * minimum of 2.5) — and they have to be, because the binding constraint here
+ * is not the ratio at all. The verge mesh is lofted a fixed 20 m past the road
+ * edge, so a corner tighter than `half + 20` folds its inside verge through
+ * its own centre of curvature. At 23.5 m this course passed [T6] at 3.15 and
+ * still produced one downward normal out of 3632. [T14] now states that floor
+ * directly.
+ *
+ * Switchbacks proper are not here: two legs running parallel more than 120 m
+ * apart along the lap is exactly the arrangement [T8] exists to forbid,
+ * because the projection cannot tell which leg a kart is on. The pass reads as
+ * a pass through the hairpins, the rock wall and the trees instead.
+ *
+ * The ramp at 0.29 sits on the descent, where `desiredVy` is already negative
+ * and the launch is ADDED to it rather than replacing it (the v2 bug) — so it
+ * throws further than the same ramp would on the flat.
+ */
+const ALPINE_PASS: TrackSpec = {
+  id: "alpine-pass",
+  name: "ALPINE PASS",
+  nameJa: "高原峠",
+  blurb: "標高差44mの峠道。長い下りとヘアピン2つ、下りの途中に飛ぶランプ。",
+  points: [
+    { x: -18.2, y: 44, z: 298.4, width: 22 },
+    { x: -32.5, y: 43.9, z: 298.3, width: 22 },
+    { x: -46.6, y: 43.7, z: 296, width: 22 },
+    { x: -60.1, y: 43.3, z: 291.4, width: 22 },
+    { x: -79.3, y: 42.8, z: 283.1, width: 22 },
+    { x: -98.6, y: 42.2, z: 274.9, width: 22 },
+    { x: -117.8, y: 41.4, z: 266.6, width: 22 },
+    { x: -137.1, y: 40.6, z: 258.4, width: 22 },
+    { x: -156.3, y: 39.6, z: 250.1, width: 22 },
+    { x: -175.6, y: 38.6, z: 241.9, width: 22 },
+    { x: -194.8, y: 37.4, z: 233.6, width: 22 },
+    { x: -214.1, y: 36.2, z: 225.4, width: 22 },
+    { x: -229.8, y: 34.9, z: 216.4, width: 22 },
+    { x: -243.2, y: 33.5, z: 204.1, width: 22 },
+    { x: -253.4, y: 32.1, z: 189.1, width: 22 },
+    { x: -259.9, y: 30.6, z: 172.2, width: 22 },
+    { x: -265.5, y: 29.1, z: 151.1, width: 21.7 },
+    { x: -271.1, y: 27.5, z: 130, width: 21.3 },
+    { x: -276.6, y: 26, z: 108.9, width: 21 },
+    { x: -282.2, y: 24.4, z: 87.8, width: 20.7 },
+    { x: -287.7, y: 22.8, z: 66.6, width: 20.3 },
+    { x: -293.3, y: 21.2, z: 45.5, width: 20 },
+    { x: -295.6, y: 19.5, z: 28.9, width: 20 },
+    { x: -293.9, y: 18, z: 12.2, width: 20 },
+    { x: -288.2, y: 16.4, z: -3.6, width: 20 },
+    { x: -278, y: 14.8, z: -24.1, width: 19.3 },
+    { x: -267.7, y: 13.3, z: -44.5, width: 18.6 },
+    { x: -257.5, y: 11.8, z: -65, width: 17.9 },
+    { x: -247.3, y: 10.4, z: -85.5, width: 17.1 },
+    { x: -237, y: 9.1, z: -106, width: 16.4 },
+    { x: -226.8, y: 7.8, z: -126.4, width: 15.7 },
+    { x: -216.5, y: 6.5, z: -146.9, width: 15 },
+    { x: -211.4, y: 5.4, z: -154.8, width: 15 },
+    { x: -204.7, y: 4.3, z: -161.3, width: 15 },
+    { x: -196.7, y: 3.4, z: -166.2, width: 15 },
+    { x: -176.3, y: 2.5, z: -175.7, width: 16.2 },
+    { x: -155.8, y: 1.8, z: -185.3, width: 17.3 },
+    { x: -135.3, y: 1.1, z: -194.9, width: 18.5 },
+    { x: -114.8, y: 0.7, z: -204.4, width: 19.7 },
+    { x: -94.3, y: 0.3, z: -214, width: 20.8 },
+    { x: -73.9, y: 0.1, z: -223.5, width: 22 },
+    { x: -64.5, y: 0, z: -227.3, width: 22 },
+    { x: -54.7, y: 0, z: -230, width: 22 },
+    { x: -44.8, y: 0, z: -231.5, width: 22 },
+    { x: -21.4, y: 0, z: -233.9, width: 21 },
+    { x: 1.9, y: 0, z: -236.2, width: 20 },
+    { x: 25.2, y: 0, z: -238.5, width: 19 },
+    { x: 48.5, y: 0, z: -240.9, width: 18 },
+    { x: 71.8, y: 0, z: -243.2, width: 17 },
+    { x: 95.1, y: 0, z: -245.5, width: 16 },
+    { x: 118.5, y: 0, z: -247.8, width: 15 },
+    { x: 131.7, y: 0, z: -247.1, width: 15 },
+    { x: 144, y: 0, z: -242.2, width: 15 },
+    { x: 154.3, y: 0, z: -233.7, width: 15 },
+    { x: 167.8, y: 0, z: -218.2, width: 15.9 },
+    { x: 181.4, y: 0, z: -202.6, width: 16.8 },
+    { x: 195, y: 0, z: -187.1, width: 17.6 },
+    { x: 208.6, y: 0, z: -171.6, width: 18.5 },
+    { x: 222.2, y: 0, z: -156, width: 19.4 },
+    { x: 235.8, y: 0, z: -140.5, width: 20.3 },
+    { x: 249.4, y: 0, z: -125, width: 21.1 },
+    { x: 263, y: 0, z: -109.4, width: 22 },
+    { x: 272.6, y: 0, z: -95.8, width: 22 },
+    { x: 279.2, y: 0, z: -80.6, width: 22 },
+    { x: 282.4, y: 0, z: -64.3, width: 22 },
+    { x: 284.5, y: 0.3, z: -43.1, width: 22.3 },
+    { x: 286.5, y: 0.9, z: -21.9, width: 22.6 },
+    { x: 288.5, y: 1.8, z: -0.7, width: 22.9 },
+    { x: 290.5, y: 2.9, z: 20.5, width: 23.1 },
+    { x: 292.5, y: 4.3, z: 41.7, width: 23.4 },
+    { x: 294.6, y: 5.9, z: 62.9, width: 23.7 },
+    { x: 296.6, y: 7.8, z: 84.1, width: 24 },
+    { x: 295.8, y: 9.7, z: 106.9, width: 24 },
+    { x: 289.4, y: 11.8, z: 128.8, width: 24 },
+    { x: 277.7, y: 14.1, z: 148.3, width: 24 },
+    { x: 263.8, y: 16.4, z: 165.9, width: 24 },
+    { x: 250, y: 18.7, z: 183.5, width: 24 },
+    { x: 236.1, y: 21.2, z: 201, width: 24 },
+    { x: 222.3, y: 23.6, z: 218.6, width: 24 },
+    { x: 208.5, y: 26, z: 236.2, width: 24 },
+    { x: 194.6, y: 28.3, z: 253.8, width: 24 },
+    { x: 181.6, y: 30.6, z: 267.2, width: 24 },
+    { x: 166.1, y: 32.8, z: 277.6, width: 24 },
+    { x: 148.7, y: 34.9, z: 284.6, width: 24 },
+    { x: 130.3, y: 36.8, z: 287.8, width: 24 },
+    { x: 109.1, y: 38.6, z: 289.3, width: 23.7 },
+    { x: 87.9, y: 40.1, z: 290.9, width: 23.4 },
+    { x: 66.7, y: 41.4, z: 292.4, width: 23.1 },
+    { x: 45.4, y: 42.5, z: 293.9, width: 22.9 },
+    { x: 24.2, y: 43.3, z: 295.4, width: 22.6 },
+    { x: 3, y: 43.8, z: 296.9, width: 22.3 },
+  ],
+  itemBoxes: [
+    { at: 0.1, offsets: [-0.6, -0.2, 0.2, 0.6] },
+    { at: 0.37, offsets: [-0.5, 0.5] },
+    { at: 0.62, offsets: [-0.6, -0.2, 0.2, 0.6] },
+    { at: 0.85, offsets: [-0.55, 0, 0.55] },
+  ],
+  boostPads: [
+    { at: 0.22, offset: -0.3 },
+    { at: 0.52, offset: 0 },
+    { at: 0.8, offset: 0.32 },
+  ],
+  ramps: [{ at: 0.29, offset: 0 }],
+  theme: {
+    skyLow: 0xd6e6f2,
+    skyHigh: 0x2f6fb0,
+    sunColor: 0xfff2dc,
+    sunDir: [-0.42, 0.68, 0.6],
+    sunIntensity: 3.6,
+    ambient: 0.9,
+    fog: 0xc3d8e8,
+    // Thin: the point of a pass is seeing the far side of the valley.
+    fogDensity: 0.0016,
+    road: 0x4a4d55,
+    roadEdge: 0xf4f7fa,
+    rail: 0xb8bcc4,
+    ground: 0x3f5a34,
+    groundAccent: 0x9fd8ff,
+    props: "conifer",
+    bloom: 0.42,
+    stars: 0,
+    night: false,
+  },
+};
+
 export const TRACKS: readonly TrackSpec[] = [
   SUNSET_COAST,
   NEON_CANYON,
   SKY_GARDEN,
   CITY_LOOP,
+  ALPINE_PASS,
 ];
 
 export type TrackId = (typeof TRACKS)[number]["id"];

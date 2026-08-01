@@ -108,17 +108,60 @@ export function roundTripError(track: Track, window: number): number {
   return worst;
 }
 
+/**
+ * How far the verge mesh reaches beyond the road edge. `bothSides` lofts it
+ * out to 20 m no matter how wide the road is, so on the INSIDE of a corner it
+ * reaches `radius − half − 20` from the centre of curvature — and once that
+ * goes negative the band folds through itself and comes out facing the ground.
+ */
+export const VERGE_EXTENT = 20;
+
+/**
+ * The tightest corner whose inside verge still lies flat.
+ *
+ * [T6]'s ratio does not cover this. A ratio is scale-free and the verge is
+ * not: narrowing the road raises R/half and lowers this floor by only half as
+ * much, so a corner can satisfy [T6] comfortably and still fold. Found on
+ * ALPINE PASS, where a 23.5 m hairpin passed [T6] at 3.15 and produced exactly
+ * one downward normal out of 3632 — which reads on screen as a single dark
+ * polygon on one verge, if it reads at all.
+ */
+export function vergeFloor(track: Track): {
+  worst: number;
+  required: number;
+  index: number;
+} {
+  let worst = Infinity;
+  let required = 0;
+  let index = 0;
+  for (let i = 0; i < track.samples.length; i += 1) {
+    const sample = track.samples[i]!;
+    const r =
+      Math.abs(sample.curvature) < 1e-6 ? Infinity : 1 / Math.abs(sample.curvature);
+    const slack = r - sample.half - VERGE_EXTENT;
+    if (slack < worst) {
+      worst = slack;
+      required = sample.half + VERGE_EXTENT;
+      index = i;
+    }
+  }
+  return { worst, required, index };
+}
+
 /** The thresholds the gates hold circuits to. One copy, imported by both. */
 export const TRACK_LIMITS = {
   /** [T6] */ minTurnRatio: 2.5,
   /** [T8] */ minSelfGap: 2,
   /** [T3] */ maxRoundTrip: 0.4,
+  /** [T14] metres of clearance the inside verge needs beyond folding. */
+  minVergeSlack: 1.5,
 } as const;
 
 /** Everything at once: what a layout tool needs to accept or reject a candidate. */
 export function trackMetrics(track: Track): {
   turn: ReturnType<typeof turnRatio>;
   proximity: ReturnType<typeof selfProximity>;
+  verge: ReturnType<typeof vergeFloor>;
   roundTrip: number;
   staleRoundTrip: number;
   passes: boolean;
@@ -127,14 +170,17 @@ export function trackMetrics(track: Track): {
   const proximity = selfProximity(track);
   const roundTrip = roundTripError(track, 0);
   const staleRoundTrip = roundTripError(track, 12);
+  const verge = vergeFloor(track);
   return {
     turn,
     proximity,
+    verge,
     roundTrip,
     staleRoundTrip,
     passes:
       turn.ratio > TRACK_LIMITS.minTurnRatio &&
       proximity.gap > TRACK_LIMITS.minSelfGap &&
+      verge.worst > TRACK_LIMITS.minVergeSlack &&
       roundTrip < TRACK_LIMITS.maxRoundTrip &&
       staleRoundTrip < TRACK_LIMITS.maxRoundTrip,
   };
