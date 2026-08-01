@@ -225,10 +225,137 @@ const SKY_GARDEN: TrackSpec = {
   },
 };
 
+/**
+ * A rounded rectangle 316 x 256 m. The shape is doing structural work, not
+ * just aesthetic: opposite sides sit 256 m apart, so [T8] — which forbids two
+ * stretches more than 120 m apart along the lap from coming within a road's
+ * width of each other — is satisfied by the geometry rather than by luck. The
+ * measured clearance is 70 m.
+ *
+ * Corners are nominally 50 m but the spline tightens them to 33; the ratio
+ * against the 9 m half-width is 3.47, and it is 3.47 because the width is
+ * EASED into the corner rather than switched. A step from 22 to 18 at the
+ * corner entry undershoots below 18 on the way in, putting the narrowest road
+ * exactly where the radius is smallest.
+ *
+ * The east side opens to 30 m: not a shortcut, a room. Two lines fit through
+ * it, which is the whole idea — the plan considered a real branching route and
+ * rejected it, because one arc length is the only progress authority the sim
+ * has, and a second path would need a second one.
+ */
+const CITY_LOOP: TrackSpec = {
+  id: "city-loop",
+  name: "CENTRAL LOOP",
+  nameJa: "都心環状",
+  blurb: "青の時間の都心を一周する高速レイアウト。216mの直線と高架、幅30mの広場での駆け引き。",
+  points: [
+    { x: 108, y: 4.4, z: 128, width: 20 },
+    { x: 77.1, y: 4.8, z: 128, width: 22 },
+    { x: 46.3, y: 5.2, z: 128, width: 22 },
+    { x: 15.4, y: 5.5, z: 128, width: 22 },
+    { x: -15.4, y: 5.7, z: 128, width: 22 },
+    { x: -46.3, y: 5.9, z: 128, width: 22 },
+    { x: -77.1, y: 6, z: 128, width: 20 },
+    { x: -108, y: 6, z: 128, width: 18 },
+    { x: -119.1, y: 5.9, z: 126.7, width: 18 },
+    { x: -129.7, y: 5.8, z: 123, width: 18 },
+    { x: -139.2, y: 5.6, z: 117.1, width: 18 },
+    { x: -147.1, y: 5.3, z: 109.2, width: 18 },
+    { x: -153, y: 5, z: 99.7, width: 18 },
+    { x: -156.7, y: 4.6, z: 89.1, width: 18 },
+    { x: -158, y: 4.1, z: 78, width: 20 },
+    { x: -158, y: 3.6, z: 55.7, width: 22 },
+    { x: -158, y: 3, z: 33.4, width: 22 },
+    { x: -158, y: 2.4, z: 11.1, width: 22 },
+    { x: -158, y: 1.8, z: -11.1, width: 22 },
+    { x: -158, y: 1.2, z: -33.4, width: 22 },
+    { x: -158, y: 0.5, z: -55.7, width: 20 },
+    { x: -158, y: -0.1, z: -78, width: 18 },
+    { x: -156.7, y: -0.6, z: -89.1, width: 18 },
+    { x: -153, y: -1, z: -99.7, width: 18 },
+    { x: -147.1, y: -1.4, z: -109.2, width: 18 },
+    { x: -139.2, y: -1.8, z: -117.1, width: 18 },
+    { x: -129.7, y: -2.2, z: -123, width: 18 },
+    { x: -119.1, y: -2.6, z: -126.7, width: 18 },
+    { x: -108, y: -2.9, z: -128, width: 20 },
+    { x: -77.1, y: -3.2, z: -128, width: 22 },
+    { x: -46.3, y: -3.5, z: -128, width: 22 },
+    { x: -15.4, y: -3.7, z: -128, width: 22 },
+    { x: 15.4, y: -3.8, z: -128, width: 22 },
+    { x: 46.3, y: -3.9, z: -128, width: 22 },
+    { x: 77.1, y: -4, z: -128, width: 20 },
+    { x: 108, y: -4, z: -128, width: 18 },
+    { x: 119.1, y: -4, z: -126.7, width: 18 },
+    { x: 129.7, y: -3.9, z: -123, width: 18 },
+    { x: 139.2, y: -3.7, z: -117.1, width: 18 },
+    { x: 147.1, y: -3.5, z: -109.2, width: 18 },
+    { x: 153, y: -3.3, z: -99.7, width: 18 },
+    { x: 156.7, y: -3, z: -89.1, width: 18 },
+    { x: 158, y: -2.7, z: -78, width: 20 },
+    { x: 158, y: -2.4, z: -55.7, width: 30 },
+    { x: 158, y: -2, z: -33.4, width: 30 },
+    { x: 158, y: -1.6, z: -11.1, width: 30 },
+    { x: 158, y: -1.2, z: 11.1, width: 30 },
+    { x: 158, y: -0.8, z: 33.4, width: 30 },
+    { x: 158, y: -0.3, z: 55.7, width: 24 },
+    { x: 158, y: 0.2, z: 78, width: 18 },
+    { x: 156.7, y: 0.9, z: 89.1, width: 18 },
+    { x: 153, y: 1.5, z: 99.7, width: 18 },
+    { x: 147.1, y: 2.2, z: 109.2, width: 18 },
+    { x: 139.2, y: 2.8, z: 117.1, width: 18 },
+    { x: 129.7, y: 3.4, z: 123, width: 18 },
+    { x: 119.1, y: 3.9, z: 126.7, width: 18 },
+  ],
+  itemBoxes: [
+    { at: 0.08, offsets: [-0.6, -0.2, 0.2, 0.6] },
+    { at: 0.34, offsets: [-0.55, 0, 0.55] },
+    { at: 0.6, offsets: [-0.6, -0.2, 0.2, 0.6] },
+    { at: 0.86, offsets: [-0.5, 0.5] },
+  ],
+  boostPads: [
+    { at: 0.2, offset: 0 },
+    { at: 0.47, offset: -0.3 },
+    { at: 0.74, offset: 0.34 },
+  ],
+  theme: {
+    skyLow: 0xf3a877,
+    skyHigh: 0x1e3563,
+    sunColor: 0xffd2ab,
+    /*
+     * Elevation 0.5, not 0.3. At dusk the sun is low by definition, but a
+     * directional light that low puts the entire road in its own buildings'
+     * shadow — the first shoot came back with black tarmac and a lit skyline,
+     * which reads as night rather than as blue hour. High enough to reach the
+     * road, low enough to throw the long shadows the cascades exist for.
+     */
+    sunDir: [0.62, 0.5, 0.72],
+    sunIntensity: 3.2,
+    // Cities bounce light. The ambient carries the near field here rather than
+    // the sun, which is what makes the shadowed side of a block still readable.
+    ambient: 1.05,
+    fog: 0x3b4c72,
+    // Denser than the coast: the far side of the loop is 250 m away and the
+    // skyline behind it needs to sit back rather than crowd the road.
+    fogDensity: 0.003,
+    road: 0x474b59,
+    roadEdge: 0xeef2f6,
+    rail: 0x6a748a,
+    ground: 0x2e3648,
+    groundAccent: 0x59d7ff,
+    props: "building",
+    bloom: 0.72,
+    stars: 0.3,
+    // Headlights on. Not a night circuit, but the light is going and the grid
+    // is the only thing on the road that can carry its own.
+    night: true,
+  },
+};
+
 export const TRACKS: readonly TrackSpec[] = [
   SUNSET_COAST,
   NEON_CANYON,
   SKY_GARDEN,
+  CITY_LOOP,
 ];
 
 export type TrackId = (typeof TRACKS)[number]["id"];

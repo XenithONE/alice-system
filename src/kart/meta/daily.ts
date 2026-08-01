@@ -31,10 +31,31 @@ export interface DailyCombo {
   readonly seed: number;
 }
 
+/**
+ * The circuits a daily can land on, versioned by the date it switched.
+ *
+ * The pool used to be `TRACKS`, indexed by `random() * TRACKS.length`. That is
+ * stable only while the list is — add a fourth circuit and every date in the
+ * past starts resolving to a different track, so a stored best time is
+ * suddenly attributed to a course it was never set on. Nothing throws; the
+ * number is simply wrong from then on.
+ *
+ * `kartDayKey` is zero-padded and therefore string-sortable, which is what
+ * makes a plain `<` the right comparison here.
+ */
+const DAILY_POOL_V1 = ["sunset-coast", "neon-canyon", "sky-garden"] as const;
+const DAILY_POOL_V2_FROM = "2026-08-01";
+
+export function dailyPool(dateKey: string): readonly string[] {
+  if (dateKey < DAILY_POOL_V2_FROM) return DAILY_POOL_V1;
+  return TRACKS.map((spec) => spec.id);
+}
+
 /** Pure: the same date always produces the same challenge. */
 export function dailyCombo(dateKey: string): DailyCombo {
   const random = mulberry32(hashStr(`nk-daily:${dateKey}`));
-  const track = TRACKS[Math.floor(random() * TRACKS.length)]!;
+  const pool = dailyPool(dateKey);
+  const track = { id: pool[Math.floor(random() * pool.length)]! };
   const speedClass = Math.floor(random() * 3);
   const mirror = random() < 0.25;
   const weather =

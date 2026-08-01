@@ -10,6 +10,7 @@
 
 import * as THREE from "three";
 import type { Track } from "../../sim/track";
+import { buildCityLoop } from "./cityLoop";
 import { buildNeonCanyon } from "./neonCanyon";
 import { buildSkyGarden } from "./skyGarden";
 import { buildSunsetCoast } from "./sunsetCoast";
@@ -67,6 +68,7 @@ export const SET_PIECES: Record<string, SetPieceBuilder> = {
   "sunset-coast": buildSunsetCoast,
   "neon-canyon": buildNeonCanyon,
   "sky-garden": buildSkyGarden,
+  "city-loop": buildCityLoop,
 };
 
 export function buildSetPieces(

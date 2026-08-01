@@ -38,6 +38,7 @@ import {
   emptyRecords,
   type RaceOutcomeEntry,
 } from "../meta/records";
+import { hashStr, mulberry32 } from "../../lib/seed";
 import {
   applyDailyFinish,
   dailyCombo,
@@ -123,8 +124,13 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
   const seeds = [0, 1, 2].map((round) => raceSeedForRound(777, round));
   gate.check(
     "[M3] カップは全コースを一巡し、ラウンドごとに種が異なる",
+    // Against CUP_ROUNDS, not TRACKS.length: comparing the round count to the
+    // circuit count made this agree with whatever the code did, which is how a
+    // fourth track turned a three-race cup into a four-race one unnoticed.
     order.length === CUP_ROUNDS &&
-      unique.size === TRACKS.length &&
+      CUP_ROUNDS === 3 &&
+      unique.size === CUP_ROUNDS &&
+      order.every((id) => TRACKS.some((spec) => spec.id === id)) &&
       new Set(seeds).size === seeds.length,
     `order=${order.join("→")} seeds=${seeds.join(",")}`,
   );
@@ -331,6 +337,39 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
     JSON.stringify(a) === JSON.stringify(b) &&
       JSON.stringify(a) !== JSON.stringify(c),
     `${a.trackId}/${a.speedClass}cc-idx/${a.weather}${a.mirror ? "/mirror" : ""}`,
+  );
+
+  /*
+   * [M7p] the pool migration. A daily played before the fourth circuit landed
+   * has to keep resolving to the circuit it was played on — the stored best is
+   * a time on a specific track, and a pool that silently reindexes attributes
+   * it to a different one with nothing to show for it.
+   */
+  const legacy = ["2026-07-04", "2026-07-19", "2026-07-31"];
+  const beforeOk = legacy.every((key) =>
+    ["sunset-coast", "neon-canyon", "sky-garden"].includes(
+      dailyCombo(key).trackId,
+    ),
+  );
+  const reachesNew = Array.from({ length: 60 }, (_, i) =>
+    dailyCombo(`2026-09-${String((i % 30) + 1).padStart(2, "0")}`).trackId,
+  );
+  gate.check(
+    "[M7p] 切替日より前のデイリーは旧3コースのまま・以降は新コースにも当たる",
+    beforeOk && reachesNew.includes("city-loop"),
+    `過去 ${legacy.map((k) => dailyCombo(k).trackId).join(",")} / 以降の種別 ${[...new Set(reachesNew)].sort().join(",")}`,
+  );
+  gate.expectFail(
+    "[M7p-neg] 全期間を新プールにすると過去の日付が別コースを指す",
+    () => {
+      const pool = TRACKS.map((spec) => spec.id);
+      return legacy.every((key) => {
+        const random = mulberry32(hashStr(`nk-daily:${key}`));
+        const naive = pool[Math.floor(random() * pool.length)]!;
+        return naive === dailyCombo(key).trackId;
+      });
+    },
+    "版分けなしで過去日付を引き直す",
   );
 
   const padded = [kartDayKey(new Date(2026, 7, 2)), kartDayKey(new Date(2026, 7, 10))];

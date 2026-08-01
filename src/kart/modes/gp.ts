@@ -14,12 +14,30 @@ import { TRACKS } from "../sim/tracks";
 
 export const GP_POINTS: readonly number[] = [10, 8, 6, 5, 4, 3, 2, 1];
 
-/** Fixed rotation, for record comparability across cups. */
-export function cupTrackOrder(): readonly string[] {
-  return TRACKS.map((spec) => spec.id);
-}
+/**
+ * A cup is three races. Fixed, not `TRACKS.length` — that was the same number
+ * by coincidence while there were exactly three circuits, and the moment a
+ * fourth landed a grand prix silently became four races and twenty minutes
+ * long. The comment above explains why three is the number: it is short enough
+ * that a bad race gets retried instead of abandoned.
+ *
+ * `[M3]` could not have caught that. It compared the round count against
+ * `TRACKS.length` on both sides of the assertion, so it agreed with whatever
+ * the code did.
+ */
+export const CUP_ROUNDS = 3;
 
-export const CUP_ROUNDS = TRACKS.length;
+/**
+ * Which circuits the cup runs, in order.
+ *
+ * Still the first three, so an existing `gpGold` record keeps meaning what it
+ * meant. The plan's split into two named cups needs a key migration on that
+ * record — otherwise winning the easy cup unlocks the achievement for both —
+ * and that belongs with the migration, not with a new circuit.
+ */
+export function cupTrackOrder(): readonly string[] {
+  return TRACKS.slice(0, CUP_ROUNDS).map((spec) => spec.id);
+}
 
 /** Per-round race seed, derived so every round differs but replays match. */
 export function raceSeedForRound(cupSeed: number, round: number): number {
