@@ -220,17 +220,33 @@ interface DensePoint {
 
 /**
  * The heading convention, stated once so nothing re-derives it.
- * A kart at yaw θ faces (sin θ, cos θ). Its right hand is (cos θ, -sin θ).
- * `headingOf` and `forwardOf` are inverses; every consumer must use them
- * rather than writing its own trigonometry (VORTEX/HARBOR both shipped a
- * sign-flipped copy of exactly this).
+ *
+ * A kart at yaw θ faces (-sin θ, -cos θ) and its right hand is (cos θ, -sin θ).
+ * That forward is three.js's own: `Ry(θ)` maps local -Z onto it exactly, so a
+ * model built nose-forward needs no correction, and `f × up` — the only
+ * definition of "right" a right-handed Y-up world admits — lands on `rightOf`.
+ *
+ * The first version of this file declared forward as (sin θ, cos θ) instead,
+ * which is local +Z. Everything downstream stayed self-consistent, so nothing
+ * looked broken: but "right" was then the left, the chase camera put the sim's
+ * left on the right of the screen, the kart model drove nose-backwards, corners
+ * banked inward, and the CPU apexed on the outside. One flipped basis vector,
+ * five symptoms, and not one gate could see it — [T11c] exists for that.
+ *
+ * Note that `Ry` turns local -Z toward -rightOf, so yaw INCREASES to the left.
+ * `sim.ts` subtracts its turn rate for that reason; there is no frame in which
+ * this can be avoided, only one place where it should be written down.
+ *
+ * `headingOf` and `forwardOf` are inverses; every consumer must use them rather
+ * than writing its own trigonometry (VORTEX/HARBOR both shipped a sign-flipped
+ * copy of exactly this, and so, it turns out, did this file).
  */
 export function headingOf(dx: number, dz: number): number {
-  return Math.atan2(dx, dz);
+  return Math.atan2(-dx, -dz);
 }
 
 export function forwardOf(yaw: number): readonly [number, number] {
-  return [Math.sin(yaw), Math.cos(yaw)];
+  return [-Math.sin(yaw), -Math.cos(yaw)];
 }
 
 export function rightOf(yaw: number): readonly [number, number] {

@@ -23,6 +23,7 @@ import {
   forwardOf,
   headingOf,
   pointAt,
+  rightOf,
   sampleAt,
   type BoostPad,
   type ItemBoxPlacement,
@@ -225,16 +226,22 @@ export function cpuInput(
     const dz = threat.z - self.z;
     const ahead = dx * fx + dz * fz;
     if (ahead < 0.5 || ahead > 26) continue;
-    const side = dx * Math.cos(self.yaw) - dz * Math.sin(self.yaw);
+    const [rx, rz] = rightOf(self.yaw);
+    const side = dx * rx + dz * rz;
     if (Math.abs(side) > 4.2) continue;
     const urgency = (26 - ahead) / 26;
     dodge += (side >= 0 ? -1 : 1) * urgency * 3.4;
   }
   targetLateral = clamp(targetLateral + dodge, -half * 0.94, half * 0.94);
 
+  /*
+   * Negated: `angleDelta` says how far yaw must INCREASE to face the aim
+   * point, and yaw increases to the left, while steer is positive to the
+   * right. See the heading convention in track.ts.
+   */
   const [tx, , tz] = pointAt(track, aimS, targetLateral);
   let steer = clamp(
-    angleDelta(self.yaw, headingOf(tx - self.x, tz - self.z)) * 1.75,
+    -angleDelta(self.yaw, headingOf(tx - self.x, tz - self.z)) * 1.75,
     -1,
     1,
   );
@@ -243,7 +250,7 @@ export function cpuInput(
   if (self.wrongWay) {
     const sample = sampleAt(track, s);
     steer = clamp(
-      angleDelta(self.yaw, headingOf(sample.tx, sample.tz)) * 2.4,
+      -angleDelta(self.yaw, headingOf(sample.tx, sample.tz)) * 2.4,
       -1,
       1,
     );

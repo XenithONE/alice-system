@@ -50,12 +50,14 @@ const SUNSET_COAST: TrackSpec = {
     { at: 0.57, offsets: [-0.62, -0.2, 0.2, 0.62] },
     { at: 0.79, offsets: [-0.5, 0.5] },
   ],
+  // Offsets run along `rightOf`, which changed sides when the heading frame
+  // was corrected; they are negated here so the circuits play as authored.
   boostPads: [
-    { at: 0.245, offset: -0.34 },
-    { at: 0.47, offset: 0.36 },
+    { at: 0.245, offset: 0.34 },
+    { at: 0.47, offset: -0.36 },
     { at: 0.885, offset: 0 },
   ],
-  ramps: [{ at: 0.315, offset: 0.3 }, { at: 0.69, offset: -0.28 }],
+  ramps: [{ at: 0.315, offset: -0.3 }, { at: 0.69, offset: 0.28 }],
   theme: {
     skyLow: 0xffb887,
     skyHigh: 0x27508f,
@@ -122,12 +124,12 @@ const NEON_CANYON: TrackSpec = {
     { at: 0.9, offsets: [-0.55, 0, 0.55] },
   ],
   boostPads: [
-    { at: 0.185, offset: 0.3 },
-    { at: 0.44, offset: -0.32 },
-    { at: 0.63, offset: 0.28 },
+    { at: 0.185, offset: -0.3 },
+    { at: 0.44, offset: 0.32 },
+    { at: 0.63, offset: -0.28 },
     { at: 0.955, offset: 0, width: 5 },
   ],
-  ramps: [{ at: 0.27, offset: -0.3 }, { at: 0.77, offset: 0.3 }],
+  ramps: [{ at: 0.27, offset: 0.3 }, { at: 0.77, offset: -0.3 }],
   theme: {
     skyLow: 0x39146b,
     skyHigh: 0x04030e,
@@ -194,13 +196,13 @@ const SKY_GARDEN: TrackSpec = {
   ],
   boostPads: [
     { at: 0.22, offset: 0 },
-    { at: 0.5, offset: -0.3 },
-    { at: 0.735, offset: 0.32 },
+    { at: 0.5, offset: 0.3 },
+    { at: 0.735, offset: -0.32 },
   ],
   ramps: [
     { at: 0.115, offset: 0 },
-    { at: 0.44, offset: 0.3 },
-    { at: 0.655, offset: -0.3 },
+    { at: 0.44, offset: -0.3 },
+    { at: 0.655, offset: 0.3 },
   ],
   theme: {
     skyLow: 0xdff0ff,

@@ -634,10 +634,20 @@ export function createKartSim(config: RaceConfig): KartSim {
       turn *= tuning.turnScale * weather.turn;
       if (kart.airborne) turn *= AIR_CONTROL;
       if (kart.speed < 0) turn = -turn;
-      kart.yaw += turn * dt;
+      /*
+       * Subtracted, not added: `turn` is a rate toward `rightOf`, and yaw
+       * increases to the LEFT because three.js's Ry sends local -Z that way.
+       * The frame is stated in track.ts; this is the one line that pays for it.
+       */
+      kart.yaw -= turn * dt;
 
+      /*
+       * Body angle. Positive slip swings the nose toward -rightOf (left), so a
+       * right-hand drift wants a negative one — in a slide the nose points into
+       * the corner while the kart keeps travelling along its heading.
+       */
       const slipTarget = kart.drifting
-        ? kart.driftDir *
+        ? -kart.driftDir *
           DRIFT_SLIP_ANGLE *
           Math.min(1, 0.4 + kart.driftCharge * 1.6)
         : 0;

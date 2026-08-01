@@ -301,7 +301,9 @@ export function createKartVisual(
     helmet,
     livery,
     setSteer(value) {
-      for (const pivot of frontWheels) pivot.rotation.y = value * 0.45;
+      // Negated: the wheels face local -Z, and Ry swings that toward -X, so a
+      // positive (rightward) steer needs a negative rotation.
+      for (const pivot of frontWheels) pivot.rotation.y = -value * 0.45;
     },
     spinWheels(distance) {
       const angle = distance / wheelRadius;

@@ -394,7 +394,12 @@ async function integration(): Promise<void> {
     guest.sendInput(
       coasting || counting
         ? drive(0, 0)
-        : drive(1, turning ? 0.5 : 0, turning),
+        : // Negated with the heading frame so the scripted lane change lands
+          // where it always did: on the road, which is where [W10] hands the
+          // kart to the CPU. Off the road it recovers at 10 u/s and the
+          // 40 m budget below is unreachable for reasons that are not the
+          // property under test.
+          drive(1, turning ? -0.5 : 0, turning),
     );
     host.tick(step);
     guest.tick(step);
@@ -443,11 +448,12 @@ async function integration(): Promise<void> {
     host.tick(step);
     if (i % 12 === 0) await settle(0);
   }
-  const after = host.view()!.racers.find((racer) => racer.id === 1)!.distance;
+  const orphan = host.view()!.racers.find((racer) => racer.id === 1)!;
   gate.check(
     "[W10] ゲスト切断後、その車はオートパイロットで走り続ける",
-    after - before > 40,
-    `切断後4秒で ${(after - before).toFixed(1)}m 前進`,
+    orphan.distance - before > 40,
+    `切断後4秒で ${(orphan.distance - before).toFixed(1)}m 前進` +
+      `（速度 ${orphan.speed.toFixed(1)} offRoad=${orphan.offRoad} spin=${orphan.spinTimer.toFixed(2)}）`,
   );
 
   host.dispose();
@@ -467,7 +473,9 @@ function steerFor(view: { racers: readonly { id: number; x: number; z: number; y
   const s = ((racer.distance % track.length) + track.length) % track.length;
   const [aimX, , aimZ] = pointAt(track, s + 14, 0);
   const desired = headingOf(aimX - racer.x, aimZ - racer.z);
-  const steer = Math.max(-1, Math.min(1, angleDelta(racer.yaw, desired) * 1.6));
+  // Negated for the same reason ai.ts is: yaw grows to the left, steer to the
+  // right (see the heading convention in track.ts).
+  const steer = Math.max(-1, Math.min(1, -angleDelta(racer.yaw, desired) * 1.6));
   return drive(1, steer);
 }
 

@@ -12,16 +12,20 @@
  *
  * Run: npx tsx src/kart/render/renderSelftest.ts
  */
+import * as THREE from "three";
 import { createGate } from "../gate";
 import { SHOULDER_WIDTH } from "../sim/balance";
 import {
   buildTrack,
+  forwardOf,
   querySurface,
+  rightOf,
   surfaceHeight,
   type Track,
 } from "../sim/track";
 import { TRACKS } from "../sim/tracks";
 import { bothSides, roadGeometry } from "./trackMesh";
+import { createKartVisual, disposeSharedKartGeometry } from "./kartModel";
 import { LIVERIES, liveryOf } from "./palette";
 import {
   createSkidBuffers,
@@ -302,6 +306,98 @@ gate.expectFail(
     drifting > 0 && braking > 0 && cruising === 0 && airborne === 0,
     `drift=${drifting.toFixed(2)} brake=${braking.toFixed(2)} cruise=${cruising} air=${airborne}`,
   );
+}
+
+// [R6] the chase camera's own right axis is the sim's `rightOf` ─────────────
+/*
+ * The sim and the renderer each have an opinion about which way is right, and
+ * until now nothing made them shake hands. This rebuilds the exact placement
+ * from scene.ts and reads the camera's local +X straight out of its world
+ * matrix — whatever `lookAt` decided, not what we assume it decided.
+ */
+const YAW_SWEEP = 32;
+{
+  const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.4, 3000);
+  let worst = 1;
+  for (let i = 0; i < YAW_SWEEP; i += 1) {
+    const yaw = (i / YAW_SWEEP) * Math.PI * 2 - Math.PI;
+    const [fx, fz] = forwardOf(yaw);
+    camera.position.set(-fx * 12, 4.1, -fz * 12);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(fx * 9, 1.9, fz * 9);
+    camera.updateMatrixWorld(true);
+    const e = camera.matrixWorld.elements;
+    const norm = Math.hypot(e[0]!, e[2]!);
+    const [rx, rz] = rightOf(yaw);
+    worst = Math.min(worst, (e[0]! / norm) * rx + (e[2]! / norm) * rz);
+  }
+  gate.check(
+    "[R6] カメラのローカル+X（画面右）が rightOf と一致",
+    worst > 0.999,
+    `最小内積 ${worst.toFixed(4)}（-1 付近なら画面右がシムの左）`,
+  );
+}
+
+// [R7] the kart model's nose points where the kart is going ─────────────────
+{
+  const visual = createKartVisual(0, false);
+  let worst = 1;
+  for (let i = 0; i < YAW_SWEEP; i += 1) {
+    const yaw = (i / YAW_SWEEP) * Math.PI * 2 - Math.PI;
+    visual.root.rotation.y = yaw;
+    visual.root.updateMatrixWorld(true);
+    const e = visual.root.matrixWorld.elements;
+    // Third column is local +Z; the model is built with its nose at local -Z.
+    const nx = -e[8]!;
+    const nz = -e[10]!;
+    const norm = Math.hypot(nx, nz);
+    const [fx, fz] = forwardOf(yaw);
+    worst = Math.min(worst, (nx / norm) * fx + (nz / norm) * fz);
+  }
+  gate.check(
+    "[R7a] カートのノーズ（ローカル-Z）が進行方向を向く",
+    worst > 0.999,
+    `最小内積 ${worst.toFixed(4)}（-1 付近ならカートが後ろ向きに走っている）`,
+  );
+
+  /*
+   * [R7a] rests on "the nose is at local -Z". An assumption that lives only in
+   * a comment is how the model ended up backwards to begin with, so take it
+   * from the model's own vocabulary: kartModel names two wheel sets, and the
+   * one it calls front has to be the one further along -Z.
+   */
+  const frontZ = visual.frontWheels[0]?.position.z ?? 0;
+  const rearZ = visual.rearWheels[0]?.position.z ?? 0;
+  gate.check(
+    "[R7b] モデルが「前輪」と呼ぶ側が -Z にある",
+    visual.frontWheels.length > 0 &&
+      visual.rearWheels.length > 0 &&
+      frontZ < rearZ - 1,
+    `前輪 z=${frontZ.toFixed(2)} / 後輪 z=${rearZ.toFixed(2)}`,
+  );
+
+  gate.expectFail(
+    "[R7-neg] 180° 回して置くとノーズは進行方向を向かない",
+    () => {
+      let broken = 1;
+      for (let i = 0; i < YAW_SWEEP; i += 1) {
+        const yaw = (i / YAW_SWEEP) * Math.PI * 2 - Math.PI;
+        visual.root.rotation.y = yaw + Math.PI;
+        visual.root.updateMatrixWorld(true);
+        const e = visual.root.matrixWorld.elements;
+        const nx = -e[8]!;
+        const nz = -e[10]!;
+        const norm = Math.hypot(nx, nz);
+        const [fx, fz] = forwardOf(yaw);
+        broken = Math.min(broken, (nx / norm) * fx + (nz / norm) * fz);
+      }
+      return broken > 0.999;
+    },
+    "rotation.y に π を足した配置",
+  );
+
+  visual.dispose();
+  disposeSharedKartGeometry();
 }
 
 gate.finish("RENDER SELFTEST");

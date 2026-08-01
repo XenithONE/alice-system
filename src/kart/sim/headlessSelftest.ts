@@ -11,6 +11,7 @@
 import { createGate } from "../gate";
 import { SIM_STEP_SEC } from "./balance";
 import { createKartSim } from "./sim";
+import { forwardOf, rightOf } from "./track";
 import { TRACKS } from "./tracks";
 import type { RaceConfig, RaceEvent, RacerSpec } from "./types";
 
@@ -406,6 +407,69 @@ gate.expectFail(
   },
   "入力ゼロで90秒",
 );
+
+// [H14] steering has a direction, and it is the one the camera calls right ──
+/*
+ * Nothing in this suite measured the SIGN of steering — [H1] only asks that
+ * karts finish, and a kart that turns the wrong way finishes just as happily.
+ *
+ * This one is green from the day it was written, and that is the point: it
+ * pins steering to the heading frame, so the frame can be corrected underneath
+ * it without the sim quietly drifting out of step. Whether the frame itself is
+ * right-handed is [T11c]'s job, and whether the camera agrees is [R6]'s.
+ */
+{
+  function steerRun(steer: number): { before: number; after: number } {
+    const sim = createKartSim({
+      trackId: TRACKS[0]!.id,
+      laps: 3,
+      seed: 5,
+      racers: [{ name: "P", cpu: false, livery: 0 }],
+      items: false,
+    });
+    const drive = (throttle: number, value: number, seconds: number): void => {
+      const ticks = Math.round(seconds / SIM_STEP_SEC);
+      for (let i = 0; i < ticks; i += 1) {
+        sim.setInput(0, {
+          throttle,
+          brake: 0,
+          steer: value,
+          drift: false,
+          item: false,
+          lookBack: false,
+        });
+        sim.step();
+      }
+    };
+    // Coast through the countdown: holding throttle for its whole length is a
+    // burnout stall, and a stalled kart skips the steering block entirely.
+    drive(0, 0, 4);
+    drive(1, 0, 2);
+    const before = sim.getState().racers[0]!.yaw;
+    drive(1, steer, 0.4);
+    return { before, after: sim.getState().racers[0]!.yaw };
+  }
+  const project = (
+    run: { before: number; after: number },
+    sign: number,
+  ): number => {
+    const [fx, fz] = forwardOf(run.after);
+    const [rx, rz] = rightOf(run.before);
+    return (fx * rx + fz * rz) * sign;
+  };
+  const right = steerRun(1);
+  const left = steerRun(-1);
+  gate.check(
+    "[H14] steer=+1 は rightOf 側へ、steer=-1 は逆へ向く",
+    project(right, 1) > 0.05 && project(left, 1) < -0.05,
+    `右 ${project(right, 1).toFixed(3)} / 左 ${project(left, 1).toFixed(3)}`,
+  );
+  gate.expectFail(
+    "[H14-neg] 期待する右を反転すると一致しない",
+    () => project(right, -1) > 0.05 && project(left, -1) < -0.05,
+    "rightOf を反転した基準",
+  );
+}
 
 console.table(
   summaries.map(({ spec, summary }) => ({

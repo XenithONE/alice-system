@@ -14,7 +14,7 @@
 
 import * as THREE from "three";
 import { BASE_TOP_SPEED } from "../sim/balance";
-import { forwardOf, querySurface, type Track } from "../sim/track";
+import { forwardOf, querySurface, rightOf, type Track } from "../sim/track";
 import type { RaceEvent, RaceState } from "../sim/types";
 import { createFxSystem, type FxSystem } from "./fx";
 import { createKartVisual, disposeSharedKartGeometry, type KartVisual } from "./kartModel";
@@ -730,9 +730,11 @@ export function createKartScene(options: KartSceneOptions): KartScene {
       racer.y + heightAbove,
       racer.z - fz0 * distance * sign,
     );
-    // A little outward swing through a drift, so the corner opens up.
-    desired.x += Math.cos(racer.yaw) * racer.slip * 3.2;
-    desired.z += -Math.sin(racer.yaw) * racer.slip * 3.2;
+    // A little outward swing through a drift, so the corner opens up. Slip is
+    // negative in a right-hand drift, so +rightOf lands on the outside.
+    const [crx, crz] = rightOf(racer.yaw);
+    desired.x += crx * racer.slip * 3.2;
+    desired.z += crz * racer.slip * 3.2;
 
     if (!cameraReady) {
       cameraTarget.copy(desired);

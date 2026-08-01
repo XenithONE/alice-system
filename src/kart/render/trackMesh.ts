@@ -13,7 +13,13 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "../../lib/seed";
 import { SHOULDER_WIDTH } from "../sim/balance";
-import { querySurface, sampleAt, surfaceHeight, type Track } from "../sim/track";
+import {
+  forwardOf,
+  querySurface,
+  sampleAt,
+  surfaceHeight,
+  type Track,
+} from "../sim/track";
 import {
   asphaltTexture,
   boostPadTexture,
@@ -724,10 +730,13 @@ export function buildTrackMesh(
       const stripeMesh = new THREE.Mesh(stripe, stripeMaterial);
       stripeMesh.name = "gameplay:ramp";
       const slope = Math.atan2(H, 2 * L);
+      // The wedge's low edge is at local +Z, which is behind the kart, so the
+      // chevron sits 0.4 m back from centre — on the face, not past the lip.
+      const [rampFx, rampFz] = forwardOf(ramp.yaw);
       stripeMesh.position.set(
-        ramp.x + Math.sin(ramp.yaw) * -0.4,
+        ramp.x - rampFx * 0.4,
         ramp.y + 0.55,
-        ramp.z + Math.cos(ramp.yaw) * -0.4,
+        ramp.z - rampFz * 0.4,
       );
       stripeMesh.rotation.y = ramp.yaw;
       stripeMesh.rotateX(-Math.PI / 2 + slope);

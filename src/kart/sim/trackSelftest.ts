@@ -13,12 +13,17 @@
 import { createGate } from "../gate";
 import { KART_RADIUS, SHOULDER_WIDTH } from "./balance";
 import {
+  angleDelta,
   arcDelta,
   buildTrack,
+  forwardOf,
   gridSlot,
+  headingOf,
   mirrorSpec,
   pointAt,
   querySurface,
+  rightOf,
+  surfaceHeight,
   type Track,
   type TrackSpec,
 } from "./track";
@@ -338,6 +343,130 @@ for (const track of built) {
     "points だけ反転した偽鏡像",
   );
 }
+
+// [T11] the heading frame is self-consistent AND right-handed ───────────────
+/*
+ * The convention is declared once in track.ts, and until this gate existed
+ * nothing measured it. A frame can be perfectly self-consistent and still be
+ * mirrored: `forwardOf`/`headingOf` inverting each other says nothing about
+ * which side `rightOf` returns, and every consumer inherits that answer —
+ * the steering sign, the camera swing, the banking, the road's own vertices.
+ */
+{
+  const SWEEP = 64;
+  let inverseWorst = 0;
+  let orthoWorst = 0;
+  let handWorst = 0;
+  for (let i = 0; i < SWEEP; i += 1) {
+    const yaw = (i / SWEEP) * Math.PI * 2 - Math.PI;
+    const [fx, fz] = forwardOf(yaw);
+    const [rx, rz] = rightOf(yaw);
+    inverseWorst = Math.max(
+      inverseWorst,
+      Math.abs(angleDelta(headingOf(fx, fz), yaw)),
+    );
+    orthoWorst = Math.max(orthoWorst, Math.abs(fx * rx + fz * rz));
+    /*
+     * three.js is right-handed with +Y up, so the right of a forward vector f
+     * is f × up = (-f.z, f.x). Anything else and the function named "right"
+     * hands back the left, which is exactly how a kart ends up turning away
+     * from the key you pressed.
+     */
+    handWorst = Math.max(handWorst, Math.hypot(rx + fz, rz - fx));
+  }
+  gate.check(
+    "[T11a] forwardOf と headingOf が逆関数",
+    inverseWorst < 1e-9,
+    `最大ずれ ${inverseWorst.toExponential(2)} rad`,
+  );
+  gate.check(
+    "[T11b] rightOf が forwardOf と直交",
+    orthoWorst < 1e-12,
+    `最大内積 ${orthoWorst.toExponential(2)}`,
+  );
+  gate.check(
+    "[T11c] rightOf が three.js の真の右（f × up）と一致",
+    handWorst < 1e-9,
+    `最大ずれ ${handWorst.toFixed(4)}（1e-9 未満を要求。2.0 付近なら符号が逆）`,
+  );
+  gate.expectFail(
+    "[T11c-neg] 反転した右ベクトルは真の右と一致しない",
+    () => {
+      let worst = 0;
+      for (let i = 0; i < SWEEP; i += 1) {
+        const yaw = (i / SWEEP) * Math.PI * 2 - Math.PI;
+        const [fx, fz] = forwardOf(yaw);
+        const [rx, rz] = rightOf(yaw);
+        // The same measurement against a deliberately negated right vector.
+        worst = Math.max(worst, Math.hypot(-rx + fz, -rz - fx));
+      }
+      return worst < 1e-9;
+    },
+    "rightOf を反転した偽の右",
+  );
+}
+
+// [T11d] every sample's right vector comes from the one definition ──────────
+for (const track of built) {
+  let worst = 0;
+  for (const sample of track.samples) {
+    const [rx, rz] = rightOf(headingOf(sample.tx, sample.tz));
+    worst = Math.max(worst, Math.hypot(rx - sample.rx, rz - sample.rz));
+  }
+  gate.check(
+    `[T11d:${track.spec.id}] sample.rx/rz が rightOf(heading) と一致`,
+    worst < 1e-9,
+    `最大ずれ ${worst.toExponential(2)}`,
+  );
+}
+
+// [T11e] banking lifts the OUTSIDE of a corner ──────────────────────────────
+/*
+ * `bank` is derived from `curvature`, and `curvature`'s sign is only meaningful
+ * relative to `rightOf`. Get the frame backwards and every corner is banked the
+ * wrong way — the road tilts you off it — while `[R4]`'s "one formula" check
+ * stays perfectly green, because it only ever compares the formula to itself.
+ */
+function bankViolations(track: Track, bankSign: number): number {
+  const n = track.samples.length;
+  let violations = 0;
+  for (let i = 0; i < n; i += 1) {
+    const prev = track.samples[(i - 1 + n) % n]!;
+    const cur = track.samples[i]!;
+    const next = track.samples[(i + 1) % n]!;
+    const ax = cur.x - prev.x;
+    const az = cur.z - prev.z;
+    const bx = next.x - cur.x;
+    const bz = next.z - cur.z;
+    const an = Math.hypot(ax, az);
+    const bn = Math.hypot(bx, bz);
+    if (an < 1e-6 || bn < 1e-6) continue;
+    // Difference of unit tangents points at the centre of curvature = inside.
+    const insideLateral =
+      (bx / bn - ax / an) * cur.rx + (bz / bn - az / an) * cur.rz;
+    if (Math.abs(insideLateral) < 0.01) continue; // straight enough to skip
+    const outsideSign = insideLateral > 0 ? -1 : 1;
+    const tilted = { ...cur, bank: cur.bank * bankSign };
+    const outer = surfaceHeight(tilted, outsideSign * cur.half);
+    const inner = surfaceHeight(tilted, -outsideSign * cur.half);
+    if (outer - inner < 0.01) violations += 1;
+  }
+  return violations;
+}
+
+for (const track of built) {
+  const violations = bankViolations(track, 1);
+  gate.check(
+    `[T11e:${track.spec.id}] バンクはコーナー外側を持ち上げる`,
+    violations === 0,
+    `逆バンクのサンプル ${violations} 個`,
+  );
+}
+gate.expectFail(
+  "[T11e-neg] バンクの符号を反転すると外側が下がる",
+  () => bankViolations(built[0]!, -1) === 0,
+  "bank 符号反転",
+);
 
 console.table(
   built.map((track) => ({

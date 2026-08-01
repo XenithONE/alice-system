@@ -22,7 +22,12 @@
 import { hashStr } from "../../lib/seed";
 
 export const GHOST_MAGIC = 0x314b474e; // "NKG1" little-endian
-export const GHOST_VERSION = 1;
+/**
+ * 2: the heading frame was corrected (track.ts), so every yaw stored by a v1
+ * ghost is half a turn out. Bumping this makes `decodeGhost` drop them instead
+ * of replaying a lap backwards.
+ */
+export const GHOST_VERSION = 2;
 export const GHOST_HZ = 10;
 const HEADER_BYTES = 57;
 const FRAME_BYTES = 9;
