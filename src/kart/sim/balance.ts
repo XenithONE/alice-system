@@ -175,6 +175,66 @@ export const CHECKPOINT_COUNT = 12;
  */
 export const LAP_CHECKPOINT_FRACTION = 0.75;
 
+// ── Weather ────────────────────────────────────────────────────────────────────
+
+export type WeatherKind = "clear" | "rain";
+export const WEATHER_KINDS: readonly WeatherKind[] = ["clear", "rain"];
+/**
+ * Grip multipliers per weather. Ships stage 1 with rain = all ones so the
+ * headless gate can prove the field cannot leak into the sim; stage 2 (with
+ * protocol v2) turns the real values on and the gate flips to "rain laps
+ * are slower".
+ */
+export const WEATHER_GRIP: Record<
+  WeatherKind,
+  {
+    readonly turn: number;
+    readonly brake: number;
+    readonly offroad: number;
+    /** Top-speed multiplier — spray drag. Without it, careful wet driving
+     * (the AI braking earlier) came out FASTER than dry laps. */
+    readonly top: number;
+  }
+> = {
+  clear: { turn: 1, brake: 1, offroad: 1, top: 1 },
+  rain: { turn: 0.9, brake: 0.8, offroad: 1.3, top: 0.94 },
+};
+
+// ── Speed classes ──────────────────────────────────────────────────────────────
+
+/**
+ * Three numbers per class, not one. Corner radius grows linearly with speed,
+ * so a top-speed dial alone sends every CPU (and most humans) off at 200cc;
+ * turnScale compensates, and gripScale = speed x turn is what the AI's
+ * braking model reads (lateral acceleration is v*omega).
+ */
+export const SPEED_CLASSES: readonly {
+  readonly label: string;
+  readonly speedScale: number;
+  readonly turnScale: number;
+  readonly gripScale: number;
+}[] = [
+  { label: "100cc", speedScale: 0.85, turnScale: 1.0, gripScale: 0.85 },
+  { label: "150cc", speedScale: 1.0, turnScale: 1.0, gripScale: 1.0 },
+  { label: "200cc", speedScale: 1.15, turnScale: 1.12, gripScale: 1.288 },
+];
+
+// ── Drift hop / slipstream / tricks ────────────────────────────────────────────
+
+/** Small hop when a drift starts (visual weight; physics-neutral progress). */
+export const DRIFT_HOP_VY = 5.2;
+/** Slipstream: sit in this cone behind a kart to charge a draft. */
+export const DRAFT_RANGE = 13;
+export const DRAFT_HALF_ANGLE = 0.42;
+export const DRAFT_CHARGE_SEC = 1.0;
+export const DRAFT_BOOST_SEC = 1.4;
+export const DRAFT_TOP_SPEED_MULT = 1.16;
+/** Trick: press drift airborne, land inside the window for a boost. */
+export const TRICK_MIN_AIR_SEC = 0.24;
+export const TRICK_BOOST_SEC = 0.85;
+/** Ramps launch with this vertical speed at full alignment. */
+export const RAMP_LAUNCH_VY = 11;
+
 // ── Rubber banding ─────────────────────────────────────────────────────────────
 
 /** Trailing karts get a small draft. 1 = leader, 0 = last place. */

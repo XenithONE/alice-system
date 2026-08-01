@@ -13,7 +13,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "../../lib/seed";
 import { SHOULDER_WIDTH } from "../sim/balance";
-import { surfaceHeight, type Track } from "../sim/track";
+import { querySurface, sampleAt, surfaceHeight, type Track } from "../sim/track";
 import {
   asphaltTexture,
   boostPadTexture,
@@ -29,10 +29,38 @@ export interface TrackMeshQuality {
   readonly propDensity: number;
 }
 
+/**
+ * The canvas-texture seam. Everything visual is drawn on canvases at runtime,
+ * which Node does not have — so the budget gate injects a factory of blank
+ * `THREE.Texture`s and builds the identical scene graph headless. The default
+ * is the real canvas set; only tests ever pass anything else.
+ */
+export interface TrackTextureFactory {
+  asphalt(color: number, repeat?: number): THREE.Texture;
+  rumble(a: number, b: number): THREE.Texture;
+  checker(squares?: number): THREE.Texture;
+  ground(base: number, accent: number): THREE.Texture;
+  itemBox(): THREE.Texture;
+  boostPad(color: number): THREE.Texture;
+}
+
+export const CANVAS_TRACK_TEXTURES: TrackTextureFactory = {
+  asphalt: asphaltTexture,
+  rumble: rumbleTexture,
+  checker: checkerTexture,
+  ground: groundTexture,
+  itemBox: itemBoxTexture,
+  boostPad: boostPadTexture,
+};
+
 export interface TrackMeshBundle {
   readonly group: THREE.Group;
   readonly itemBoxes: readonly THREE.Object3D[];
-  update(elapsed: number, boxCooldowns: readonly number[]): void;
+  update(
+    elapsed: number,
+    boxCooldowns: readonly number[],
+    countdown?: number,
+  ): void;
   /** Road edge as the MESH built it — renderSelftest compares it to the sim. */
   edgeAt(index: number, side: -1 | 1): readonly [number, number, number];
   dispose(): void;
@@ -277,17 +305,27 @@ function propPieces(
       if (random() < 0.2) continue;
       const out = RUMBLE_WIDTH + 5 + random() * 24;
       const lateral = side * (sample.half + out);
+      const x = sample.x + sample.rx * lateral;
+      const z = sample.z + sample.rz * lateral;
+      /*
+       * The offset is perpendicular to THIS sample, but on the inside of a
+       * corner "24 m out" can land on a DIFFERENT stretch of the same road —
+       * one palm grew out of the tarmac at the first hairpin exactly this
+       * way. Re-project the candidate and reject anything on or near a road.
+       */
+      const collision = querySurface(track, x, z, i, SHOULDER_WIDTH + 1.5);
+      if (collision.onGround) continue;
       const dropT = Math.min(
         1,
         Math.max(0, (out - APRON_INNER) / (APRON_OUTER - APRON_INNER)),
       );
       slots.push({
-        x: sample.x + sample.rx * lateral,
+        x,
         y:
           surfaceHeight(sample, lateral) -
           (APRON_DROP_INNER +
             dropT * (APRON_DROP_OUTER - APRON_DROP_INNER)),
-        z: sample.z + sample.rz * lateral,
+        z,
         yaw: random() * Math.PI * 2,
         scale: 0.75 + random() * 0.75,
       });
@@ -397,6 +435,7 @@ function propPieces(
 export function buildTrackMesh(
   track: Track,
   quality: TrackMeshQuality,
+  textures: TrackTextureFactory = CANVAS_TRACK_TEXTURES,
 ): TrackMeshBundle {
   const theme = track.spec.theme;
   const group = new THREE.Group();
@@ -404,7 +443,7 @@ export function buildTrackMesh(
   const pieces: Piece[] = [];
 
   // ── Tarmac ────────────────────────────────────────────────────────────────
-  const roadMap = asphaltTexture(theme.road, 1);
+  const roadMap = textures.asphalt(theme.road, 1);
   const roadGeo = roadGeometry(track);
   const roadMaterial = new THREE.MeshStandardMaterial({
     map: roadMap,
@@ -437,7 +476,7 @@ export function buildTrackMesh(
   );
 
   // ── Rumble strip: the shoulder you can still drive on, slowly ─────────────
-  const rumbleMap = rumbleTexture(theme.rail, 0xf4f6f8);
+  const rumbleMap = textures.rumble(theme.rail, 0xf4f6f8);
   const rumbleGeo = bothSides(track, 0, RUMBLE_WIDTH, 3.2, 0.01, 0.01);
   const rumbleMaterial = new THREE.MeshStandardMaterial({
     map: rumbleMap,
@@ -453,7 +492,7 @@ export function buildTrackMesh(
   );
 
   // ── Apron: the land the circuit sits on ───────────────────────────────────
-  const apronMap = groundTexture(theme.ground, theme.groundAccent);
+  const apronMap = textures.ground(theme.ground, theme.groundAccent);
   const apronInner = bothSides(
     track,
     RUMBLE_WIDTH,
@@ -497,17 +536,58 @@ export function buildTrackMesh(
 
   // ── Start / finish ────────────────────────────────────────────────────────
   const startSample = track.samples[0]!;
-  const checker = checkerTexture(10);
+  const checker = textures.checker(10);
   checker.repeat.set(8, 1);
-  const startGeo = new THREE.PlaneGeometry(startSample.half * 2, 5);
-  startGeo.rotateX(-Math.PI / 2);
+  /*
+   * Conformed to the surface, not a flat plane. A 23 m plane laid over a
+   * crowned, banked road lifts its corners 40+ cm — visibly floating at the
+   * one place every race stares at, and flagged by the corridor gate.
+   */
+  const startGeo = (() => {
+    const along = 2.5;
+    const across = 6;
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    const rows = Math.max(3, Math.ceil((along * 2) / track.step) + 1);
+    for (let row = 0; row < rows; row += 1) {
+      const s = -along + (row / (rows - 1)) * along * 2;
+      const sample = sampleAt(track, s);
+      for (let j = 0; j <= across; j += 1) {
+        const t = j / across;
+        const lateral = (t * 2 - 1) * sample.half;
+        positions.push(
+          sample.x + sample.rx * lateral,
+          surfaceHeight(sample, lateral) + 0.04,
+          sample.z + sample.rz * lateral,
+        );
+        uvs.push(t, row / (rows - 1));
+      }
+    }
+    const stride = across + 1;
+    for (let row = 0; row < rows - 1; row += 1) {
+      for (let j = 0; j < across; j += 1) {
+        const a = row * stride + j;
+        indices.push(a, a + stride, a + 1, a + 1, a + stride, a + stride + 1);
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    faceUp(geometry);
+    geometry.computeBoundingSphere();
+    return geometry;
+  })();
   const startMaterial = new THREE.MeshStandardMaterial({
     map: checker,
     roughness: 0.75,
   });
   const startLine = new THREE.Mesh(startGeo, startMaterial);
-  startLine.position.set(startSample.x, startSample.y + 0.04, startSample.z);
-  startLine.rotation.y = Math.atan2(startSample.tx, startSample.tz);
+  startLine.name = "gameplay:start-line";
   group.add(startLine);
   pieces.push(
     { dispose: () => startGeo.dispose() },
@@ -544,8 +624,36 @@ export function buildTrackMesh(
     { dispose: () => gantryMaterial.dispose() },
   );
 
+  /*
+   * The start lights. Three discs on the gantry beam count the race in --
+   * red, red, red, then all green on GO -- driven by the countdown the sim
+   * broadcasts, so host and guests see the same beat their audio plays.
+   */
+  const lampGeometry = new THREE.CircleGeometry(0.55, 20);
+  const lampMaterials = [0, 1, 2].map(
+    () => new THREE.MeshBasicMaterial({ color: 0x2a2228, toneMapped: false }),
+  );
+  const lampBar = new THREE.Group();
+  lampBar.position.copy(gantry.position);
+  lampBar.rotation.y = gantry.rotation.y;
+  lampMaterials.forEach((material, index) => {
+    // Both faces of the beam, so the grid and the crowd both see the lights.
+    for (const facing of [1, -1] as const) {
+      const lamp = new THREE.Mesh(lampGeometry, material);
+      lamp.position.set((index - 1) * 2.2, 9.6, facing * 0.75);
+      if (facing === -1) lamp.rotation.y = Math.PI;
+      lampBar.add(lamp);
+    }
+  });
+  group.add(lampBar);
+  let goAtElapsed = -1;
+  pieces.push(
+    { dispose: () => lampGeometry.dispose() },
+    { dispose: () => lampMaterials.forEach((material) => material.dispose()) },
+  );
+
   // ── Item boxes ────────────────────────────────────────────────────────────
-  const boxMap = itemBoxTexture();
+  const boxMap = textures.itemBox();
   const boxGeo = new THREE.BoxGeometry(1.85, 1.85, 1.85);
   const boxMaterial = new THREE.MeshStandardMaterial({
     map: boxMap,
@@ -560,6 +668,9 @@ export function buildTrackMesh(
   });
   const itemBoxes = track.itemBoxes.map((box) => {
     const mesh = new THREE.Mesh(boxGeo, boxMaterial);
+    // The gameplay namespace exempts intended on-road objects from the
+    // corridor-intrusion gate; scenery gets no such pass.
+    mesh.name = "gameplay:item-box";
     mesh.position.set(box.x, box.y + 1.6, box.z);
     group.add(mesh);
     return mesh;
@@ -570,8 +681,72 @@ export function buildTrackMesh(
     { dispose: () => boxMap.dispose() },
   );
 
+  // ── Ramps: yellow-chevroned wedges (gameplay furniture, corridor-exempt) ──
+  if (track.ramps.length > 0) {
+    const rampMaterial = new THREE.MeshStandardMaterial({
+      color: 0xf4b52e,
+      roughness: 0.55,
+      metalness: 0.15,
+    });
+    const stripeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1c1f26,
+      roughness: 0.6,
+    });
+    const rampGeometries: THREE.BufferGeometry[] = [];
+    for (const ramp of track.ramps) {
+      // A 4.4 m wedge rising to 1.05 m — matches the sim's launch feel.
+      const wedge = new THREE.BufferGeometry();
+      const w = ramp.halfWidth;
+      const L = 2.2;
+      const H = 1.05;
+      const positions = new Float32Array([
+        // top slope
+        -w, 0, L, w, 0, L, -w, H, -L,
+        w, 0, L, w, H, -L, -w, H, -L,
+        // back face
+        -w, H, -L, w, H, -L, -w, 0, -L,
+        w, H, -L, w, 0, -L, -w, 0, -L,
+        // sides
+        -w, 0, L, -w, H, -L, -w, 0, -L,
+        w, 0, L, w, 0, -L, w, H, -L,
+      ]);
+      wedge.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      wedge.computeVertexNormals();
+      const mesh = new THREE.Mesh(wedge, rampMaterial);
+      mesh.name = "gameplay:ramp";
+      mesh.position.set(ramp.x, ramp.y + 0.02, ramp.z);
+      mesh.rotation.y = ramp.yaw;
+      mesh.castShadow = quality.shadows;
+      group.add(mesh);
+      rampGeometries.push(wedge);
+      // Chevron stripes on the slope.
+      const stripe = new THREE.PlaneGeometry(w * 1.7, 0.5);
+      const stripeMesh = new THREE.Mesh(stripe, stripeMaterial);
+      stripeMesh.name = "gameplay:ramp";
+      const slope = Math.atan2(H, 2 * L);
+      stripeMesh.position.set(
+        ramp.x + Math.sin(ramp.yaw) * -0.4,
+        ramp.y + 0.55,
+        ramp.z + Math.cos(ramp.yaw) * -0.4,
+      );
+      stripeMesh.rotation.y = ramp.yaw;
+      stripeMesh.rotateX(-Math.PI / 2 + slope);
+      group.add(stripeMesh);
+      rampGeometries.push(stripe);
+    }
+    pieces.push(
+      {
+        dispose: () => {
+          for (const geometry of rampGeometries) geometry.dispose();
+        },
+      },
+      { dispose: () => rampMaterial.dispose() },
+      { dispose: () => stripeMaterial.dispose() },
+    );
+  }
+
   // ── Boost pads ────────────────────────────────────────────────────────────
-  const padMap = boostPadTexture(theme.roadEdge);
+  const padMap = textures.boostPad(theme.roadEdge);
   const padMaterial = new THREE.MeshBasicMaterial({
     map: padMap,
     transparent: true,
@@ -583,6 +758,7 @@ export function buildTrackMesh(
     const plane = new THREE.PlaneGeometry(pad.halfWidth * 2, pad.halfLength * 2);
     plane.rotateX(-Math.PI / 2);
     const mesh = new THREE.Mesh(plane, padMaterial);
+    mesh.name = "gameplay:boost-pad";
     mesh.position.set(pad.x, pad.y + 0.05, pad.z);
     mesh.rotation.y = pad.yaw;
     group.add(mesh);
@@ -601,7 +777,22 @@ export function buildTrackMesh(
   return {
     group,
     itemBoxes,
-    update(elapsed, boxCooldowns) {
+    update(elapsed, boxCooldowns, countdown = -1) {
+      if (countdown > 0) {
+        goAtElapsed = -1;
+        const remaining = Math.ceil(countdown);
+        lampMaterials.forEach((material, index) => {
+          const lit = index < 4 - remaining;
+          material.color.setHex(lit ? 0xff2f2f : 0x2a2228);
+          if (lit) material.color.multiplyScalar(1.8);
+        });
+      } else if (countdown === 0) {
+        if (goAtElapsed < 0) goAtElapsed = elapsed;
+        const fade = Math.max(0, 1 - (elapsed - goAtElapsed) / 2);
+        lampMaterials.forEach((material) => {
+          material.color.setHex(0x2fff5f).multiplyScalar(0.2 + fade * 1.6);
+        });
+      }
       for (let i = 0; i < itemBoxes.length; i += 1) {
         const mesh = itemBoxes[i]!;
         mesh.visible = (boxCooldowns[i] ?? 0) <= 0;

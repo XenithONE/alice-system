@@ -25,7 +25,16 @@ export const ITEM_KINDS: readonly ItemKind[] = [
   "bolt",
 ];
 
-export type BoostSource = "mini" | "mushroom" | "pad" | "rocket" | "star";
+/** "draft" lands with protocol v2; the type carries it early so the audio
+ * vocabulary can be total from day one. */
+export type BoostSource =
+  | "mini"
+  | "mushroom"
+  | "pad"
+  | "rocket"
+  | "star"
+  | "draft"
+  | "trick";
 export type HitCause = "banana" | "green" | "red" | "bomb" | "bolt" | "star";
 export type RacePhase = "countdown" | "race" | "finished";
 
@@ -72,6 +81,7 @@ export type RaceEvent =
       readonly tier: number;
     }
   | { readonly k: "drift"; readonly racer: RacerId; readonly tier: number }
+  | { readonly k: "trick"; readonly racer: RacerId }
   | { readonly k: "wall"; readonly racer: RacerId; readonly speed: number }
   | { readonly k: "respawn"; readonly racer: RacerId }
   | {
@@ -112,6 +122,10 @@ export interface RacerState {
   readonly driftDir: number;
   readonly driftCharge: number;
   readonly driftTier: number;
+  /** Mid-air trick spin in progress (lands into a boost). */
+  readonly tricking: boolean;
+  /** Sitting in someone's slipstream (charging or bursting). */
+  readonly drafting: boolean;
   readonly boostTimer: number;
   readonly boostSource: BoostSource | null;
   readonly spinTimer: number;
@@ -207,6 +221,19 @@ export interface RaceConfig {
   readonly track?: Track;
   /** Items off makes a clean time-trial style race. */
   readonly items?: boolean;
+  /** Index into SPEED_CLASSES; default 1 = 150cc. */
+  readonly speedClass?: number;
+  /** Mirror the circuit (used only when `track` is not injected). */
+  readonly mirror?: boolean;
+  readonly weather?: import("./balance").WeatherKind;
+  /** Time trial: every human seat starts holding a triple mushroom. */
+  readonly startTriple?: boolean;
+  /** Test-only override of the class tuning (proves gates measure the dial). */
+  readonly classTuning?: {
+    readonly speedScale: number;
+    readonly turnScale: number;
+    readonly gripScale: number;
+  };
 }
 
 export interface KartSim {

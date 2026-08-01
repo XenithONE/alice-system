@@ -12,6 +12,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { liveryOf, type Livery } from "./palette";
+import { headlightPoolTexture, roundelTexture } from "./textures";
 
 export interface KartVisual {
   /** Positioned at the kart's world pose; yaw only. */
@@ -21,6 +22,8 @@ export interface KartVisual {
   readonly frontWheels: readonly THREE.Object3D[];
   readonly rearWheels: readonly THREE.Object3D[];
   readonly exhausts: readonly THREE.Mesh[];
+  /** The driver's helmet -- the scene turns it into corners. */
+  readonly helmet: THREE.Object3D;
   readonly livery: Livery;
   setSteer(value: number): void;
   spinWheels(distance: number): void;
@@ -76,8 +79,14 @@ function sharedGeometry(): SharedGeometry {
   const spoiler = mergeGeometries(spoilerParts)!;
   for (const part of spoilerParts) part.dispose();
 
-  const wheel = new THREE.CylinderGeometry(0.52, 0.52, 0.46, 14);
-  wheel.rotateZ(Math.PI / 2);
+  // Tyre torus + hub disc, merged: reads as a wheel instead of a puck.
+  const tyre = new THREE.TorusGeometry(0.36, 0.17, 10, 18);
+  tyre.rotateY(Math.PI / 2);
+  const hub = new THREE.CylinderGeometry(0.19, 0.19, 0.4, 10);
+  hub.rotateZ(Math.PI / 2);
+  const wheel = mergeGeometries([tyre, hub])!;
+  tyre.dispose();
+  hub.dispose();
 
   const helmet = new THREE.SphereGeometry(0.36, 16, 12);
   const torso = new THREE.CapsuleGeometry(0.28, 0.34, 4, 10);
@@ -117,6 +126,8 @@ export function disposeSharedKartGeometry(): void {
 export function createKartVisual(
   liveryIndex: number,
   castShadow: boolean,
+  raceNumber?: number,
+  headlights = false,
 ): KartVisual {
   const geometry = sharedGeometry();
   const livery = liveryOf(liveryIndex);
@@ -124,6 +135,7 @@ export function createKartVisual(
   const body = new THREE.Group();
   root.add(body);
 
+  const roundelPieces: { dispose(): void }[] = [];
   const paint = new THREE.MeshStandardMaterial({
     color: livery.body,
     roughness: 0.28,
@@ -175,6 +187,27 @@ export function createKartVisual(
   helmet.castShadow = castShadow;
   body.add(helmet);
 
+  // Race-number roundel on the nose. Texture is per-kart, so it is owned and
+  // disposed here rather than shared like the geometry set.
+  if (raceNumber !== undefined) {
+    const accent = "#" + livery.body.toString(16).padStart(6, "0");
+    const roundelMap = roundelTexture(raceNumber, accent);
+    const roundelGeometry = new THREE.CircleGeometry(0.36, 24);
+    const roundelMaterial = new THREE.MeshBasicMaterial({
+      map: roundelMap,
+      transparent: true,
+    });
+    const roundel = new THREE.Mesh(roundelGeometry, roundelMaterial);
+    roundel.position.set(0, 0.86, -1.52);
+    roundel.rotation.x = -0.62;
+    body.add(roundel);
+    roundelPieces.push(
+      { dispose: () => roundelGeometry.dispose() },
+      { dispose: () => roundelMaterial.dispose() },
+      { dispose: () => roundelMap.dispose() },
+    );
+  }
+
   const frontWheels: THREE.Object3D[] = [];
   const rearWheels: THREE.Object3D[] = [];
   for (const side of [1, -1] as const) {
@@ -203,6 +236,53 @@ export function createKartVisual(
     exhausts.push(flame);
   }
 
+  // Night circuits: two lamp discs and one additive cone. No real light —
+  // eight PointLights would recompile every material in the scene (the
+  // HARBOR WORLD lesson); a cone that BRIGHTENS reads as a beam regardless.
+  const headlightPieces: { dispose(): void }[] = [];
+  if (headlights) {
+    const lampGeometry = new THREE.CircleGeometry(0.16, 10);
+    const lampMaterial = new THREE.MeshBasicMaterial({
+      color: 0xfff2c8,
+      toneMapped: false,
+    });
+    lampMaterial.color.multiplyScalar(1.9);
+    for (const side of [1, -1] as const) {
+      const lamp = new THREE.Mesh(lampGeometry, lampMaterial);
+      lamp.position.set(side * 0.42, 0.62, -2.32);
+      lamp.rotation.x = -0.12;
+      lamp.rotation.y = Math.PI;
+      body.add(lamp);
+    }
+    /*
+     * A light POOL on the road, not a volumetric cone. The cone version was
+     * a giant opaque wedge from any side angle — an open cone silhouette is
+     * two hard-edged triangles, and additive blending cannot soften a
+     * silhouette. A gradient quad lying on the tarmac reads as thrown light
+     * from every angle for one draw call.
+     */
+    const poolGeometry = new THREE.PlaneGeometry(6.5, 13);
+    poolGeometry.rotateX(-Math.PI / 2);
+    const poolMaterial = new THREE.MeshBasicMaterial({
+      map: headlightPoolTexture(),
+      transparent: true,
+      opacity: 0.55,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const pool = new THREE.Mesh(poolGeometry, poolMaterial);
+    pool.position.set(0, 0.12, -8.2);
+    pool.renderOrder = -1.2;
+    body.add(pool);
+    headlightPieces.push(
+      { dispose: () => lampGeometry.dispose() },
+      { dispose: () => lampMaterial.dispose() },
+      { dispose: () => poolGeometry.dispose() },
+      { dispose: () => poolMaterial.dispose() },
+    );
+  }
+
   // A cheap contact shadow so a kart never looks like it is hovering, even on
   // the tier where real shadow maps are off.
   const contact = new THREE.Mesh(geometry.shadow, shadowMaterial);
@@ -218,6 +298,7 @@ export function createKartVisual(
     frontWheels,
     rearWheels,
     exhausts,
+    helmet,
     livery,
     setSteer(value) {
       for (const pivot of frontWheels) pivot.rotation.y = value * 0.45;
@@ -237,6 +318,8 @@ export function createKartVisual(
       suit.dispose();
       glow.dispose();
       shadowMaterial.dispose();
+      for (const piece of roundelPieces) piece.dispose();
+      for (const piece of headlightPieces) piece.dispose();
       for (const flame of exhausts) {
         (flame.material as THREE.Material).dispose();
       }

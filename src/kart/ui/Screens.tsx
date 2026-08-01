@@ -1,9 +1,12 @@
 import type { NitroLobby, RoomSettings } from "../net/protocol";
+import type { CupView } from "../net/session";
 import { liveryOf } from "../render/palette";
+import { SPEED_CLASSES } from "../sim/balance";
 import type { RaceResult } from "../sim/types";
 import { TRACKS } from "../sim/tracks";
 import type { TouchState } from "../input";
 import { formatTime } from "./Hud";
+import { CupPanel } from "./MetaScreens";
 
 const CPU_LABELS = ["ツーリスト", "レーサー", "ライバル"];
 
@@ -11,18 +14,28 @@ export function Menu({
   name,
   onName,
   onSolo,
+  onGp,
+  onTt,
+  onRecords,
   onHost,
   onJoin,
   busy,
   error,
+  dailyCard,
+  liveryPicker,
 }: {
   name: string;
   onName(value: string): void;
   onSolo(): void;
+  onGp(): void;
+  onTt(): void;
+  onRecords(): void;
   onHost(): void;
   onJoin(code: string): void;
   busy: string | null;
   error: string | null;
+  dailyCard?: React.ReactNode;
+  liveryPicker?: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div className="nk-screen nk-menu">
@@ -49,9 +62,21 @@ export function Menu({
       </label>
 
       <div className="nk-menu-actions">
-        <button type="button" className="nk-primary" onClick={onSolo} disabled={busy !== null}>
-          ソロレース
-          <small>CPU と走る</small>
+        <button type="button" className="nk-primary" onClick={onGp} disabled={busy !== null}>
+          グランプリ
+          <small>3戦カップ・総合優勝を狙う</small>
+        </button>
+        <button type="button" onClick={onSolo} disabled={busy !== null}>
+          VSレース
+          <small>1戦だけ CPU と走る</small>
+        </button>
+        <button type="button" onClick={onTt} disabled={busy !== null}>
+          タイムトライアル
+          <small>ゴーストと自己ベスト</small>
+        </button>
+        <button type="button" onClick={onRecords} disabled={busy !== null}>
+          記録
+          <small>実績・ベスト・解放カラー</small>
         </button>
         <button type="button" onClick={onHost} disabled={busy !== null}>
           ルームを作る
@@ -80,6 +105,8 @@ export function Menu({
         </form>
       </div>
 
+      {dailyCard}
+      {liveryPicker}
       {busy ? <p className="nk-note">{busy}</p> : null}
       {error ? <p className="nk-error">{error}</p> : null}
 
@@ -124,11 +151,14 @@ export function SettingsPanel({
   settings,
   editable,
   onChange,
+  hideDials = [],
 }: {
   settings: RoomSettings;
   editable: boolean;
   onChange(patch: Partial<RoomSettings>): void;
+  hideDials?: readonly string[];
 }): React.JSX.Element {
+  const show = (dial: string): boolean => !hideDials.includes(dial);
   return (
     <div className="nk-settings">
       <div className="nk-tracks">
@@ -147,6 +177,70 @@ export function SettingsPanel({
         ))}
       </div>
       <div className="nk-dials">
+        {show("gp") ? (
+          <label>
+            <span>モード</span>
+            <select
+              value={settings.gp ? "gp" : "single"}
+              disabled={!editable}
+              onChange={(event) =>
+                onChange({ gp: event.target.value === "gp" })
+              }
+            >
+              <option value="single">シングルレース</option>
+              <option value="gp">グランプリ（3戦）</option>
+            </select>
+          </label>
+        ) : null}
+        {show("speedClass") ? (
+          <label>
+            <span>クラス</span>
+            <select
+              value={settings.speedClass}
+              disabled={!editable}
+              onChange={(event) =>
+                onChange({ speedClass: Number(event.target.value) })
+              }
+            >
+              {SPEED_CLASSES.map((speedClass, index) => (
+                <option key={speedClass.label} value={index}>
+                  {speedClass.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {show("mirror") ? (
+          <label>
+            <span>ミラー</span>
+            <select
+              value={settings.mirror ? "on" : "off"}
+              disabled={!editable}
+              onChange={(event) =>
+                onChange({ mirror: event.target.value === "on" })
+              }
+            >
+              <option value="off">なし</option>
+              <option value="on">ミラー</option>
+            </select>
+          </label>
+        ) : null}
+        {show("weather") ? (
+          <label>
+            <span>天候</span>
+            <select
+              value={settings.weather}
+              disabled={!editable}
+              onChange={(event) =>
+                onChange({ weather: Number(event.target.value) })
+              }
+            >
+              <option value={0}>晴れ</option>
+              <option value={1}>雨</option>
+            </select>
+          </label>
+        ) : null}
+        {show("laps") ? (
         <label>
           <span>周回数</span>
           <select
@@ -161,6 +255,8 @@ export function SettingsPanel({
             ))}
           </select>
         </label>
+        ) : null}
+        {show("racerCount") ? (
         <label>
           <span>出走台数</span>
           <select
@@ -177,6 +273,8 @@ export function SettingsPanel({
             ))}
           </select>
         </label>
+        ) : null}
+        {show("cpuLevel") ? (
         <label>
           <span>CPU の強さ</span>
           <select
@@ -193,6 +291,8 @@ export function SettingsPanel({
             ))}
           </select>
         </label>
+        ) : null}
+        {show("items") ? (
         <label>
           <span>アイテム</span>
           <select
@@ -206,6 +306,7 @@ export function SettingsPanel({
             <option value="off">なし</option>
           </select>
         </label>
+        ) : null}
       </div>
     </div>
   );
@@ -224,8 +325,13 @@ export function SoloSetup({
 }): React.JSX.Element {
   return (
     <div className="nk-screen nk-setup">
-      <h2>ソロレース</h2>
-      <SettingsPanel settings={settings} editable onChange={onChange} />
+      <h2>VSレース</h2>
+      <SettingsPanel
+        settings={settings}
+        editable
+        onChange={onChange}
+        hideDials={["gp"]}
+      />
       <div className="nk-row">
         <button type="button" onClick={onBack}>
           戻る
@@ -350,23 +456,49 @@ export function Results({
   onRematch,
   onMenu,
   canRematch,
+  cup,
+  onNextRound,
+  isHost,
+  newBests,
+  unlockToast,
+  rematchLabel,
 }: {
   result: RaceResult;
   focusSeat: number;
   onRematch(): void;
   onMenu(): void;
   canRematch: boolean;
+  cup?: CupView | null;
+  onNextRound?(): void;
+  isHost?: boolean;
+  newBests?: { bestLap: boolean; bestRace: boolean };
+  unlockToast?: readonly string[];
+  rematchLabel?: string;
 }): React.JSX.Element {
   const mine = result.standings.find((standing) => standing.id === focusSeat);
+  const cupRunning = cup ? !cup.finished : false;
+  const seatNames = result.standings
+    .slice()
+    .sort((a, b) => a.id - b.id)
+    .map((standing) => standing.name);
   return (
     <div className="nk-screen nk-results">
-      <h2>リザルト</h2>
+      <h2>{cup && cup.finished ? "最終リザルト" : "リザルト"}</h2>
+      {unlockToast && unlockToast.length > 0 ? (
+        <p className="nk-unlock-toast">新しいカラーを解放: {unlockToast.join("・")}</p>
+      ) : null}
       {mine ? (
         <p className="nk-result-headline">
           <b>{mine.place}</b> 位 / {result.standings.length} 台
-          <span>ベストラップ {formatTime(mine.bestLap)}</span>
+          <span>
+            ベストラップ {formatTime(mine.bestLap)}
+            {newBests && newBests.bestLap ? (
+              <em className="nk-new-record"> NEW RECORD!</em>
+            ) : null}
+          </span>
         </p>
       ) : null}
+      {cup ? <CupPanel cup={cup} seatNames={seatNames} /> : null}
       <table>
         <thead>
           <tr>
@@ -404,9 +536,17 @@ export function Results({
         <button type="button" onClick={onMenu}>
           メニューへ
         </button>
-        {canRematch ? (
+        {cupRunning && (isHost ?? true) && onNextRound ? (
+          <button type="button" className="nk-primary" onClick={onNextRound}>
+            次のレースへ（ROUND {Math.min((cup?.round ?? 0) + 2, cup?.rounds ?? 3)}/{cup?.rounds}）
+          </button>
+        ) : null}
+        {cupRunning && isHost === false ? (
+          <span className="nk-note">ホストの開始を待っています…</span>
+        ) : null}
+        {!cupRunning && canRematch ? (
           <button type="button" className="nk-primary" onClick={onRematch}>
-            もう一度
+            {rematchLabel ?? "もう一度"}
           </button>
         ) : null}
       </div>

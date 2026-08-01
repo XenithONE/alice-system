@@ -73,6 +73,17 @@ export interface KartRuntime {
   stuckTimer: number;
   stuckMark: number;
   wallCooldown: number;
+  /** Drift-start hop: seconds remaining of the ballistic arc. */
+  hopTimer: number;
+  /** Continuous airborne seconds (tricks need real air, not a kerb blip). */
+  airTime: number;
+  /** A trick was queued mid-air; landing converts it to a boost. */
+  trickQueued: boolean;
+  rampCooldown: number;
+  /** Slipstream charge, seconds in the cone. */
+  draftCharge: number;
+  /** True while this kart is visibly in someone's wake. */
+  drafting: boolean;
   /** Accumulated accelerator hold during the countdown (rocket start). */
   countdownHold: number;
 

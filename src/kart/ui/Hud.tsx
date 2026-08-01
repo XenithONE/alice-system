@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ITEM_LABEL_JA } from "../sim/items";
+import type { CupView } from "../net/session";
 import type { Track } from "../sim/track";
 import type { ItemKind, RaceState } from "../sim/types";
 import { liveryOf } from "../render/palette";
@@ -162,9 +163,11 @@ export interface HudProps {
   readonly view: RaceState;
   readonly focusSeat: number;
   readonly quality: string;
+  /** Grand-prix state, when the race is one round of a cup. */
+  readonly cup?: CupView | null;
 }
 
-export function Hud({ track, view, focusSeat, quality }: HudProps): React.JSX.Element | null {
+export function Hud({ track, view, focusSeat, quality, cup }: HudProps): React.JSX.Element | null {
   const me = view.racers.find((racer) => racer.id === focusSeat) ?? view.racers[0];
   if (!me) return null;
   const total = view.racers.length;
@@ -186,6 +189,13 @@ export function Hud({ track, view, focusSeat, quality }: HudProps): React.JSX.El
           LAP <b>{Math.min(me.lap, view.laps)}</b>
           <span>/ {view.laps}</span>
         </div>
+        {cup ? (
+          <div className="nk-cup-round">
+            ROUND <b>{Math.min(cup.round + 1, cup.rounds)}</b>
+            <span>/ {cup.rounds}</span>
+            <em>{cup.points[focusSeat] ?? 0}pt</em>
+          </div>
+        ) : null}
         <div className="nk-times">
           <div>
             <span>TIME</span>

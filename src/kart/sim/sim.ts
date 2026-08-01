@@ -73,11 +73,22 @@ import {
   STEER_LERP,
   STUCK_PROGRESS_EPSILON,
   STUCK_RESPAWN_SEC,
-  TRIPLE_MUSHROOM_CHARGES,
   TURN_SPEED_REFERENCE,
   WALL_PUSH,
   WALL_SPEED_KEEP,
   KART_RADIUS,
+  WEATHER_GRIP,
+  SPEED_CLASSES,
+  DRIFT_HOP_VY,
+  DRAFT_RANGE,
+  DRAFT_HALF_ANGLE,
+  DRAFT_CHARGE_SEC,
+  DRAFT_BOOST_SEC,
+  DRAFT_TOP_SPEED_MULT,
+  TRICK_MIN_AIR_SEC,
+  TRICK_BOOST_SEC,
+  RAMP_LAUNCH_VY,
+  TRIPLE_MUSHROOM_CHARGES,
 } from "./balance";
 import { cpuInput, type CpuWorld } from "./ai";
 import { itemCharges, rollItem } from "./items";
@@ -89,6 +100,8 @@ import {
   forwardOf,
   gridSlot,
   headingOf,
+  maybeMirror,
+  pointAt,
   querySurface,
   rightOf,
   sampleAt,
@@ -141,7 +154,7 @@ interface Hazard {
   age: number;
 }
 
-const LIVERY_COUNT = 8;
+const LIVERY_COUNT = 16;
 /** Beat between the last person crossing the line and the results screen. */
 const HUMAN_FINISH_TAIL_SEC = 3;
 
@@ -162,10 +175,16 @@ function driftTierFor(charge: number): number {
 }
 
 export function createKartSim(config: RaceConfig): KartSim {
-  const track: Track = config.track ?? buildTrack(trackSpecById(config.trackId));
+  const track: Track =
+    config.track ??
+    buildTrack(maybeMirror(trackSpecById(config.trackId), config.mirror === true));
   const laps = Math.max(1, Math.min(9, Math.round(config.laps || DEFAULT_LAPS)));
   const itemsOn = config.items !== false;
   const random = mulberry32(config.seed >>> 0);
+  const tuning =
+    config.classTuning ??
+    SPEED_CLASSES[Math.max(0, Math.min(SPEED_CLASSES.length - 1, config.speedClass ?? 1))]!;
+  const weather = WEATHER_GRIP[config.weather ?? "clear"];
 
   const specs = config.racers.slice(0, MAX_RACERS);
   if (specs.length === 0) throw new Error("A race needs at least one racer");
@@ -202,8 +221,9 @@ export function createKartSim(config: RaceConfig): KartSim {
       starTimer: 0,
       boltTimer: 0,
       graceTimer: 0,
-      item: null,
-      itemCharges: 0,
+      item: config.startTriple === true && !spec.cpu ? "triple" : null,
+      itemCharges:
+        config.startTriple === true && !spec.cpu ? TRIPLE_MUSHROOM_CHARGES : 0,
       rouletteTimer: 0,
       itemCooldown: 0,
       itemHeld: false,
@@ -223,6 +243,12 @@ export function createKartSim(config: RaceConfig): KartSim {
       stuckTimer: 0,
       stuckMark: startS,
       wallCooldown: 0,
+      hopTimer: 0,
+      airTime: 0,
+      trickQueued: false,
+      rampCooldown: 0,
+      draftCharge: 0,
+      drafting: false,
       countdownHold: 0,
       input: NEUTRAL_INPUT,
       cpuItemTimer: 1.2,
@@ -427,12 +453,17 @@ export function createKartSim(config: RaceConfig): KartSim {
   function cpuWorld(): CpuWorld {
     return {
       track,
+      speedScale: tuning.speedScale * weather.top,
+      // Rain reduces the turn rate; the braking model must plan for the
+      // reduced lateral authority or every CPU overshoots wet corners.
+      gripScale: tuning.gripScale * weather.turn,
       racers: karts,
       hazards,
       projectiles,
       boxes: track.itemBoxes,
       boxCooldowns,
       pads: track.boostPads,
+      ramps: track.ramps,
       random,
       racing: phase === "race",
       countdown,
@@ -450,6 +481,7 @@ export function createKartSim(config: RaceConfig): KartSim {
     kart.graceTimer = Math.max(0, kart.graceTimer - dt);
     kart.itemCooldown = Math.max(0, kart.itemCooldown - dt);
     kart.wallCooldown = Math.max(0, kart.wallCooldown - dt);
+    kart.rampCooldown = Math.max(0, kart.rampCooldown - dt);
 
     if (phase === "countdown") {
       if (input.throttle > 0.5) kart.countdownHold += dt;
@@ -522,6 +554,18 @@ export function createKartSim(config: RaceConfig): KartSim {
       const steerTarget = clamp(input.steer, -1, 1);
       kart.steer += (steerTarget - kart.steer) * Math.min(1, STEER_LERP * dt);
 
+      // ── Tricks: drift press in the air queues a spin ─────────────────────
+      if (
+        kart.airborne &&
+        input.drift &&
+        !kart.trickQueued &&
+        kart.airTime > 0.12 &&
+        phase === "race"
+      ) {
+        kart.trickQueued = true;
+        emit({ k: "trick", racer: kart.id });
+      }
+
       // ── Drift state machine ──────────────────────────────────────────────
       const canDrift = !kart.airborne && kart.speed >= DRIFT_MIN_SPEED;
       if (input.drift && canDrift && !kart.drifting) {
@@ -536,6 +580,12 @@ export function createKartSim(config: RaceConfig): KartSim {
           kart.driftDir = dir;
           kart.driftCharge = 0;
           kart.driftTier = 0;
+          /*
+           * The hop: a short ballistic arc that does NOT set `airborne` —
+           * airborne breaks drifts (sim rule) and grants tricks, and the hop
+           * must do neither. It is weight, not flight.
+           */
+          kart.hopTimer = (2 * DRIFT_HOP_VY) / GRAVITY;
         }
       }
       if (kart.drifting) {
@@ -566,7 +616,8 @@ export function createKartSim(config: RaceConfig): KartSim {
 
       // ── Steering ─────────────────────────────────────────────────────────
       const speedFactor = clamp(
-        Math.abs(kart.speed) / (BASE_TOP_SPEED * TURN_SPEED_REFERENCE),
+        Math.abs(kart.speed) /
+          (BASE_TOP_SPEED * tuning.speedScale * TURN_SPEED_REFERENCE),
         0,
         1,
       );
@@ -580,6 +631,7 @@ export function createKartSim(config: RaceConfig): KartSim {
       } else {
         turn = BASE_TURN_RATE * kart.steer * speedFactor;
       }
+      turn *= tuning.turnScale * weather.turn;
       if (kart.airborne) turn *= AIR_CONTROL;
       if (kart.speed < 0) turn = -turn;
       kart.yaw += turn * dt;
@@ -595,7 +647,10 @@ export function createKartSim(config: RaceConfig): KartSim {
       const catchup =
         1 +
         (CATCHUP_MAX_BONUS * (kart.place - 1)) / Math.max(1, karts.length - 1);
-      let topSpeed = BASE_TOP_SPEED * catchup;
+      let topSpeed = BASE_TOP_SPEED * tuning.speedScale * weather.top * catchup;
+      if (kart.drafting && kart.boostSource === "draft") {
+        topSpeed *= DRAFT_TOP_SPEED_MULT;
+      }
       if (kart.offRoad) topSpeed *= OFFROAD_SPEED_MULT;
       if (kart.boltTimer > 0) topSpeed *= BOLT_TOP_SPEED_MULT;
       if (kart.starTimer > 0) topSpeed *= STAR_TOP_SPEED_MULT;
@@ -612,7 +667,7 @@ export function createKartSim(config: RaceConfig): KartSim {
         kart.speed += accel * throttle * headroom * dt;
       }
       if (brake > 0.02) {
-        kart.speed -= BRAKE_DECEL * brake * dt;
+        kart.speed -= BRAKE_DECEL * weather.brake * brake * dt;
         if (kart.speed < -REVERSE_TOP_SPEED) kart.speed = -REVERSE_TOP_SPEED;
       }
       const rolling =
@@ -620,7 +675,10 @@ export function createKartSim(config: RaceConfig): KartSim {
       kart.speed -=
         (DRAG_QUADRATIC * kart.speed * Math.abs(kart.speed) + rolling) * dt;
       if (kart.offRoad && kart.speed > 0) {
-        kart.speed = Math.max(0, kart.speed - OFFROAD_FRICTION * dt);
+        kart.speed = Math.max(
+          0,
+          kart.speed - OFFROAD_FRICTION * weather.offroad * dt,
+        );
       }
       if (kart.speed > topSpeed) {
         kart.speed -= (kart.speed - topSpeed) * Math.min(1, 3.2 * dt);
@@ -666,20 +724,68 @@ export function createKartSim(config: RaceConfig): KartSim {
     // ── Vertical ─────────────────────────────────────────────────────────────
     const groundY = query.height;
     const desiredVy = kart.speed * Math.sin(query.pitch);
+
+    // Ramps: aligned, grounded and fast enough → launch.
+    if (
+      !kart.airborne &&
+      kart.rampCooldown <= 0 &&
+      kart.speed > 12 &&
+      phase === "race"
+    ) {
+      for (const ramp of track.ramps) {
+        const along = arcDelta(track, ramp.s, query.s);
+        if (Math.abs(along) > 2.2) continue;
+        if (Math.abs(query.lateral - ramp.lateral) > ramp.halfWidth) continue;
+        kart.airborne = true;
+        /*
+         * ADDED to the slope-following vertical speed, not assigned over it.
+         * On a 20% climb the road itself rises at ~7 u/s under the kart;
+         * assigning 8.8 left a launch of 1.6 relative to the surface and the
+         * "jump" lasted one tick. The ramp throws you off the road you were
+         * ON, whatever that road was doing.
+         */
+        kart.vy =
+          desiredVy +
+          RAMP_LAUNCH_VY *
+            clamp(kart.speed / (BASE_TOP_SPEED * tuning.speedScale), 0.55, 1.15);
+        kart.rampCooldown = 1.2;
+        kart.hopTimer = 0;
+        break;
+      }
+    }
+
     if (kart.airborne) {
+      kart.airTime += dt;
       kart.vy -= GRAVITY * dt;
       kart.y += kart.vy * dt;
       if (kart.y <= groundY) {
         kart.y = groundY;
         kart.vy = 0;
         kart.airborne = false;
+        // Trick landing: queued in the air, paid on the ground.
+        if (kart.trickQueued && kart.airTime > TRICK_MIN_AIR_SEC) {
+          boost(kart, TRICK_BOOST_SEC, "trick");
+        }
+        kart.trickQueued = false;
+        kart.airTime = 0;
       }
+    } else if (kart.hopTimer > 0) {
+      // Drift hop: pure parabola over the local surface; drift rules never
+      // see it because `airborne` stays false.
+      kart.hopTimer = Math.max(0, kart.hopTimer - dt);
+      const total = (2 * DRIFT_HOP_VY) / GRAVITY;
+      const t = total - kart.hopTimer;
+      const lift = Math.max(0, DRIFT_HOP_VY * t - 0.5 * GRAVITY * t * t);
+      kart.vy = desiredVy;
+      kart.y = groundY + lift;
     } else if (kart.vy - desiredVy > 6 && kart.speed > 14) {
       kart.airborne = true;
+      kart.airTime = 0;
       kart.y += kart.vy * dt;
     } else {
       kart.vy = desiredVy;
       kart.y = groundY;
+      kart.airTime = 0;
     }
 
     // ── Progress ─────────────────────────────────────────────────────────────
@@ -723,6 +829,38 @@ export function createKartSim(config: RaceConfig): KartSim {
         });
         if (finishGrace === null) finishGrace = FINISH_GRACE_SEC;
       }
+    }
+
+    // ── Slipstream ───────────────────────────────────────────────────────────
+    if (phase === "race" && !kart.finished && !kart.offRoad && kart.speed > 14) {
+      let inWake = false;
+      const [fx2, fz2] = forwardOf(kart.yaw);
+      for (const leader of karts) {
+        if (leader.id === kart.id || leader.finished) continue;
+        const dx = leader.x - kart.x;
+        const dz = leader.z - kart.z;
+        const range = Math.hypot(dx, dz);
+        if (range < 3 || range > DRAFT_RANGE) continue;
+        const ahead = (dx * fx2 + dz * fz2) / range;
+        if (ahead < Math.cos(DRAFT_HALF_ANGLE)) continue;
+        if (leader.speed < 16) continue;
+        inWake = true;
+        break;
+      }
+      if (inWake) {
+        kart.draftCharge += dt;
+        kart.drafting = true;
+        if (kart.draftCharge >= DRAFT_CHARGE_SEC) {
+          kart.draftCharge = 0;
+          boost(kart, DRAFT_BOOST_SEC, "draft");
+        }
+      } else {
+        kart.draftCharge = Math.max(0, kart.draftCharge - dt * 2);
+        kart.drafting = kart.boostSource === "draft" && kart.boostTimer > 0;
+      }
+    } else {
+      kart.draftCharge = 0;
+      kart.drafting = kart.boostSource === "draft" && kart.boostTimer > 0;
     }
 
     // ── Stuck watchdog ───────────────────────────────────────────────────────
@@ -779,11 +917,43 @@ export function createKartSim(config: RaceConfig): KartSim {
       if (projectile.kind === "red" && projectile.target !== null) {
         const target = karts[projectile.target];
         if (target && !target.finished) {
-          const dx = target.x - projectile.x;
-          const dz = target.z - projectile.z;
-          const range = Math.hypot(dx, dz);
+          const range = Math.hypot(
+            target.x - projectile.x,
+            target.z - projectile.z,
+          );
           if (range < RED_SHELL_LOCK_RANGE) {
-            const desired = headingOf(dx, dz);
+            /*
+             * Follow the ROAD to the target, not the straight line. The
+             * straight-line chase died against the outside wall of every
+             * hairpin between shooter and victim; aiming at a point on the
+             * centreline a little ahead of the shell hugs the corridor and
+             * only converges onto the kart itself for the final metres.
+             */
+            const shellQuery = querySurface(
+              track,
+              projectile.x,
+              projectile.z,
+              projectile.hint,
+              SHOULDER_WIDTH,
+            );
+            const gap = arcDelta(track, shellQuery.s, target.lastS);
+            const chaseDirect = Math.abs(gap) < 16;
+            let desired: number;
+            if (chaseDirect) {
+              desired = headingOf(
+                target.x - projectile.x,
+                target.z - projectile.z,
+              );
+            } else {
+              const aheadS =
+                shellQuery.s + Math.sign(gap) * Math.min(Math.abs(gap), 14);
+              const [aimX, , aimZ] = pointAt(
+                track,
+                aheadS,
+                target.lastLateral * 0.4,
+              );
+              desired = headingOf(aimX - projectile.x, aimZ - projectile.z);
+            }
             const delta = angleDelta(projectile.yaw, desired);
             projectile.yaw +=
               clamp(delta, -RED_SHELL_TURN_RATE * dt, RED_SHELL_TURN_RATE * dt);
@@ -1042,6 +1212,8 @@ export function createKartSim(config: RaceConfig): KartSim {
       driftDir: kart.driftDir,
       driftCharge: kart.driftCharge,
       driftTier: kart.driftTier,
+      tricking: kart.trickQueued && kart.airborne,
+      drafting: kart.drafting,
       boostTimer: kart.boostTimer,
       boostSource: kart.boostSource,
       spinTimer: kart.spinTimer,

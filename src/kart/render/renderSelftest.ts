@@ -23,6 +23,12 @@ import {
 import { TRACKS } from "../sim/tracks";
 import { bothSides, roadGeometry } from "./trackMesh";
 import { LIVERIES, liveryOf } from "./palette";
+import {
+  createSkidBuffers,
+  rearWheelContacts,
+  skidStrength,
+  writeSkidQuad,
+} from "./skidmarks";
 
 const gate = createGate();
 const built = TRACKS.map((spec) => buildTrack(spec));
@@ -185,13 +191,21 @@ function closestLiveryPair(
 }
 
 {
-  const { distance, pair } = closestLiveryPair(
-    LIVERIES.map((livery) => livery.body),
+  // The base grid set (0-7) carries the strict guarantee — those are the
+  // colours every race shows together. Unlock liveries (8-15) trade hue
+  // distance for finish/value distinctions and rarely co-occur, so they get
+  // a looser floor that still forbids outright duplicates.
+  const base = closestLiveryPair(
+    LIVERIES.slice(0, 8).map((livery) => livery.body),
   );
+  const all = closestLiveryPair(LIVERIES.map((livery) => livery.body));
   gate.check(
-    "[R5] 8色のリバリーが知覚的に十分離れている（OKLab距離）",
-    distance > 0.12 && liveryOf(9).name === LIVERIES[1]!.name,
-    `最小距離 ${distance.toFixed(3)} (${pair})・折返し ${liveryOf(9).name}`,
+    "[R5] 基本8色は厳格に・全16色も重複なしに離れている（OKLab）",
+    base.distance > 0.12 &&
+      all.distance > 0.045 &&
+      LIVERIES.length === 16 &&
+      liveryOf(17).name === LIVERIES[1]!.name,
+    `基本 ${base.distance.toFixed(3)} (${base.pair}) / 全体 ${all.distance.toFixed(3)} (${all.pair})・折返し ${liveryOf(17).name}`,
   );
 }
 
@@ -204,5 +218,90 @@ gate.expectFail(
   },
   "AMBER を CRIMSON とほぼ同色に",
 );
+
+/* ── [SK1] the skid ring buffer wraps cleanly ──────────────────────────────── */
+{
+  const capacity = 16;
+  const buffers = createSkidBuffers(capacity);
+  let cursor = 0;
+  for (let i = 0; i < capacity + 50; i += 1) {
+    cursor = writeSkidQuad(
+      buffers,
+      cursor,
+      [i, 0, 0],
+      [i, 0, 1],
+      [i + 1, 0, 0],
+      [i + 1, 0, 1],
+      i * 0.1,
+      0.5,
+    );
+  }
+  const nan = buffers.position.some((value) => !Number.isFinite(value));
+  // Quad slot (capacity+50-1) % capacity holds the LAST write's x values.
+  const lastQuad = (capacity + 50 - 1) % capacity;
+  const lastX = buffers.position[lastQuad * 12]!;
+  gate.check(
+    "[SK1] スキッドのリングバッファが巻き戻って上書きする",
+    cursor === (capacity + 50) % capacity && lastX === capacity + 49 && !nan,
+    `cursor=${cursor} 最終quad x=${lastX} NaN=${nan}`,
+  );
+}
+
+/* ── [SK2] wheel contacts conform to the banked surface ────────────────────── */
+{
+  const track = built[0]!;
+  // Pick the most banked sample so the term under test is as large as possible.
+  let index = 0;
+  for (let i = 0; i < track.samples.length; i += 1) {
+    if (Math.abs(track.samples[i]!.bank) > Math.abs(track.samples[index]!.bank)) index = i;
+  }
+  const sample = track.samples[index]!;
+  const yaw = Math.atan2(sample.tx, sample.tz);
+  const contact = rearWheelContacts(track, sample.x, sample.z, yaw, index);
+  // Independent expectation from the surface formula at each wheel's lateral.
+  const q = querySurface(track, contact.left[0], contact.left[2], index, SHOULDER_WIDTH);
+  const sampleAtQuery = track.samples[q.index]!;
+  const expectLeft = sampleAtQuery.y + Math.tan(q.bank) * q.lateral + 0.03;
+  const errorLeft = Math.abs(contact.left[1] - expectLeft);
+  gate.check(
+    "[SK2] バンク路面で左右輪の高さが表面式と一致する",
+    errorLeft < 0.02 && Math.abs(sample.bank) > 0.05,
+    `誤差 ${errorLeft.toFixed(4)}m（bank ${sample.bank.toFixed(3)} rad の地点で検証）`,
+  );
+
+  gate.expectFail(
+    "[SK2-neg] tan(bank) 項を落とすと SK2 が落ちる",
+    () => {
+      const flatY = sampleAtQuery.y + 0.03;
+      return Math.abs(contact.left[1] - flatY) < 0.02;
+    },
+    "バンク項なしの高さ",
+  );
+}
+
+/* ── [SK3] emission policy: drifting marks, cruising does not ──────────────── */
+{
+  const drifting = skidStrength(
+    { driftDir: 1, driftTier: 2, speed: 30, spinTimer: 0, offRoad: false, airborne: false },
+    0,
+  );
+  const cruising = skidStrength(
+    { driftDir: 0, driftTier: 0, speed: 30, spinTimer: 0, offRoad: false, airborne: false },
+    0,
+  );
+  const braking = skidStrength(
+    { driftDir: 0, driftTier: 0, speed: 20, spinTimer: 0, offRoad: false, airborne: false },
+    32,
+  );
+  const airborne = skidStrength(
+    { driftDir: 1, driftTier: 2, speed: 30, spinTimer: 0, offRoad: false, airborne: true },
+    0,
+  );
+  gate.check(
+    "[SK3] ドリフト/急減速は痕を書き、巡航/空中は書かない",
+    drifting > 0 && braking > 0 && cruising === 0 && airborne === 0,
+    `drift=${drifting.toFixed(2)} brake=${braking.toFixed(2)} cruise=${cruising} air=${airborne}`,
+  );
+}
 
 gate.finish("RENDER SELFTEST");

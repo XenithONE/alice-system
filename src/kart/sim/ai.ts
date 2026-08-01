@@ -26,6 +26,7 @@ import {
   sampleAt,
   type BoostPad,
   type ItemBoxPlacement,
+  type Ramp,
   type Track,
 } from "./track";
 import type { KartRuntime } from "./runtime";
@@ -46,12 +47,16 @@ export interface CpuProjectileView {
 
 export interface CpuWorld {
   readonly track: Track;
+  /** Speed-class scales; the braking model reads real grip, not 150cc's. */
+  readonly speedScale: number;
+  readonly gripScale: number;
   readonly racers: readonly KartRuntime[];
   readonly hazards: readonly CpuHazardView[];
   readonly projectiles: readonly CpuProjectileView[];
   readonly boxes: readonly ItemBoxPlacement[];
   readonly boxCooldowns: readonly number[];
   readonly pads: readonly BoostPad[];
+  readonly ramps: readonly Ramp[];
   readonly random: () => number;
   /** False during the countdown; the driver only revs the engine then. */
   readonly racing: boolean;
@@ -99,14 +104,20 @@ function lineLateral(track: Track, s: number, entryBias: number): number {
 }
 
 /** Fastest speed that still makes every corner inside the horizon. */
-function speedLimit(track: Track, s: number, skill: number): number {
-  let limit = BASE_TOP_SPEED * 1.6;
+function speedLimit(
+  track: Track,
+  s: number,
+  skill: number,
+  gripScale = 1,
+  speedScale = 1,
+): number {
+  let limit = BASE_TOP_SPEED * speedScale * 1.6;
   for (const distance of BRAKE_HORIZON) {
     const k = Math.abs(curvatureAt(track, s + distance));
     if (k < 1e-4) continue;
-    const corner = Math.sqrt(LATERAL_GRIP / k);
+    const corner = Math.sqrt((LATERAL_GRIP * gripScale) / k);
     // Room to shed speed on the way in: roughly a third of a g of braking.
-    limit = Math.min(limit, corner + distance * 0.34);
+    limit = Math.min(limit, corner + distance * 0.34 * speedScale);
   }
   return limit * skill;
 }
@@ -146,8 +157,21 @@ export function cpuInput(
   const s = self.lastS;
   const half = self.lastHalf;
 
+  // ── Mid-air: queue a trick, keep the wheel straight-ish ────────────────────
+  if (self.airborne) {
+    const wantsTrick = skill.drift > 0.4 && self.airTime > 0.14 && !self.trickQueued;
+    return {
+      throttle: 1,
+      brake: 0,
+      steer: clamp(self.steer * 0.4, -0.4, 0.4),
+      drift: wantsTrick,
+      item: false,
+      lookBack: false,
+    };
+  }
+
   // ── Aim point ───────────────────────────────────────────────────────────────
-  const speedFraction = clamp(self.speed / BASE_TOP_SPEED, 0, 1.3);
+  const speedFraction = clamp(self.speed / (BASE_TOP_SPEED * world.speedScale), 0, 1.3);
   const look = skill.look * (0.55 + 0.55 * speedFraction);
   const aimS = s + look;
   let targetLateral = lineLateral(track, aimS, 1);
@@ -172,6 +196,14 @@ export function cpuInput(
     if (pad) {
       const cost = Math.abs(pad.lateral - targetLateral) / Math.max(1, half);
       if (cost < 0.7) targetLateral = pad.lateral;
+    }
+  }
+  // A ramp is a trick is a boost: better drivers line up for them earlier.
+  if (skill.drift > 0.4 && self.rampCooldown <= 0) {
+    const ramp = nearestAhead(world.ramps, track, s, look * 1.5);
+    if (ramp) {
+      const cost = Math.abs(ramp.lateral - targetLateral) / Math.max(1, half);
+      if (cost < 0.9) targetLateral = ramp.lateral;
     }
   }
 
@@ -229,7 +261,7 @@ export function cpuInput(
   steer = clamp(steer + self.cpuWander, -1, 1);
 
   // ── Pace ────────────────────────────────────────────────────────────────────
-  const limit = speedLimit(track, s, skill.speed);
+  const limit = speedLimit(track, s, skill.speed, world.gripScale, world.speedScale);
   const over = self.speed - limit;
   let throttle = 1;
   let brake = 0;

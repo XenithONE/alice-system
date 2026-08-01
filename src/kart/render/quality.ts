@@ -10,6 +10,9 @@
 
 export type QualityLabel = "HIGH" | "BALANCED" | "LOW";
 
+/** Anti-aliasing strategy. LOW never builds a composer, so it keeps MSAA. */
+export type AaMode = "smaa" | "fxaa" | "none";
+
 export interface KartQuality {
   readonly label: QualityLabel;
   readonly dpr: number;
@@ -17,9 +20,25 @@ export interface KartQuality {
   readonly shadowMapSize: number;
   readonly postProcessing: boolean;
   readonly bloom: boolean;
+  readonly aa: AaMode;
   readonly propDensity: number;
   readonly particleBudget: number;
   readonly environmentMap: boolean;
+  /** Skid-mark ring buffer capacity, in quads. */
+  readonly skidQuads: number;
+  /** Billboard clouds in the sky (0 disables the layer). */
+  readonly cloudCount: number;
+  /** Grandstands at the start straight (0 disables). */
+  readonly grandstands: number;
+  /** 1 = full set dressing, 0.5 = half instances, 0.25 = landmarks only. */
+  readonly setPieceDetail: number;
+  /** Rain streaks when the weather says so. */
+  readonly rainParticles: number;
+  /**
+   * When the measured FPS drops below this, the scene sheds one expensive
+   * feature (AA → bloom → dpr → shadows), once, irreversibly. 0 disables.
+   */
+  readonly shedFloorFps: number;
   readonly mobile: boolean;
 }
 
@@ -30,9 +49,16 @@ const TIERS: Record<QualityLabel, Omit<KartQuality, "dpr" | "mobile">> = {
     shadowMapSize: 2048,
     postProcessing: true,
     bloom: true,
+    aa: "smaa",
     propDensity: 1,
     particleBudget: 1600,
     environmentMap: true,
+    skidQuads: 4096,
+    cloudCount: 26,
+    grandstands: 2,
+    setPieceDetail: 1,
+    rainParticles: 400,
+    shedFloorFps: 30,
   },
   BALANCED: {
     label: "BALANCED",
@@ -40,9 +66,16 @@ const TIERS: Record<QualityLabel, Omit<KartQuality, "dpr" | "mobile">> = {
     shadowMapSize: 1024,
     postProcessing: true,
     bloom: true,
+    aa: "fxaa",
     propDensity: 0.65,
     particleBudget: 900,
     environmentMap: true,
+    skidQuads: 3072,
+    cloudCount: 14,
+    grandstands: 1,
+    setPieceDetail: 0.5,
+    rainParticles: 240,
+    shedFloorFps: 24,
   },
   LOW: {
     label: "LOW",
@@ -50,9 +83,16 @@ const TIERS: Record<QualityLabel, Omit<KartQuality, "dpr" | "mobile">> = {
     shadowMapSize: 0,
     postProcessing: false,
     bloom: false,
+    aa: "none",
     propDensity: 0.35,
     particleBudget: 420,
     environmentMap: false,
+    skidQuads: 1536,
+    cloudCount: 0,
+    grandstands: 0,
+    setPieceDetail: 0.25,
+    rainParticles: 120,
+    shedFloorFps: 0,
   },
 };
 

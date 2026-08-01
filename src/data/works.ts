@@ -118,15 +118,21 @@ export const WORKS: Work[] = [
     title: "NITRO CROWN",
     titleJa: "3Dカートレース（最大4人対戦）",
     description:
-      "3コース・8台グリッドのカートレーサー。ドリフトを溜めて3段のミニターボ、8種のアイテムで逆転する。ルームコードだけで最大4人がブラウザ対戦できるP2Pマルチ対応。",
+      "3コース×晴雨・8台グリッドのカートレーサー。ドリフト3段ミニターボにトリック、スリップストリーム、8種のアイテムで逆転する。3戦グランプリはソロでもP2Pマルチ（最大4人）でも開催でき、ゴースト付きタイムトライアル・日替わりチャレンジ・実績解放の16カラーでやり込める。",
     href: "nitro-crown.html",
     cover: "assets/nitro-crown-cover.webp",
+    screenshots: [
+      "assets/nitro-crown-shot-neon.webp",
+      "assets/nitro-crown-shot-coast.webp",
+      "assets/nitro-crown-shot-sky.webp",
+      "assets/nitro-crown-shot-ghost.webp"
+    ],
     year: "2026",
     kind: "game",
     engine: "Three.js",
     platform: ["web"],
     status: "playable",
-    tags: ["RACING", "P2P", "DRIFT"],
+    tags: ["RACING", "P2P", "GP"],
     aiTools: ["Claude"]
   },
   {

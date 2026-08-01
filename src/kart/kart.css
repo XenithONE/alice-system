@@ -88,6 +88,10 @@ body {
   color: var(--nk-ink);
 }
 
+.nk-mute {
+  right: 84px;
+}
+
 /* ── HUD ───────────────────────────────────────────────────────────────── */
 
 .nk-hud {
@@ -944,4 +948,357 @@ button:focus-visible {
     width: 44px;
     height: 44px;
   }
+}
+
+/* ── Meta: livery / daily / records / cup ──────────────────────────────── */
+
+.nk-field-label {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--nk-ink-dim);
+  font-family: var(--nk-display);
+}
+
+.nk-livery-picker {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.nk-livery-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 460px;
+}
+
+.nk-livery {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: 1px solid var(--nk-edge);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s;
+}
+
+.nk-livery i {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.nk-livery:hover {
+  transform: translateY(-1px);
+}
+
+.nk-livery.is-active {
+  border-color: var(--nk-accent);
+  box-shadow: 0 0 0 1px var(--nk-accent);
+}
+
+.nk-livery.is-locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.nk-livery.is-locked i {
+  filter: grayscale(0.8) brightness(0.6);
+}
+
+.nk-livery-lock {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+
+.nk-daily-card {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  width: fit-content;
+  min-width: 300px;
+  margin-bottom: 18px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--nk-edge);
+  background: linear-gradient(120deg, rgba(255, 176, 32, 0.12), rgba(255, 255, 255, 0.04));
+  color: var(--nk-ink);
+  cursor: pointer;
+  font-family: var(--nk-body);
+  transition: transform 0.12s, background 0.12s;
+}
+
+.nk-daily-card:hover {
+  transform: translateY(-1px);
+}
+
+.nk-daily-title {
+  font-family: var(--nk-display);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  color: var(--nk-accent);
+}
+
+.nk-daily-card b {
+  font-size: 15px;
+}
+
+.nk-daily-meta {
+  font-size: 12px;
+  color: var(--nk-ink-dim);
+}
+
+.nk-stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 26px;
+}
+
+.nk-stat-row > div {
+  display: grid;
+  gap: 2px;
+  min-width: 92px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--nk-edge);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nk-stat-row b {
+  font-family: var(--nk-display);
+  font-size: 24px;
+  color: var(--nk-accent);
+}
+
+.nk-stat-row span {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--nk-ink-dim);
+  font-family: var(--nk-display);
+}
+
+.nk-records h3 {
+  font-size: 14px;
+  letter-spacing: 0.22em;
+  color: var(--nk-ink-dim);
+  margin: 0 0 12px;
+  font-family: var(--nk-display);
+}
+
+.nk-achievements {
+  list-style: none;
+  margin: 0 0 28px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  max-width: 820px;
+}
+
+.nk-achievements li {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--nk-edge);
+  background: rgba(255, 255, 255, 0.03);
+  opacity: 0.5;
+}
+
+.nk-achievements li.is-earned {
+  opacity: 1;
+  border-color: rgba(255, 176, 32, 0.5);
+  background: rgba(255, 176, 32, 0.07);
+}
+
+.nk-achievements b {
+  font-family: var(--nk-display);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+}
+
+.nk-achievements span {
+  font-size: 12px;
+  color: var(--nk-ink-dim);
+}
+
+.nk-achievements i {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 14px;
+  height: 14px;
+  border-radius: 5px;
+}
+
+.nk-best-table {
+  border-collapse: collapse;
+  margin-bottom: 28px;
+  font-size: 13px;
+}
+
+.nk-best-table th,
+.nk-best-table td {
+  text-align: left;
+  padding: 7px 18px 7px 0;
+  border-bottom: 1px solid var(--nk-edge);
+}
+
+.nk-best-table th {
+  font-family: var(--nk-display);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--nk-ink-dim);
+}
+
+.nk-best-table td:nth-child(n + 3) {
+  font-family: var(--nk-mono);
+}
+
+.nk-tt-best {
+  font-size: 14px;
+  margin: 14px 0 6px;
+}
+
+.nk-tt-best b {
+  font-family: var(--nk-mono);
+  color: var(--nk-accent);
+}
+
+.nk-tt-best span {
+  color: var(--nk-ink-dim);
+  font-size: 12px;
+}
+
+.nk-cup-panel {
+  width: fit-content;
+  min-width: 320px;
+  margin: 6px 0 18px;
+  padding: 14px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--nk-edge);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nk-cup-panel h3 {
+  font-family: var(--nk-display);
+  font-size: 13px;
+  letter-spacing: 0.2em;
+  margin: 0 0 10px;
+  color: var(--nk-ink-dim);
+}
+
+.nk-cup-panel h3 small {
+  margin-left: 10px;
+  color: var(--nk-accent-2);
+}
+
+.nk-cup-panel ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.nk-cup-panel li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.nk-cup-panel i {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  flex: none;
+}
+
+.nk-cup-rank {
+  font-family: var(--nk-display);
+  width: 1.4em;
+  color: var(--nk-ink-dim);
+}
+
+.nk-cup-panel li:first-child .nk-cup-rank {
+  color: var(--nk-accent);
+}
+
+.nk-cup-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nk-cup-panel b {
+  font-family: var(--nk-mono);
+}
+
+.nk-unlock-toast {
+  width: fit-content;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 176, 32, 0.55);
+  background: rgba(255, 176, 32, 0.12);
+  color: var(--nk-accent);
+  font-size: 13px;
+  animation: nk-toast-in 0.5s ease;
+}
+
+@keyframes nk-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.nk-new-record {
+  margin-left: 8px;
+  font-style: normal;
+  font-family: var(--nk-display);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--nk-accent);
+  animation: nk-record-pulse 1s ease infinite alternate;
+}
+
+@keyframes nk-record-pulse {
+  from {
+    opacity: 0.65;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.nk-cup-round {
+  margin-top: 6px;
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  color: var(--nk-ink-dim);
+}
+
+.nk-cup-round b {
+  color: var(--nk-ink);
+  font-size: 19px;
+}
+
+.nk-cup-round em {
+  margin-left: 10px;
+  font-style: normal;
+  color: var(--nk-accent);
+  font-family: var(--nk-mono);
+  font-size: 13px;
 }

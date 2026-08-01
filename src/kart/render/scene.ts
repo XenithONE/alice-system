@@ -13,13 +13,8 @@
  */
 
 import * as THREE from "three";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { BASE_TOP_SPEED } from "../sim/balance";
-import { forwardOf, type Track } from "../sim/track";
+import { forwardOf, querySurface, type Track } from "../sim/track";
 import type { RaceEvent, RaceState } from "../sim/types";
 import { createFxSystem, type FxSystem } from "./fx";
 import { createKartVisual, disposeSharedKartGeometry, type KartVisual } from "./kartModel";
@@ -28,6 +23,19 @@ import {
   DRIFT_TIER_COLORS,
   liveryOf,
 } from "./palette";
+import { cueForEvent, type CueContext } from "../audio/cues";
+import type { NitroAudio } from "../audio/engine";
+import { createClouds, type CloudLayer } from "./clouds";
+import { createGrandstands, type Grandstands } from "./grandstand";
+import { createPostStack, type PostStack } from "./post";
+import { createRain, type RainLayer } from "./rain";
+import { createSkidMarks, type SkidMarks } from "./skidmarks";
+import { resolveWeatherLook } from "./weather";
+import {
+  buildSetPieces,
+  type SetPieceBundle,
+  type SetPieceContext,
+} from "./setpieces";
 import type { KartQuality } from "./quality";
 import { buildTrackMesh, type TrackMeshBundle } from "./trackMesh";
 
@@ -35,6 +43,15 @@ export interface KartSceneOptions {
   readonly canvas: HTMLCanvasElement;
   readonly track: Track;
   readonly quality: KartQuality;
+  readonly weather?: import("../sim/balance").WeatherKind;
+  /** Optional: cues are dispatched at the same point as the visual FX. */
+  readonly audio?: NitroAudio;
+  /**
+   * Capture/benchmark escape hatch (`?shed=off`). The QA seam feeds the fps
+   * window SIMULATED dt, so fast-stepping reads as 7 fps on any hardware and
+   * sheds bloom out of every screenshot.
+   */
+  readonly disableShed?: boolean;
 }
 
 export interface KartSceneDebug {
@@ -48,6 +65,11 @@ export interface KartSceneDebug {
   readonly drawCalls: number;
   readonly triangles: number;
   readonly quality: string;
+  /** Features the degrade ladder has removed this session. */
+  readonly shed: readonly string[];
+  readonly fps: number;
+  /** World position of the TT ghost kart, when one is visible. */
+  readonly ghost: { x: number; y: number; z: number } | null;
 }
 
 export interface KartScene {
@@ -60,7 +82,11 @@ export interface KartScene {
     lookBack: boolean,
   ): void;
   resize(width: number, height: number): void;
+  /** Time-trial ghost pose; null hides it. */
+  setGhostPose(pose: { x: number; y: number; z: number; yaw: number; slip: number } | null): void;
   getDebugState(): KartSceneDebug;
+  /** Debug seam: meshes taller than 5 m whose bounds sit over the road. */
+  probeCorridor(maxHeight?: number): unknown[];
   dispose(): void;
 }
 
@@ -77,7 +103,15 @@ const SKY_FRAGMENT = /* glsl */ `
   uniform vec3 uHigh;
   uniform vec3 uSun;
   uniform vec3 uSunDir;
+  uniform float uStars;
   varying vec3 vWorld;
+
+  float hash21(vec2 p) {
+    p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+  }
+
   void main() {
     vec3 dir = normalize(vWorld);
     float h = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
@@ -85,77 +119,39 @@ const SKY_FRAGMENT = /* glsl */ `
     float sun = max(0.0, dot(dir, normalize(uSunDir)));
     sky += uSun * pow(sun, 340.0) * 2.4;
     sky += uSun * pow(sun, 6.0) * 0.16;
+    // Hash starfield: a point INSIDE each lit cell, not the lit cell itself.
+    // Lighting whole cells turned the night sky into drifting paper scraps —
+    // each cell is over a degree across, and bloom finished the job.
+    if (uStars > 0.001 && dir.y > 0.05) {
+      vec3 g = dir * 46.0;
+      vec3 cell3 = floor(g);
+      float star = hash21(cell3.xy + cell3.z * 61.7);
+      float threshold = 1.0 - uStars * 0.05;
+      if (star > threshold) {
+        vec3 offset = vec3(
+          hash21(cell3.xy + cell3.z * 13.1),
+          hash21(cell3.yz + cell3.x * 7.7),
+          hash21(cell3.zx + cell3.y * 3.3)
+        );
+        float d = length(fract(g) - offset);
+        float spark = smoothstep(0.32, 0.03, d);
+        float mag = (star - threshold) / max(1e-4, 1.0 - threshold);
+        sky += vec3(0.85, 0.92, 1.0) * spark * (0.3 + mag * 0.9)
+             * smoothstep(0.1, 0.35, dir.y);
+      }
+    }
     gl_FragColor = vec4(sky, 1.0);
   }
 `;
-
-/**
- * Final grade: a radial smear that grows with speed, a vignette, and a touch
- * of chromatic aberration at the edges. Speed is a uniform rather than a
- * post-hoc guess so it matches the kart the camera is actually following.
- */
-const GRADE_SHADER = {
-  uniforms: {
-    tDiffuse: { value: null as THREE.Texture | null },
-    uSpeed: { value: 0 },
-    uShake: { value: 0 },
-    uVignette: { value: 0.9 },
-  },
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse;
-    uniform float uSpeed;
-    uniform float uShake;
-    uniform float uVignette;
-    varying vec2 vUv;
-
-    void main() {
-      vec2 centre = vec2(0.5);
-      vec2 offset = vUv - centre;
-      float radius = length(offset);
-
-      vec3 colour = vec3(0.0);
-      float total = 0.0;
-      const int SAMPLES = 6;
-      for (int i = 0; i < SAMPLES; i++) {
-        float t = float(i) / float(SAMPLES - 1);
-        float scale = 1.0 - t * uSpeed * 0.055 * smoothstep(0.12, 0.75, radius);
-        float weight = 1.0 - t * 0.62;
-        colour += texture2D(tDiffuse, centre + offset * scale).rgb * weight;
-        total += weight;
-      }
-      colour /= total;
-
-      // Chromatic fringe, edges only.
-      float fringe = (0.0006 + uSpeed * 0.0011) * smoothstep(0.2, 0.85, radius);
-      // 25%, not 55%. At the higher weight the sun picked up a magenta/cyan
-      // ring — an aberration you notice is a filter, not a lens.
-      colour.r = texture2D(tDiffuse, centre + offset * (1.0 - fringe)).r * 0.25 + colour.r * 0.75;
-      colour.b = texture2D(tDiffuse, centre + offset * (1.0 + fringe)).b * 0.25 + colour.b * 0.75;
-
-      float vignette = smoothstep(1.05, uVignette * 0.42, radius);
-      colour *= mix(0.72, 1.0, vignette);
-      colour = mix(colour, colour * colour * (3.0 - 2.0 * colour), 0.18);
-      colour += uShake * 0.05;
-
-      gl_FragColor = vec4(colour, 1.0);
-    }
-  `,
-};
 
 function tempVector(): THREE.Vector3 {
   return new THREE.Vector3();
 }
 
 export function createKartScene(options: KartSceneOptions): KartScene {
-  const { canvas, track, quality } = options;
-  const theme = track.spec.theme;
+  const { canvas, track, quality, audio } = options;
+  const look = resolveWeatherLook(track.spec.theme, options.weather ?? "clear");
+  const theme = look.theme;
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -193,6 +189,7 @@ export function createKartScene(options: KartSceneOptions): KartScene {
       uHigh: { value: new THREE.Color(theme.skyHigh) },
       uSun: { value: new THREE.Color(theme.sunColor) },
       uSunDir: { value: sunDirection.clone() },
+      uStars: { value: 0 },
     },
     vertexShader: SKY_VERTEX,
     fragmentShader: SKY_FRAGMENT,
@@ -217,6 +214,9 @@ export function createKartScene(options: KartSceneOptions): KartScene {
     skyScene.remove(probe);
     pmrem.dispose();
   }
+  // Stars only AFTER the environment probe: hash noise in the reflection map
+  // would put white speckle on every chrome surface in the game.
+  (skyMaterial.uniforms.uStars as { value: number }).value = theme.stars;
 
   // ── Lights ────────────────────────────────────────────────────────────────
   const sun = new THREE.DirectionalLight(theme.sunColor, theme.sunIntensity);
@@ -295,9 +295,81 @@ export function createKartScene(options: KartSceneOptions): KartScene {
     },
   };
 
+  const skidMarks: SkidMarks = createSkidMarks(track, quality.skidQuads);
+  scene.add(skidMarks.mesh);
+
+  let clouds: CloudLayer | null = null;
+  if (quality.cloudCount > 0) {
+    clouds = createClouds(
+      track,
+      quality.cloudCount,
+      theme.night ? 0x2a2440 : 0xffffff,
+    );
+    scene.add(clouds.object);
+  }
+
+  const grandstands: Grandstands = createGrandstands(
+    track,
+    quality.grandstands,
+    quality.shadows,
+  );
+  scene.add(grandstands.group);
+
+  const setPieceContext: SetPieceContext = {
+    detail: quality.setPieceDetail,
+    shadows: quality.shadows,
+    texture(size, draw) {
+      const element = document.createElement("canvas");
+      element.width = size;
+      element.height = size;
+      draw(element.getContext("2d")!, size);
+      const texture = new THREE.CanvasTexture(element);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    },
+  };
+  const setPieces: SetPieceBundle = buildSetPieces(track, setPieceContext);
+  scene.add(setPieces.group);
+
+  if (look.rain) {
+    // Wet world: glossier, more reflective, on every lit surface.
+    trackMesh.group.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      if (!material.isMeshStandardMaterial) return;
+      material.roughness = Math.min(material.roughness, look.roadRoughness + 0.15);
+      material.envMapIntensity = look.roadEnvIntensity;
+    });
+  }
+
+  let rainLayer: RainLayer | null = null;
+  if (look.rain && quality.rainParticles > 0) {
+    rainLayer = createRain(quality.rainParticles);
+    scene.add(rainLayer.object);
+  }
+
   const karts = new Map<number, KartVisual>();
   const kartRoot = new THREE.Group();
   scene.add(kartRoot);
+
+  // The ghost: one translucent kart, created lazily, never in the standings.
+  let ghostVisual: KartVisual | null = null;
+  function ensureGhost(): KartVisual {
+    if (ghostVisual) return ghostVisual;
+    ghostVisual = createKartVisual(15, false);
+    ghostVisual.root.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const material = mesh.material as THREE.Material & { opacity: number };
+      material.transparent = true;
+      material.opacity = 0.32;
+      material.depthWrite = false;
+    });
+    ghostVisual.root.visible = false;
+    scene.add(ghostVisual.root);
+    return ghostVisual;
+  }
 
   // Projectiles and dropped items share two geometries and three materials.
   const shellGeometry = new THREE.IcosahedronGeometry(0.85, 1);
@@ -330,31 +402,18 @@ export function createKartScene(options: KartSceneOptions): KartScene {
   const hazardPool = new Map<number, THREE.Mesh>();
 
   // ── Post ──────────────────────────────────────────────────────────────────
-  let composer: EffectComposer | null = null;
-  let bloomPass: UnrealBloomPass | null = null;
-  let gradePass: ShaderPass | null = null;
-  if (quality.postProcessing) {
-    composer = new EffectComposer(renderer);
-    composer.addPass(new RenderPass(scene, camera));
-    if (quality.bloom) {
-      /*
-       * Threshold above 1. Bloom runs before tone mapping, so it sees linear
-       * HDR: a plain white curb under a 3.4-intensity sun sits near 3.0, and a
-       * 0.82 threshold made every painted line, rumble strip and item box glow
-       * like a filament. Only things that are actually emissive should bloom.
-       */
-      bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(1, 1),
-        theme.bloom * 0.8,
-        0.55,
-        1.15,
-      );
-      composer.addPass(bloomPass);
-    }
-    gradePass = new ShaderPass(GRADE_SHADER);
-    composer.addPass(gradePass);
-    composer.addPass(new OutputPass());
-  }
+  const post: PostStack = createPostStack(
+    renderer,
+    scene,
+    camera,
+    quality,
+    theme.bloom * 0.8,
+    {
+      onShedShadows: () => {
+        sun.castShadow = false;
+      },
+    },
+  );
 
   // ── Camera state ──────────────────────────────────────────────────────────
   const cameraTarget = tempVector();
@@ -370,11 +429,18 @@ export function createKartScene(options: KartSceneOptions): KartScene {
   let height = 1;
   let lastCalls = 0;
   let lastTriangles = 0;
+  let fpsAccum = 0;
+  let fpsFrames = 0;
+  let lastFps = 0;
+  // Repeating alarm/jingle timers (scene-side; the sim has no such events).
+  let starJingleAt = 0;
+  let wrongWayAt = 0;
+  let rouletteAt = 0;
 
   function visualFor(seat: number, livery: number): KartVisual {
     let visual = karts.get(seat);
     if (!visual) {
-      visual = createKartVisual(livery, quality.shadows);
+      visual = createKartVisual(livery, quality.shadows, seat + 1, theme.night);
       karts.set(seat, visual);
       kartRoot.add(visual.root);
     }
@@ -382,7 +448,17 @@ export function createKartScene(options: KartSceneOptions): KartScene {
   }
 
   function handleEvents(events: readonly RaceEvent[], view: RaceState): void {
+    const focus = view.racers.find((entry) => entry.id === focusSeat);
+    const cueContext: CueContext = {
+      focusSeat,
+      laps: view.laps,
+      focusX: focus?.x ?? 0,
+      focusZ: focus?.z ?? 0,
+    };
     for (const event of events) {
+      // Same dispatch point, same event stream as the visuals: an event the
+      // budget drops is dropped from both senses.
+      audio?.cue(cueForEvent(event, cueContext));
       switch (event.k) {
         case "boost": {
           const racer = view.racers.find((entry) => entry.id === event.racer);
@@ -458,6 +534,57 @@ export function createKartScene(options: KartSceneOptions): KartScene {
       visual.setSteer(racer.driftDir !== 0 ? racer.driftDir * 0.8 : 0);
       visual.spinWheels(racer.distance);
 
+      // Trick: a full barrel spin while airborne, resolved by landing.
+      if (racer.tricking) {
+        visual.body.rotation.y = racer.slip + elapsed * 11;
+      }
+      // Slipstream feedback: faint wind streaks while charging.
+      if (racer.drafting && frames % 3 === 0) {
+        const [wfx, wfz] = forwardOf(racer.yaw);
+        fx.spawn(
+          "boost",
+          racer.x - wfx * 1.2,
+          racer.y + 1.1,
+          racer.z - wfz * 1.2,
+          0xcfe8ff,
+          1,
+          1.2,
+          0.5,
+          1.2,
+        );
+      }
+      // Wet wheels throw spray.
+      if (look.rain && !racer.airborne && Math.abs(racer.speed) > 16 && frames % 2 === 0) {
+        const [sfx, sfz] = forwardOf(racer.yaw);
+        fx.spawn(
+          "dust",
+          racer.x - sfx * 1.5,
+          racer.y + 0.3,
+          racer.z - sfz * 1.5,
+          0x9db4c8,
+          1,
+          1.6,
+          0.5,
+          1.2,
+        );
+      }
+
+      // The driver looks into the corner; the chassis breathes with speed and
+      // settles on landing. Pure presentation -- consumes RacerState only.
+      const headTarget = Math.max(-0.6, Math.min(0.6, -racer.slip * 0.7));
+      visual.helmet.rotation.y +=
+        (headTarget - visual.helmet.rotation.y) * Math.min(1, 9 * dt);
+      const rideTarget = racer.airborne ? 0.07 : 0;
+      const vibration = racer.airborne
+        ? 0
+        : Math.sin(elapsed * 46 + racer.id * 1.7) *
+          0.008 *
+          Math.min(1, Math.abs(racer.speed) / 30);
+      visual.body.position.y +=
+        (rideTarget + vibration - visual.body.position.y) * Math.min(1, 11 * dt);
+
+      skidMarks.note(racer, dt, elapsed);
+
       const boosting = racer.boostTimer > 0 || racer.starTimer > 0;
       const flameColor = racer.starTimer > 0
         ? BOOST_FLAME_COLORS.star!
@@ -468,6 +595,36 @@ export function createKartScene(options: KartSceneOptions): KartScene {
         material.opacity = boosting ? 0.55 + Math.sin(elapsed * 40) * 0.25 : 0;
         material.color.setHex(flameColor);
         exhaust.scale.setScalar(boosting ? 1 + Math.sin(elapsed * 30) * 0.2 : 1);
+      }
+
+      if (racer.id === focusSeat && audio) {
+        const rpm =
+          Math.min(1, Math.abs(racer.speed) / (BASE_TOP_SPEED * 1.42)) *
+          (racer.stalled ? 0.25 : 1);
+        const boosting01 =
+          racer.boostTimer > 0 || racer.starTimer > 0 ? 1 : 0;
+        audio.setEngine(racer.finished ? rpm * 0.5 : rpm, boosting01);
+        const squeal =
+          racer.driftDir !== 0 && Math.abs(racer.speed) > 8
+            ? Math.min(1, 0.3 + racer.driftTier * 0.18 + Math.abs(racer.slip) * 0.6)
+            : racer.spinTimer > 0
+              ? 0.5
+              : 0;
+        audio.setSqueal(squeal);
+
+        // Scene-side repeaters: states, not events, so the sim stays silent.
+        if (racer.starTimer > 0 && elapsed >= starJingleAt) {
+          starJingleAt = elapsed + 0.45;
+          audio.cue({ kind: "voice", name: "star-jingle" });
+        }
+        if (racer.wrongWay && elapsed >= wrongWayAt) {
+          wrongWayAt = elapsed + 0.85;
+          audio.cue({ kind: "voice", name: "wrong-way" });
+        }
+        if (racer.rouletteTimer > 0 && elapsed >= rouletteAt) {
+          rouletteAt = elapsed + 0.09;
+          audio.cue({ kind: "voice", name: "roulette-tick" });
+        }
       }
 
       // Invulnerability blink, so a player knows why a shell bounced off.
@@ -613,10 +770,8 @@ export function createKartScene(options: KartSceneOptions): KartScene {
       .add(sun.target.position);
     sky.position.set(racer.x, racer.y, racer.z);
 
-    if (gradePass) {
-      gradePass.uniforms.uSpeed!.value = speedFraction * (boosting ? 1.7 : 1);
-      gradePass.uniforms.uShake!.value = shake;
-    }
+    post.setSpeed(speedFraction * (boosting ? 1.7 : 1));
+    post.setShake(shake);
   }
 
   function resize(nextWidth: number, nextHeight: number): void {
@@ -625,8 +780,7 @@ export function createKartScene(options: KartSceneOptions): KartScene {
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    composer?.setSize(width, height);
-    bloomPass?.setSize(width, height);
+    post.setSize(width, height);
   }
 
   resize(canvas.clientWidth || 960, canvas.clientHeight || 540);
@@ -634,6 +788,7 @@ export function createKartScene(options: KartSceneOptions): KartScene {
   return {
     advance(dt, view, events, seat, lookBack) {
       const step = Math.max(0, Math.min(0.1, dt));
+      audio?.beginFrame();
       elapsed += step;
       frames += 1;
       focusSeat = seat;
@@ -644,21 +799,88 @@ export function createKartScene(options: KartSceneOptions): KartScene {
         updateKarts(view, step);
         updateEntities(view);
         updateCamera(view, step, lookBack);
-        trackMesh.update(elapsed, view.boxCooldowns);
+        trackMesh.update(elapsed, view.boxCooldowns, view.countdown);
       } else {
-        trackMesh.update(elapsed, []);
+        trackMesh.update(elapsed, [], -1);
       }
+      skidMarks.update(elapsed);
+      clouds?.update(elapsed);
+      grandstands.update(elapsed);
+      setPieces.update(elapsed, camera.position.x, camera.position.z);
+      rainLayer?.update(step, camera.position.x, camera.position.y, camera.position.z);
+      post.setWet(look.rain ? 1 : 0);
       fx.update(step);
 
       renderer.info.reset();
-      if (composer) composer.render(step);
+      if (post.composer) post.composer.render(step);
       else renderer.render(scene, camera);
       // Sampled after the frame; `autoReset` is off so this is the scene's
       // own cost, not the last post pass's.
       lastCalls = renderer.info.render.calls;
       lastTriangles = renderer.info.render.triangles;
+
+      /*
+       * The degrade ladder. 90 frames is long enough that a GC pause or a
+       * tab-switch hiccup cannot trigger it; shedding is one-way, so a scene
+       * that dips once does not oscillate between looks (glScene precedent).
+       */
+      if (!options.disableShed && quality.shedFloorFps > 0 && dt > 0 && dt < 0.5) {
+        fpsAccum += dt;
+        fpsFrames += 1;
+        if (fpsFrames >= 90) {
+          lastFps = fpsFrames / fpsAccum;
+          if (lastFps < quality.shedFloorFps) post.shedNext();
+          fpsAccum = 0;
+          fpsFrames = 0;
+        }
+      }
     },
     resize,
+    setGhostPose(pose) {
+      if (!pose) {
+        if (ghostVisual) ghostVisual.root.visible = false;
+        return;
+      }
+      const ghost = ensureGhost();
+      ghost.root.visible = true;
+      ghost.root.position.set(pose.x, pose.y, pose.z);
+      ghost.root.rotation.y = pose.yaw;
+      ghost.body.rotation.y = pose.slip;
+      ghost.spinWheels(pose.x + pose.z);
+    },
+    probeCorridor(maxHeight = 40) {
+      const offenders: {
+        type: string;
+        name: string;
+        x: number;
+        y: number;
+        z: number;
+        height: number;
+      }[] = [];
+      scene.updateMatrixWorld(true);
+      const box = new THREE.Box3();
+      scene.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.visible) return;
+        box.setFromObject(mesh);
+        if (!Number.isFinite(box.min.x)) return;
+        const centerX = (box.min.x + box.max.x) / 2;
+        const centerZ = (box.min.z + box.max.z) / 2;
+        const height = box.max.y - box.min.y;
+        if (height < 5 || height > maxHeight * 4) return;
+        const query = querySurface(track, centerX, centerZ, -1, 4);
+        if (!query.onRoad) return;
+        offenders.push({
+          type: mesh.geometry.type,
+          name: mesh.name || mesh.parent?.name || "(anon)",
+          x: Math.round(centerX),
+          y: Math.round(box.min.y),
+          z: Math.round(centerZ),
+          height: Math.round(height),
+        });
+      });
+      return offenders;
+    },
     getDebugState() {
       const forward = new THREE.Vector3();
       camera.getWorldDirection(forward);
@@ -676,9 +898,21 @@ export function createKartScene(options: KartSceneOptions): KartScene {
         drawCalls: lastCalls,
         triangles: lastTriangles,
         quality: quality.label,
+        shed: post.shedStages.slice(),
+        fps: Math.round(lastFps),
+        ghost:
+          ghostVisual && ghostVisual.root.visible
+            ? {
+                x: ghostVisual.root.position.x,
+                y: ghostVisual.root.position.y,
+                z: ghostVisual.root.position.z,
+              }
+            : null,
       };
     },
     dispose() {
+      audio?.reset();
+      ghostVisual?.dispose();
       for (const visual of karts.values()) visual.dispose();
       karts.clear();
       disposeSharedKartGeometry();
@@ -691,15 +925,18 @@ export function createKartScene(options: KartSceneOptions): KartScene {
       bananaGeometry.dispose();
       bananaMaterial.dispose();
       fx.dispose();
+      rainLayer?.dispose();
+      setPieces.dispose();
+      skidMarks.dispose();
+      clouds?.dispose();
+      grandstands.dispose();
       trackMesh.dispose();
       hazeGeometry.dispose();
       hazeMaterial.dispose();
       skyGeometry.dispose();
       skyMaterial.dispose();
       environment?.dispose();
-      bloomPass?.dispose();
-      gradePass?.dispose();
-      composer?.dispose();
+      post.dispose();
       renderer.dispose();
       scene.clear();
     },

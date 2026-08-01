@@ -266,6 +266,129 @@ gate.expectFail(
   );
 }
 
+// [H10] the new mechanics actually fire in real racing ──────────────────────
+{
+  const sim = createKartSim({
+    trackId: TRACKS[2]!.id, // sky-garden: three ramps
+    laps: 2,
+    seed: 515151,
+    racers: field(8, 3),
+  });
+  let tricks = 0;
+  let trickBoosts = 0;
+  let draftBoosts = 0;
+  for (let i = 0; i < 60 * 120 && !sim.result(); i += 1) {
+    sim.step();
+    for (const event of sim.drainEvents()) {
+      if (event.k === "trick") tricks += 1;
+      if (event.k === "boost" && event.source === "trick") trickBoosts += 1;
+      if (event.k === "boost" && event.source === "draft") draftBoosts += 1;
+    }
+  }
+  gate.check(
+    "[H10] トリック（発動→着地ブースト）とスリップストリームが実戦で発火する",
+    tricks > 3 && trickBoosts > 2 && draftBoosts > 1,
+    `trick=${tricks} trick-boost=${trickBoosts} draft-boost=${draftBoosts}`,
+  );
+}
+
+// [H11] speed classes are monotonic, and the dial is what the gate measures ─
+{
+  function bestLapFor(classTuning: { speedScale: number; turnScale: number; gripScale: number } | undefined, speedClass: number): number {
+    const sim = createKartSim({
+      trackId: TRACKS[0]!.id,
+      laps: 2,
+      seed: 909090,
+      racers: field(4, 3),
+      items: false,
+      speedClass,
+      classTuning,
+    });
+    for (let i = 0; i < 60 * 220 && !sim.result(); i += 1) sim.step();
+    const laps = sim
+      .getState()
+      .racers.map((racer) => racer.bestLap)
+      .filter((lap): lap is number => lap !== null);
+    return laps.length ? Math.min(...laps) : Number.NaN;
+  }
+  const lap100 = bestLapFor(undefined, 0);
+  const lap150 = bestLapFor(undefined, 1);
+  const lap200 = bestLapFor(undefined, 2);
+  gate.check(
+    "[H11] クラスが速いほどラップが速い（150→200 ≥2.5%・100→150 ≥8%）",
+    lap200 < lap150 * 0.975 && lap150 < lap100 * 0.92,
+    `100cc=${lap100.toFixed(2)}s 150cc=${lap150.toFixed(2)}s 200cc=${lap200.toFixed(2)}s`,
+  );
+  gate.expectFail(
+    "[H11-neg] クラス係数を全て1にすると差が消える（計測がダイヤルを見ている証明）",
+    () => {
+      const ones = { speedScale: 1, turnScale: 1, gripScale: 1 };
+      const a = bestLapFor(ones, 0);
+      const b = bestLapFor(ones, 2);
+      return Math.abs(a - b) > a * 0.02;
+    },
+    "全1 tuning で 100cc vs 200cc",
+  );
+}
+
+// [H12] 200cc: the full grid still finishes on every circuit ────────────────
+for (const spec of TRACKS) {
+  const sim = createKartSim({
+    trackId: spec.id,
+    laps: 2,
+    seed: 616161,
+    racers: field(8, 2),
+    speedClass: 2,
+  });
+  for (let i = 0; i < 60 * 260 && !sim.result(); i += 1) sim.step();
+  const finished = sim.getState().racers.filter((racer) => racer.finished).length;
+  gate.check(
+    `[H12:${spec.id}] 200cc で 8/8 完走（クラス補償が効いている）`,
+    finished === 8,
+    `完走 ${finished}/8`,
+  );
+}
+
+// [H13] weather: same seed, rain slower than clear; both self-deterministic ─
+{
+  function raceTime(weather: "clear" | "rain"): number {
+    const sim = createKartSim({
+      trackId: TRACKS[0]!.id,
+      laps: 2,
+      seed: 727272,
+      racers: field(4, 3),
+      items: false,
+      weather,
+    });
+    for (let i = 0; i < 60 * 260 && !sim.result(); i += 1) sim.step();
+    return sim.result()?.durationSec ?? Number.NaN;
+  }
+  const clear = raceTime("clear");
+  const rain = raceTime("rain");
+  gate.check(
+    "[H13] 雨は晴れより遅い（グリップ低下が実測に出る）",
+    rain > clear * 1.01,
+    `clear=${clear.toFixed(1)}s rain=${rain.toFixed(1)}s`,
+  );
+
+  const twinA = createKartSim({ trackId: TRACKS[0]!.id, laps: 1, seed: 828282, racers: field(4, 2), weather: "rain" });
+  const twinB = createKartSim({ trackId: TRACKS[0]!.id, laps: 1, seed: 828282, racers: field(4, 2), weather: "rain" });
+  let diverged = false;
+  for (let i = 0; i < 1800; i += 1) {
+    twinA.step();
+    twinB.step();
+    if (i % 60 === 0 && JSON.stringify(twinA.getState()) !== JSON.stringify(twinB.getState())) {
+      diverged = true;
+      break;
+    }
+  }
+  gate.check(
+    "[H13b] 雨でも twin-sim が完全一致（天候は決定論の内側）",
+    !diverged,
+    "1800 tick 一致",
+  );
+}
+
 // [H8] the control: with nobody driving, nothing finishes ───────────────────
 gate.expectFail(
   "[H8] 操作しない人間8台は完走しない（H1が『走行』を測っている証明）",

@@ -16,6 +16,7 @@ import {
   arcDelta,
   buildTrack,
   gridSlot,
+  mirrorSpec,
   pointAt,
   querySurface,
   type Track,
@@ -24,7 +25,15 @@ import {
 import { TRACKS } from "./tracks";
 
 const gate = createGate();
-const built = TRACKS.map((spec) => buildTrack(spec));
+/*
+ * Every structural check runs over the mirrored circuits too — mirror mode
+ * ships as a real racing surface, not a novelty, so it earns the same gates.
+ */
+const SPECS: readonly TrackSpec[] = [
+  ...TRACKS,
+  ...TRACKS.map((spec) => ({ ...mirrorSpec(spec), id: `${spec.id}@m` })),
+];
+const built = SPECS.map((spec) => buildTrack(spec));
 
 // [T1] shape ─────────────────────────────────────────────────────────────────
 for (const track of built) {
@@ -267,6 +276,66 @@ for (const track of built) {
     `[T7:${track.spec.id}] グリッド8台が路面上で重ならない`,
     offRoad.length === 0 && minimumGap > KART_RADIUS * 2,
     `最小間隔 ${minimumGap.toFixed(2)}m / 路外 ${offRoad.length}台`,
+  );
+}
+
+/* ── [T9] mirroring is an involution ───────────────────────────────────────── */
+{
+  const spec = TRACKS[0]!;
+  const twice = mirrorSpec(mirrorSpec(spec));
+  gate.check(
+    "[T9] 鏡像の鏡像は元のコースに戻る（対合）",
+    JSON.stringify(twice) === JSON.stringify({ ...spec, ramps: spec.ramps ?? [] }) ||
+      JSON.stringify({ ...twice, ramps: twice.ramps ?? [] }) ===
+        JSON.stringify({ ...spec, ramps: spec.ramps ?? [] }),
+    "mirror∘mirror = id",
+  );
+}
+
+/* ── [T10] mirrored furniture sits at the x-negated world position ─────────── */
+{
+  const original = buildTrack(TRACKS[0]!);
+  const mirrored = buildTrack(mirrorSpec(TRACKS[0]!));
+  let worst = 0;
+  for (let i = 0; i < original.itemBoxes.length; i += 1) {
+    const a = original.itemBoxes[i]!;
+    const b = mirrored.itemBoxes[i]!;
+    worst = Math.max(worst, Math.hypot(-a.x - b.x, a.z - b.z));
+  }
+  for (let i = 0; i < original.boostPads.length; i += 1) {
+    const a = original.boostPads[i]!;
+    const b = mirrored.boostPads[i]!;
+    worst = Math.max(worst, Math.hypot(-a.x - b.x, a.z - b.z));
+  }
+  for (let i = 0; i < original.ramps.length; i += 1) {
+    const a = original.ramps[i]!;
+    const b = mirrored.ramps[i]!;
+    worst = Math.max(worst, Math.hypot(-a.x - b.x, a.z - b.z));
+  }
+  gate.check(
+    "[T10] 鏡像コースの設置物が世界座標で正確に x 反転している",
+    worst < 0.05,
+    `最大ずれ ${worst.toFixed(4)}m（boxes/pads/ramps）`,
+  );
+
+  gate.expectFail(
+    "[T10-neg] 横オフセットを反転し忘れた鏡像は T10 に落ちる",
+    () => {
+      const broken: TrackSpec = {
+        ...TRACKS[0]!,
+        points: TRACKS[0]!.points.map((point) => ({ ...point, x: -point.x })),
+        // offsets NOT negated — the exact bug this gate exists for.
+      };
+      const badMirror = buildTrack(broken);
+      let error = 0;
+      for (let i = 0; i < original.itemBoxes.length; i += 1) {
+        const a = original.itemBoxes[i]!;
+        const b = badMirror.itemBoxes[i]!;
+        error = Math.max(error, Math.hypot(-a.x - b.x, a.z - b.z));
+      }
+      return error < 0.05;
+    },
+    "points だけ反転した偽鏡像",
   );
 }
 

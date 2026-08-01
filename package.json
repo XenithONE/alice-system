@@ -27,7 +27,10 @@
     "kart:sim-gates": "npx tsx src/kart/sim/headlessSelftest.ts",
     "kart:net-gates": "npx tsx src/kart/net/wireSelftest.ts",
     "kart:render-gates": "npx tsx src/kart/render/renderSelftest.ts",
-    "kart:gates": "npm run kart:track-gates && npm run kart:render-gates && npm run kart:sim-gates && npm run kart:net-gates"
+    "kart:gates": "npm run kart:track-gates && npm run kart:render-gates && npm run kart:budget-gates && npm run kart:audio-gates && npm run kart:modes-gates && npm run kart:sim-gates && npm run kart:net-gates",
+    "kart:budget-gates": "npx tsx src/kart/render/budgetSelftest.ts",
+    "kart:audio-gates": "npx tsx src/kart/audio/audioSelftest.ts",
+    "kart:modes-gates": "npx tsx src/kart/modes/modesSelftest.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

@@ -26,10 +26,24 @@ import type {
   RacerState,
 } from "../sim/types";
 
-export const NITRO_PROTOCOL_VERSION = 1;
+/*
+ * 2 since v2 (the NITRO CROWN update): RoomSettings gained
+ * speedClass/mirror/weather/gp; StartPayload gained round/rounds; hello
+ * gained livery; result gained the optional cup block; racer flag bits grew
+ * past 63 (trick = 64, slipstream = 128); the "trick" event kind and the
+ * "draft"/"trick" boost sources were added. A v1 guest would build an
+ * un-mirrored track with the wrong grip — a physically different circuit
+ * from the one the host is simulating — and would reject every snapshot the
+ * moment a trick flag or draft boost appears (its validator caps f at 63 and
+ * whitelists boost sources). Refusing the join at hello is the honest
+ * version of that failure.
+ */
+export const NITRO_PROTOCOL_VERSION = 2;
 export const NITRO_ROOM_PREFIX = "nk-";
 
 export type SessionEndReason = "host-left" | "host-ended";
+
+export const WEATHER_CODES = ["clear", "rain"] as const;
 
 export interface RoomSettings {
   readonly trackId: string;
@@ -41,6 +55,13 @@ export interface RoomSettings {
   readonly cpuLevel: number;
   readonly items: boolean;
   readonly seed: number;
+  /** Index into SPEED_CLASSES: 0=100cc, 1=150cc, 2=200cc. */
+  readonly speedClass: number;
+  readonly mirror: boolean;
+  /** Index into WEATHER_CODES. */
+  readonly weather: number;
+  /** Grand-prix room: results carry cup points, host restarts rounds. */
+  readonly gp: boolean;
 }
 
 export interface LobbySeat {
@@ -62,6 +83,20 @@ export interface StartPayload {
   readonly names: readonly string[];
   readonly cpu: readonly boolean[];
   readonly liveries: readonly number[];
+  /** 0-based round index and total rounds (1/1 for a single race). */
+  readonly round: number;
+  readonly rounds: number;
+}
+
+/** Cup standings attached to a result while a grand prix is running. */
+export interface CupBlock {
+  /** 1-based round just scored. */
+  readonly r: number;
+  readonly n: number;
+  /** Cumulative points, seat-indexed (same order as the roster). */
+  readonly p: readonly number[];
+  /** True on the final round's result. */
+  readonly f: boolean;
 }
 
 // ── Snapshot ─────────────────────────────────────────────────────────────────
@@ -72,6 +107,8 @@ export const BOOST_SOURCE_CODES: readonly BoostSource[] = [
   "pad",
   "rocket",
   "star",
+  "draft",
+  "trick",
 ];
 
 export const ITEM_CODES: readonly ItemKind[] = [
@@ -99,6 +136,10 @@ export const FLAG_AIRBORNE = 8;
 export const FLAG_GRACE = 16;
 /** Engine burnt out on the line — smoke, not stars, and no body spin. */
 export const FLAG_STALL = 32;
+/** v2: mid-air trick spin. */
+export const FLAG_TRICK = 64;
+/** v2: sitting in a slipstream. */
+export const FLAG_SLIPSTREAM = 128;
 
 export interface RacerFrame {
   /** seat */ readonly i: number;
@@ -172,7 +213,13 @@ export interface InputFrame {
 }
 
 export type ClientMessage =
-  | { readonly t: "hello"; readonly v: number; readonly name: string }
+  | {
+      readonly t: "hello";
+      readonly v: number;
+      readonly name: string;
+      /** v2: preferred livery 0..15; host resolves clashes by seat order. */
+      readonly livery?: number;
+    }
   | { readonly t: "ready"; readonly ready: boolean }
   | { readonly t: "input"; readonly input: InputFrame };
 
@@ -186,7 +233,12 @@ export type HostMessage =
   | { readonly t: "lobby"; readonly lobby: NitroLobby }
   | ({ readonly t: "start" } & StartPayload)
   | { readonly t: "snapshot"; readonly snapshot: NitroSnapshot }
-  | { readonly t: "result"; readonly result: RaceResult }
+  | {
+      readonly t: "result";
+      readonly result: RaceResult;
+      /** v2: present while a grand prix is running. */
+      readonly cup?: CupBlock;
+    }
   | { readonly t: "reject"; readonly reason: string }
   | { readonly t: "ended"; readonly reason: SessionEndReason };
 
@@ -236,6 +288,8 @@ export function validateSettings(value: unknown): RoomSettings | null {
   const playerCount = integer(value.playerCount, 1, 4);
   const cpuLevel = integer(value.cpuLevel, 1, 3);
   const seed = integer(value.seed, 0, 0xffffffff);
+  const speedClass = integer(value.speedClass, 0, 2);
+  const weather = integer(value.weather, 0, WEATHER_CODES.length - 1);
   if (
     typeof value.trackId !== "string" ||
     value.trackId.length === 0 ||
@@ -245,7 +299,11 @@ export function validateSettings(value: unknown): RoomSettings | null {
     playerCount === null ||
     cpuLevel === null ||
     seed === null ||
+    speedClass === null ||
+    weather === null ||
     typeof value.items !== "boolean" ||
+    typeof value.mirror !== "boolean" ||
+    typeof value.gp !== "boolean" ||
     playerCount > racerCount
   ) {
     return null;
@@ -258,6 +316,10 @@ export function validateSettings(value: unknown): RoomSettings | null {
     cpuLevel,
     items: value.items,
     seed,
+    speedClass,
+    mirror: value.mirror,
+    weather,
+    gp: value.gp,
   };
 }
 
@@ -272,6 +334,10 @@ export function validateInput(value: unknown): InputFrame | null {
     return null;
   }
   return { q, t, b, s, f };
+}
+
+export function validateEventForTest(value: unknown): RaceEvent | null {
+  return validateEvent(value);
 }
 
 function validateEvent(value: unknown): RaceEvent | null {
@@ -347,6 +413,10 @@ function validateEvent(value: unknown): RaceEvent | null {
         ? null
         : { k: "drift", racer: seat, tier };
     }
+    case "trick": {
+      const seat = racer();
+      return seat === null ? null : { k: "trick", racer: seat };
+    }
     case "wall": {
       const seat = racer();
       const speed = num(value.speed, 0, 200);
@@ -411,7 +481,7 @@ function validateRacerFrame(value: unknown): RacerFrame | null {
   const g = num(value.g, -WORLD_LIMIT * 4, WORLD_LIMIT * 4);
   const k = integer(value.k, 1, 9);
   const e = integer(value.e, 1, 8);
-  const f = integer(value.f, 0, 63);
+  const f = integer(value.f, 0, 255);
   const n = num(value.n, -1, 3600);
   const s = num(value.s, -1, 3600);
   const j = num(value.j, -1, 3600);
@@ -596,8 +666,13 @@ export function validateLobby(value: unknown): NitroLobby | null {
 export function validateStart(value: unknown): StartPayload | null {
   if (!isRecord(value)) return null;
   const settings = validateSettings(value.settings);
+  const rounds = integer(value.rounds, 1, 16);
+  const round = integer(value.round, 0, 15);
   if (
     !settings ||
+    rounds === null ||
+    round === null ||
+    round >= rounds ||
     !Array.isArray(value.names) ||
     !Array.isArray(value.cpu) ||
     !Array.isArray(value.liveries) ||
@@ -623,7 +698,34 @@ export function validateStart(value: unknown): StartPayload | null {
     if (livery === null) return null;
     liveries.push(livery);
   }
-  return { settings, names, cpu, liveries };
+  return { settings, names, cpu, liveries, round, rounds };
+}
+
+/** Validates the optional cup block on a result. */
+export function validateCup(
+  value: unknown,
+  standingsLength: number,
+): CupBlock | null {
+  if (!isRecord(value)) return null;
+  const r = integer(value.r, 1, 16);
+  const n = integer(value.n, 1, 16);
+  if (
+    r === null ||
+    n === null ||
+    r > n ||
+    typeof value.f !== "boolean" ||
+    !Array.isArray(value.p) ||
+    value.p.length !== standingsLength
+  ) {
+    return null;
+  }
+  const points: number[] = [];
+  for (const entry of value.p) {
+    const point = integer(entry, 0, 999);
+    if (point === null) return null;
+    points.push(point);
+  }
+  return { r, n, p: points, f: value.f };
 }
 
 /** Static roster the guest merges into every snapshot to rebuild a RaceState. */
@@ -655,6 +757,8 @@ export function raceStateFromSnapshot(
     driftDir: frame.d,
     driftCharge: frame.h,
     driftTier: frame.t,
+    tricking: (frame.f & FLAG_TRICK) !== 0,
+    drafting: (frame.f & FLAG_SLIPSTREAM) !== 0,
     boostTimer: frame.b,
     boostSource: frame.u < 0 ? null : (BOOST_SOURCE_CODES[frame.u] ?? null),
     spinTimer: frame.p,

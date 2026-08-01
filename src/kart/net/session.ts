@@ -9,8 +9,16 @@
  */
 
 import { INPUT_HZ, SNAPSHOT_HZ } from "../sim/balance";
+import {
+  applyCupPoints,
+  CUP_ROUNDS,
+  cupStandings,
+  cupTrackOrder,
+  raceSeedForRound,
+  type CupStanding,
+} from "../modes/gp";
 import { createKartSim } from "../sim/sim";
-import { buildTrack, type Track } from "../sim/track";
+import { buildTrack, maybeMirror, type Track } from "../sim/track";
 import { DEFAULT_TRACK_ID, trackSpecById } from "../sim/tracks";
 import {
   MAX_RACERS,
@@ -26,13 +34,16 @@ import { SnapshotInterpolator } from "./interpolation";
 import {
   NITRO_PROTOCOL_VERSION,
   raceStateFromSnapshot,
+  validateCup,
   validateInput,
   validateLobby,
   validateResult,
   validateSettings,
   validateSnapshot,
   validateStart,
+  WEATHER_CODES,
   type ClientMessage,
+  type CupBlock,
   type HostMessage,
   type LobbySeat,
   type NitroLobby,
@@ -54,6 +65,10 @@ export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   cpuLevel: 2,
   items: true,
   seed: 1,
+  speedClass: 1,
+  mirror: false,
+  weather: 0,
+  gp: false,
 };
 
 const CPU_NAMES = [
@@ -75,6 +90,14 @@ export interface SessionCallbacks {
   onError?(message: string): void;
 }
 
+export interface CupView {
+  readonly round: number;
+  readonly rounds: number;
+  readonly points: readonly number[];
+  readonly standings: readonly CupStanding[];
+  readonly finished: boolean;
+}
+
 export interface NitroSession {
   readonly kind: "solo" | "host" | "guest";
   readonly seat: number;
@@ -83,6 +106,8 @@ export interface NitroSession {
   readonly settings: RoomSettings;
   /** True once the race itself is running (past the lobby). */
   readonly racing: boolean;
+  /** Grand-prix state, or null outside a cup. */
+  cup(): CupView | null;
   setReady(ready: boolean): void;
   /** Host only. Returns false when the room is not in a startable state. */
   beginRace(): boolean;
@@ -110,6 +135,28 @@ export function normalizeSettings(
     cpuLevel: clampInt(source.cpuLevel, 1, 3, 2),
     items: source.items !== false,
     seed: Number.isFinite(source.seed) ? source.seed >>> 0 : 1,
+    speedClass: clampInt(source.speedClass, 0, 2, 1),
+    mirror: source.mirror === true,
+    weather: clampInt(source.weather, 0, WEATHER_CODES.length - 1, 0),
+    gp: source.gp === true,
+  };
+}
+
+/** ONE place turns settings into a circuit — mirror included. */
+export function buildTrackFor(settings: RoomSettings): Track {
+  return buildTrack(
+    maybeMirror(trackSpecById(settings.trackId), settings.mirror),
+  );
+}
+
+/** Settings → the sim options they imply (weather decode included). */
+export function raceOptionsFrom(settings: RoomSettings): {
+  speedClass: number;
+  weather: (typeof WEATHER_CODES)[number];
+} {
+  return {
+    speedClass: settings.speedClass,
+    weather: WEATHER_CODES[settings.weather] ?? "clear",
   };
 }
 
@@ -192,6 +239,8 @@ function rosterOf(settings: RoomSettings, specs: readonly RacerSpec[]): Roster {
 export interface SoloConfig {
   readonly name: string;
   readonly settings?: Partial<RoomSettings>;
+  /** Local player's livery 0..15; the CPU whose default it displaces takes 0. */
+  readonly livery?: number;
 }
 
 export function createSoloSession(config: SoloConfig): NitroSession {
@@ -200,26 +249,85 @@ export function createSoloSession(config: SoloConfig): NitroSession {
     playerCount: 1,
   });
   const specs = buildRacerSpecs(settings, [config.name]);
-  const track = buildTrack(trackSpecById(settings.trackId));
-  const sim = createKartSim({
-    trackId: settings.trackId,
-    laps: settings.laps,
-    seed: settings.seed,
-    racers: specs,
-    items: settings.items,
-    track,
-  });
+  const chosen = config.livery ?? 0;
+  if (Number.isInteger(chosen) && chosen > 0 && chosen < 16 && specs[0]) {
+    specs[0] = { ...specs[0], livery: chosen };
+    // CPU liveries default to their seat index, so an unlocked pick <8 can
+    // collide with one CPU — hand that CPU the vacated 0.
+    if (chosen < specs.length && specs[chosen]) {
+      specs[chosen] = { ...specs[chosen], livery: 0 };
+    }
+  }
+  const cupOrder = cupTrackOrder();
+  let round = 0;
+  let cupPoints: number[] = specs.map(() => 0);
+  let lastResult: RaceResult | null = null;
+
+  function trackForRound(): Track {
+    const trackId = settings.gp ? cupOrder[round]! : settings.trackId;
+    return buildTrack(maybeMirror(trackSpecById(trackId), settings.mirror));
+  }
+
+  let track = trackForRound();
+
+  function makeSim() {
+    const options = raceOptionsFrom(settings);
+    return createKartSim({
+      trackId: track.spec.id,
+      laps: settings.laps,
+      seed: settings.gp ? raceSeedForRound(settings.seed, round) : settings.seed,
+      racers: specs,
+      items: settings.items,
+      track,
+      speedClass: options.speedClass,
+      weather: options.weather,
+    });
+  }
+
+  let sim = makeSim();
   let events: RaceEvent[] = [];
+  let scoredResult: RaceResult | null = null;
+
+  function maybeScore(): void {
+    const outcome = sim.result();
+    if (!outcome || scoredResult === outcome) return;
+    scoredResult = outcome;
+    lastResult = outcome;
+    if (settings.gp) cupPoints = applyCupPoints(cupPoints, outcome);
+  }
+
   return {
     kind: "solo",
     seat: 0,
     roomCode: null,
-    track,
+    get track() {
+      return track;
+    },
     settings,
     racing: true,
+    cup() {
+      if (!settings.gp) return null;
+      return {
+        round,
+        rounds: CUP_ROUNDS,
+        points: cupPoints,
+        standings: cupStandings(cupPoints, lastResult),
+        finished: round >= CUP_ROUNDS - 1 && sim.result() !== null,
+      };
+    },
     setReady() {},
     beginRace() {
-      return false;
+      // Next cup round. Refused mid-race and outside a cup.
+      if (!settings.gp) return false;
+      if (!sim.result()) return false;
+      if (round >= CUP_ROUNDS - 1) return false;
+      maybeScore();
+      round += 1;
+      track = trackForRound();
+      sim = makeSim();
+      events = [];
+      scoredResult = null;
+      return true;
     },
     updateSettings() {},
     sendInput(input) {
@@ -228,6 +336,7 @@ export function createSoloSession(config: SoloConfig): NitroSession {
     tick(dtSec) {
       sim.advance(dtSec);
       events.push(...sim.drainEvents());
+      maybeScore();
     },
     view() {
       return sim.getState();
@@ -253,6 +362,8 @@ interface GuestRecord {
   ready: boolean;
   lastInputSeq: number;
   helloed: boolean;
+  /** v2: preferred livery, validated 0..15; -1 = none sent. */
+  livery: number;
 }
 
 export interface HostConfig {
@@ -261,6 +372,8 @@ export interface HostConfig {
   readonly settings?: Partial<RoomSettings>;
   readonly wire: Wire;
   readonly callbacks?: SessionCallbacks;
+  /** Host's own livery preference, 0..15. */
+  readonly livery?: number;
 }
 
 export async function createHostSession(
@@ -268,7 +381,7 @@ export async function createHostSession(
 ): Promise<NitroSession> {
   const roomCode = normalizeRoomCode(config.roomCode);
   let settings = normalizeSettings(config.settings);
-  let track = buildTrack(trackSpecById(settings.trackId));
+  let track = buildTrackFor(settings);
   const callbacks = config.callbacks ?? {};
   const guests = new Set<GuestRecord>();
   let sim: KartSim | null = null;
@@ -279,6 +392,12 @@ export async function createHostSession(
   let hostReady = false;
   let finalResult: RaceResult | null = null;
   let disposed = false;
+  // Grand prix state (host-authoritative).
+  const cupOrder = cupTrackOrder();
+  let cupRound = 0;
+  let cupPoints: number[] = [];
+  let cupScored: RaceResult | null = null;
+  let lastCupResult: RaceResult | null = null;
 
   function seatOwners(): (string | null)[] {
     const owners: (string | null)[] = new Array(settings.playerCount).fill(null);
@@ -312,7 +431,7 @@ export async function createHostSession(
         name: owner ?? "OPEN",
         occupant: owner === null ? "empty" : seat === 0 ? "host" : "guest",
         ready: seat === 0 ? hostReady : (guest?.ready ?? false),
-        livery: seat,
+        livery: resolveLivery(seat),
       });
     }
     return { roomCode, settings, seats };
@@ -328,6 +447,23 @@ export async function createHostSession(
     const view = lobby();
     broadcast({ t: "lobby", lobby: view });
     callbacks.onLobby?.(view);
+  }
+
+  /**
+   * Seat-order clash resolution: earlier seats keep their preference, later
+   * clashes shift +1 mod 16 until free — deterministic on every client.
+   */
+  function resolveLivery(seat: number): number {
+    const wanted: number[] = [];
+    for (let index = 0; index < settings.racerCount; index += 1) {
+      let want = index;
+      if (index === 0 && typeof config.livery === "number") want = config.livery;
+      const guest = [...guests].find((entry) => entry.seat === index);
+      if (guest && guest.livery >= 0) want = guest.livery;
+      while (wanted.includes(want % 16)) want += 1;
+      wanted.push(want % 16);
+    }
+    return wanted[seat] ?? seat;
   }
 
   function freeSeat(): number | null {
@@ -378,6 +514,14 @@ export async function createHostSession(
           typeof message.name === "string" && message.name.trim().length > 0
             ? message.name.trim().slice(0, 12)
             : `P${seat + 1}`;
+        const preferred = (message as { livery?: unknown }).livery;
+        guest.livery =
+          typeof preferred === "number" &&
+          Number.isInteger(preferred) &&
+          preferred >= 0 &&
+          preferred <= 15
+            ? preferred
+            : -1;
         guest.connection.send({
           t: "welcome",
           v: NITRO_PROTOCOL_VERSION,
@@ -418,6 +562,7 @@ export async function createHostSession(
       ready: false,
       lastInputSeq: -1,
       helloed: false,
+      livery: -1,
     };
     guests.add(guest);
     connection.onMessage((payload) => handleClientMessage(guest, payload));
@@ -444,24 +589,62 @@ export async function createHostSession(
     get racing() {
       return sim !== null;
     },
+    cup() {
+      if (!settings.gp || cupPoints.length === 0) return null;
+      return {
+        round: cupRound,
+        rounds: CUP_ROUNDS,
+        points: cupPoints,
+        standings: cupStandings(cupPoints, lastCupResult),
+        finished: cupRound >= CUP_ROUNDS - 1 && finalResult !== null,
+      };
+    },
     setReady(ready) {
       hostReady = ready;
       publishLobby();
     },
     beginRace() {
-      if (sim) return false;
+      /*
+       * Restartable: `if (sim)` alone made one race the room's lifetime.
+       * A finished race may be replaced (grand-prix next round); a RUNNING
+       * race may not. The guest-side twin of this is clearing finalResult
+       * on "start" — without it round 2 bounces guests straight back to the
+       * results screen one frame in.
+       */
+      if (sim && !finalResult) return false;
+      const isCup = settings.gp;
+      if (sim && finalResult) {
+        if (!isCup) return false;
+        if (cupRound >= CUP_ROUNDS - 1) return false;
+        cupRound += 1;
+      }
       const owners = seatOwners();
-      const specs = buildRacerSpecs(settings, owners);
-      track = buildTrack(trackSpecById(settings.trackId));
-      roster = rosterOf(settings, specs);
+      const specs = buildRacerSpecs(settings, owners).map((spec, index) => ({
+        ...spec,
+        livery: resolveLivery(index),
+      }));
+      const trackId = isCup ? cupOrder[cupRound]! : settings.trackId;
+      track = buildTrack(
+        maybeMirror(trackSpecById(trackId), settings.mirror),
+      );
+      roster = { ...rosterOf(settings, specs), trackId: track.spec.id };
+      const options = raceOptionsFrom(settings);
       sim = createKartSim({
-        trackId: settings.trackId,
+        trackId: track.spec.id,
         laps: settings.laps,
-        seed: settings.seed,
+        seed: isCup ? raceSeedForRound(settings.seed, cupRound) : settings.seed,
         racers: specs,
         items: settings.items,
         track,
+        speedClass: options.speedClass,
+        weather: options.weather,
       });
+      if (cupPoints.length === 0) cupPoints = specs.map(() => 0);
+      finalResult = null;
+      cupScored = null;
+      wireEvents = [];
+      localEvents = [];
+      snapshotTimer = 0;
       // A human seat nobody claimed drives itself.
       for (let seat = 0; seat < settings.playerCount; seat += 1) {
         if (owners[seat] === null) sim.setAutopilot(seat, true);
@@ -471,6 +654,8 @@ export async function createHostSession(
         names: roster.names,
         cpu: roster.cpu,
         liveries: roster.liveries,
+        round: isCup ? cupRound : 0,
+        rounds: isCup ? CUP_ROUNDS : 1,
       };
       broadcast({ t: "start", ...payload });
       callbacks.onStart?.(payload);
@@ -479,7 +664,7 @@ export async function createHostSession(
     updateSettings(patch) {
       if (sim) return;
       settings = normalizeSettings({ ...settings, ...patch });
-      track = buildTrack(trackSpecById(settings.trackId));
+      track = buildTrackFor(settings);
       for (const guest of guests) {
         if (guest.seat !== null && guest.seat >= settings.playerCount) {
           guest.seat = freeSeat();
@@ -512,7 +697,23 @@ export async function createHostSession(
       const outcome = sim.result();
       if (outcome && !finalResult) {
         finalResult = outcome;
-        broadcast({ t: "result", result: outcome });
+        lastCupResult = outcome;
+        let cupBlock: CupBlock | undefined;
+        if (settings.gp && cupScored !== outcome) {
+          cupScored = outcome;
+          cupPoints = applyCupPoints(cupPoints, outcome);
+          cupBlock = {
+            r: cupRound + 1,
+            n: CUP_ROUNDS,
+            p: cupPoints.slice(),
+            f: cupRound >= CUP_ROUNDS - 1,
+          };
+        }
+        broadcast(
+          cupBlock
+            ? { t: "result", result: outcome, cup: cupBlock }
+            : { t: "result", result: outcome },
+        );
         callbacks.onResult?.(outcome);
       }
     },
@@ -545,6 +746,8 @@ export interface GuestConfig {
   readonly name: string;
   readonly wire: Wire;
   readonly callbacks?: SessionCallbacks;
+  /** Preferred livery 0..15. */
+  readonly livery?: number;
 }
 
 export async function createGuestSession(
@@ -555,7 +758,9 @@ export async function createGuestSession(
   const connection = await config.wire.join(roomCode);
   const interpolator = new SnapshotInterpolator();
   let settings = DEFAULT_ROOM_SETTINGS;
-  let track = buildTrack(trackSpecById(settings.trackId));
+  let track = buildTrackFor(settings);
+  let guestCup: CupView | null = null;
+  let roundInfo = { round: 0, rounds: 1 };
   let seat = -1;
   let roster: Roster | null = null;
   let started = false;
@@ -624,7 +829,7 @@ export async function createGuestSession(
           return;
         }
         settings = parsed.settings;
-        if (!started) track = buildTrack(trackSpecById(settings.trackId));
+        if (!started) track = buildTrackFor(settings);
         callbacks.onLobby?.(parsed);
         return;
       }
@@ -635,12 +840,27 @@ export async function createGuestSession(
           return;
         }
         settings = parsed.settings;
-        track = buildTrack(trackSpecById(settings.trackId));
+        roundInfo = { round: parsed.round, rounds: parsed.rounds };
+        /*
+         * Grand prix: round 2..n arrive on the SAME connection. The stale
+         * result/view from the previous round must go, or the App's result
+         * poll bounces this guest straight back to the results screen one
+         * frame after the new race starts.
+         */
+        finalResult = null;
+        latestView = null;
+        const isCup = settings.gp;
+        const trackId = isCup
+          ? (cupTrackOrder()[parsed.round] ?? settings.trackId)
+          : settings.trackId;
+        track = buildTrack(
+          maybeMirror(trackSpecById(trackId), settings.mirror),
+        );
         roster = {
           names: parsed.names,
           cpu: parsed.cpu,
           liveries: parsed.liveries,
-          trackId: settings.trackId,
+          trackId: track.spec.id,
           laps: settings.laps,
         };
         interpolator.clear();
@@ -662,6 +882,21 @@ export async function createGuestSession(
         if (!parsed) {
           callbacks.onError?.("リザルトが壊れています");
           return;
+        }
+        const cupRaw = (message as { cup?: unknown }).cup;
+        if (cupRaw !== undefined) {
+          const cup = validateCup(cupRaw, parsed.standings.length);
+          if (!cup) {
+            callbacks.onError?.("カップ情報が壊れています");
+            return;
+          }
+          guestCup = {
+            round: cup.r - 1,
+            rounds: cup.n,
+            points: cup.p,
+            standings: cupStandings(cup.p, parsed),
+            finished: cup.f,
+          };
         }
         finalResult = parsed;
         callbacks.onResult?.(parsed);
@@ -708,6 +943,7 @@ export async function createGuestSession(
         t: "hello",
         v: NITRO_PROTOCOL_VERSION,
         name: config.name,
+        livery: config.livery,
       } satisfies ClientMessage);
     },
   );
@@ -730,6 +966,22 @@ export async function createGuestSession(
     },
     get racing() {
       return started;
+    },
+    cup() {
+      if (roundInfo.rounds <= 1) return guestCup;
+      /*
+       * The round number comes from "start" (present from the first frame of
+       * every round); points and standings only exist once a result has
+       * carried a cup block. Merging the two keeps the HUD's ROUND 2/3 alive
+       * during a round while the standings stay those of the last result.
+       */
+      return {
+        round: roundInfo.round,
+        rounds: roundInfo.rounds,
+        points: guestCup?.points ?? (roster?.names ?? []).map(() => 0),
+        standings: guestCup?.standings ?? [],
+        finished: guestCup?.finished ?? false,
+      };
     },
     setReady(ready) {
       connection.send({ t: "ready", ready } satisfies ClientMessage);

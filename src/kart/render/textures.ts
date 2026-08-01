@@ -168,6 +168,93 @@ export function itemBoxTexture(): THREE.Texture {
   return texture;
 }
 
+/** Soft cumulus blob for the billboard cloud layer. */
+export function cloudTexture(): THREE.Texture {
+  const { element, context } = canvas(128);
+  const random = noise(0xc10d);
+  context.clearRect(0, 0, 128, 128);
+  for (let i = 0; i < 26; i += 1) {
+    const x = 24 + random() * 80;
+    const y = 44 + random() * 46;
+    const r = 10 + random() * 22;
+    const gradient = context.createRadialGradient(x, y, 0, x, y, r);
+    gradient.addColorStop(0, "rgba(255,255,255,0.34)");
+    gradient.addColorStop(0.7, "rgba(255,255,255,0.13)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.arc(x, y, r, 0, Math.PI * 2);
+    context.fill();
+  }
+  const texture = new THREE.CanvasTexture(element);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/** A grandstand crowd: rows of head-and-shoulders dots, varied and dense. */
+export function crowdTexture(): THREE.Texture {
+  const { element, context } = canvas(256);
+  const random = noise(0xc80d);
+  context.fillStyle = "#14161c";
+  context.fillRect(0, 0, 256, 256);
+  const palette = ["#e4574f", "#4f8fe4", "#e4c14f", "#5ac46a", "#b06fe0", "#e08b3a", "#f0f2f4", "#3ac4b8"];
+  for (let row = 0; row < 8; row += 1) {
+    for (let col = 0; col < 21; col += 1) {
+      if (random() < 0.12) continue;
+      const x = 8 + col * 12 + random() * 5;
+      const y = 20 + row * 30 + random() * 6;
+      const color = palette[Math.floor(random() * palette.length)]!;
+      context.fillStyle = color;
+      context.fillRect(x - 4, y, 8, 12);
+      context.fillStyle = random() > 0.5 ? "#e8c9a8" : "#8a6046";
+      context.beginPath();
+      context.arc(x, y - 3, 3.6, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+  const texture = new THREE.CanvasTexture(element);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/** Race-number roundel for a kart's nose. Cached per seat by the caller. */
+export function roundelTexture(num: number, accent: string): THREE.Texture {
+  const { element, context } = canvas(128);
+  context.clearRect(0, 0, 128, 128);
+  context.fillStyle = "#f4f6f8";
+  context.beginPath();
+  context.arc(64, 64, 56, 0, Math.PI * 2);
+  context.fill();
+  context.lineWidth = 8;
+  context.strokeStyle = accent;
+  context.stroke();
+  context.fillStyle = "#15181c";
+  context.font = "bold 72px 'Barlow Condensed', system-ui, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(String(num), 64, 70);
+  const texture = new THREE.CanvasTexture(element);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/** Elongated warm pool a headlight throws on the road. Shared, cached. */
+let headlightPool: THREE.Texture | null = null;
+export function headlightPoolTexture(): THREE.Texture {
+  if (headlightPool) return headlightPool;
+  const { element, context } = canvas(128);
+  context.clearRect(0, 0, 128, 128);
+  const gradient = context.createRadialGradient(64, 88, 4, 64, 70, 62);
+  gradient.addColorStop(0, "rgba(255, 240, 198, 0.85)");
+  gradient.addColorStop(0.55, "rgba(255, 236, 190, 0.32)");
+  gradient.addColorStop(1, "rgba(255, 232, 180, 0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 128, 128);
+  headlightPool = new THREE.CanvasTexture(element);
+  headlightPool.colorSpace = THREE.SRGBColorSpace;
+  return headlightPool;
+}
+
 /** Boost pad chevrons pointing along the road. */
 export function boostPadTexture(color: number): THREE.Texture {
   const { element, context } = canvas(128);

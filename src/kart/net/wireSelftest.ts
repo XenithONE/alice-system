@@ -17,18 +17,25 @@ import { TRACKS } from "../sim/tracks";
 import { NEUTRAL_INPUT, type KartInput } from "../sim/types";
 import { SnapshotInterpolator } from "./interpolation";
 import {
+  FLAG_SLIPSTREAM,
+  FLAG_TRICK,
   NITRO_PROTOCOL_VERSION,
   raceStateFromSnapshot,
+  validateCup,
+  validateEventForTest,
   validateInput,
   validateSettings,
   validateSnapshot,
+  validateStart,
   type NitroSnapshot,
 } from "./protocol";
+import { angleDelta, headingOf, pointAt } from "../sim/track";
 import {
   createGuestSession,
   createHostSession,
   DEFAULT_ROOM_SETTINGS,
 } from "./session";
+import { CUP_ROUNDS as CUP_ROUND_COUNT } from "../modes/gp";
 import { encodeSnapshot } from "./snapshot";
 import { createBroadcastChannelWire, makeRoomCode, normalizeRoomCode } from "./wire";
 
@@ -203,6 +210,84 @@ let referenceSnapshot: NitroSnapshot;
       }) === null,
     "laps=0 / racerCount=9 / playerCount>racerCount を拒否",
   );
+
+  // ── v2 fields ─────────────────────────────────────────────────────────────
+  gate.check(
+    "[W4e] v2: バージョン定数が 2（コメント慣例とゲートの同期）",
+    NITRO_PROTOCOL_VERSION === 2,
+    `v${NITRO_PROTOCOL_VERSION}`,
+  );
+  gate.check(
+    "[W4f] v2 設定フィールドの変異を拒否・正常は受理",
+    validateSettings({ ...DEFAULT_ROOM_SETTINGS, speedClass: 5 }) === null &&
+      validateSettings({ ...DEFAULT_ROOM_SETTINGS, weather: 9 }) === null &&
+      validateSettings({ ...DEFAULT_ROOM_SETTINGS, mirror: "yes" }) === null &&
+      validateSettings({ ...DEFAULT_ROOM_SETTINGS, gp: 1 }) === null &&
+      validateSettings({
+        ...DEFAULT_ROOM_SETTINGS,
+        speedClass: 2,
+        mirror: true,
+        weather: 1,
+        gp: true,
+      }) !== null,
+    "speedClass=5 / weather=9 / mirror='yes' / gp=1 を拒否",
+  );
+  {
+    // f: 255 (all v2 bits) must pass; 256 must not.
+    const copy = JSON.parse(JSON.stringify(referenceSnapshot));
+    copy.racers[0].f = FLAG_TRICK | FLAG_SLIPSTREAM | 31;
+    const ok255 = validateSnapshot(copy) !== null;
+    copy.racers[0].f = 256;
+    const bad256 = validateSnapshot(copy) === null;
+    gate.check(
+      "[W4g] v2 フラグ帯（trick=64/slipstream=128）受理・範囲外拒否",
+      ok255 && bad256,
+      `f=255 受理 ${ok255} / f=256 拒否 ${bad256}`,
+    );
+  }
+  {
+    const okTrick =
+      validateEventForTest({ k: "trick", racer: 2 }) !== null &&
+      validateEventForTest({ k: "trick", racer: 9 }) === null;
+    const okDraft =
+      validateEventForTest({ k: "boost", racer: 1, source: "draft", tier: 0 }) !== null &&
+      validateEventForTest({ k: "boost", racer: 1, source: "warp", tier: 0 }) === null;
+    gate.check(
+      "[W4h] v2 イベント（trick / draft boost）受理・未知は拒否",
+      okTrick && okDraft,
+      `trick ${okTrick} / draft ${okDraft}`,
+    );
+  }
+  {
+    const base = {
+      settings: { ...DEFAULT_ROOM_SETTINGS, racerCount: 2 },
+      names: ["A", "B"],
+      cpu: [false, true],
+      liveries: [0, 1],
+      round: 1,
+      rounds: 3,
+    };
+    const good = validateStart(base) !== null;
+    const badRound = validateStart({ ...base, round: 3 }) === null;
+    const badRounds = validateStart({ ...base, rounds: 0 }) === null;
+    gate.check(
+      "[W4i] v2 start の round/rounds 検証",
+      good && badRound && badRounds,
+      `round<rounds 受理 / round>=rounds 拒否 / rounds=0 拒否`,
+    );
+  }
+  {
+    const good = validateCup({ r: 2, n: 3, p: [10, 8], f: false }, 2) !== null;
+    const wrongLength = validateCup({ r: 2, n: 3, p: [10], f: false }, 2) === null;
+    const negative = validateCup({ r: 2, n: 3, p: [10, -1], f: false }, 2) === null;
+    const inverted = validateCup({ r: 4, n: 3, p: [10, 8], f: false }, 2) === null;
+    const stringly = validateCup({ r: 2, n: 3, p: [10, "8"], f: false }, 2) === null;
+    gate.check(
+      "[W4j] v2 カップブロック検証（長さ・負値・r>n・文字列を拒否）",
+      good && wrongLength && negative && inverted && stringly,
+      "正常受理＋4種の破壊を拒否",
+    );
+  }
 }
 
 // ── [W5] interpolation ──────────────────────────────────────────────────────
@@ -369,6 +454,109 @@ async function integration(): Promise<void> {
   await settle(30);
 }
 
+// ── [W12] a real two-round grand prix over the real transport ──────────────
+/**
+ * Minimal self-steering: aim at a centreline point ahead. Both humans finish
+ * a one-lap race with it, which is all the cup lifecycle needs — the CPUS'
+ * quality is headlessSelftest's business, not this gate's.
+ */
+function steerFor(view: { racers: readonly { id: number; x: number; z: number; yaw: number; lastS?: number; distance: number }[] } | null, seat: number, track: import("../sim/track").Track): KartInput {
+  const racer = view?.racers.find((entry) => entry.id === seat);
+  if (!racer) return drive(1, 0);
+  // Project via distance (monotonic in-lap): distance mod length ≈ arc s.
+  const s = ((racer.distance % track.length) + track.length) % track.length;
+  const [aimX, , aimZ] = pointAt(track, s + 14, 0);
+  const desired = headingOf(aimX - racer.x, aimZ - racer.z);
+  const steer = Math.max(-1, Math.min(1, angleDelta(racer.yaw, desired) * 1.6));
+  return drive(1, steer);
+}
+
+async function twoRoundCup(): Promise<void> {
+  const room = makeRoomCode(() => 0.42);
+  const host = await createHostSession({
+    roomCode: room,
+    name: "HOST",
+    wire: createBroadcastChannelWire(),
+    settings: {
+      playerCount: 2,
+      racerCount: 2,
+      laps: 1,
+      cpuLevel: 3,
+      seed: 424242,
+      gp: true,
+    },
+  });
+  let guestStarts = 0;
+  const guest = await createGuestSession({
+    roomCode: room,
+    name: "GUEST",
+    wire: createBroadcastChannelWire(),
+    livery: 5,
+    callbacks: {
+      onStart: () => {
+        guestStarts += 1;
+      },
+    },
+  });
+  await settle(60);
+
+  host.beginRace();
+  await settle(60);
+  const round1Track = guest.track.spec.id;
+
+  const step = 1 / 60;
+  async function raceToResult(maxSeconds: number): Promise<boolean> {
+    for (let i = 0; i < 60 * maxSeconds; i += 1) {
+      host.sendInput(steerFor(host.view(), 0, host.track));
+      guest.sendInput(steerFor(guest.view(), 1, guest.track));
+      host.tick(step);
+      guest.tick(step);
+      if (i % 6 === 0) await settle(0);
+      if (host.result()) return true;
+    }
+    return false;
+  }
+
+  const round1Done = await raceToResult(120);
+  await settle(80);
+  const cup1 = guest.cup();
+  gate.check(
+    "[W12a] 第1戦が完走しゲストへカップ情報（f=false）が届く",
+    round1Done && cup1 !== null && cup1.rounds === CUP_ROUND_COUNT && !cup1.finished,
+    `done=${round1Done} cup=${cup1 ? `r${cup1.round + 1}/${cup1.rounds} fin=${cup1.finished}` : "null"}`,
+  );
+
+  const restarted = host.beginRace();
+  await settle(80);
+  gate.check(
+    "[W12b] 次ラウンド開始: ゲストの result が消え、コースが切り替わる",
+    restarted &&
+      guestStarts === 2 &&
+      guest.result() === null &&
+      guest.racing &&
+      guest.track.spec.id !== round1Track,
+    `starts=${guestStarts} result=${guest.result() === null ? "null" : "stale!"} track ${round1Track}→${guest.track.spec.id}`,
+  );
+
+  const round2Done = await raceToResult(120);
+  await settle(80);
+  const cup2 = guest.cup();
+  const hostCup = host.cup();
+  gate.check(
+    "[W12c] 第2戦後: 双方のカップ集計が一致し、ポイントが加算されている",
+    round2Done &&
+      cup2 !== null &&
+      hostCup !== null &&
+      JSON.stringify(cup2.points) === JSON.stringify(hostCup.points) &&
+      cup2.points.reduce((a, b) => a + b, 0) === 36,
+    `points=${JSON.stringify(cup2?.points)} host=${JSON.stringify(hostCup?.points)}（2戦×(10+8)=36）`,
+  );
+
+  guest.dispose();
+  host.dispose();
+  await settle(30);
+}
+
 // ── [W11] the version handshake refuses, rather than degrading ─────────────
 async function versionRefusal(): Promise<void> {
   const room = makeRoomCode(() => 0.7);
@@ -411,9 +599,10 @@ async function versionRefusal(): Promise<void> {
 
 async function main(): Promise<void> {
   if (typeof BroadcastChannel === "undefined") {
-    gate.check("[W6..W11] BroadcastChannel が使える", false, "この実行環境には無い");
+    gate.check("[W6..W12] BroadcastChannel が使える", false, "この実行環境には無い");
   } else {
     await integration();
+    await twoRoundCup();
     await versionRefusal();
   }
   gate.finish("WIRE SELFTEST");

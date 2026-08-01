@@ -14,6 +14,8 @@ import {
   FLAG_GRACE,
   FLAG_OFF_ROAD,
   FLAG_STALL,
+  FLAG_TRICK,
+  FLAG_SLIPSTREAM,
   FLAG_WRONG_WAY,
   ITEM_CODES,
   PHASE_CODES,
@@ -37,6 +39,8 @@ export function encodeSnapshot(state: RaceState): NitroSnapshot {
     if (racer.airborne) flags |= FLAG_AIRBORNE;
     if (racer.graceTimer > 0) flags |= FLAG_GRACE;
     if (racer.stalled) flags |= FLAG_STALL;
+    if (racer.tricking) flags |= FLAG_TRICK;
+    if (racer.drafting) flags |= FLAG_SLIPSTREAM;
     return {
       i: racer.id,
       x: q(racer.x, 2),

@@ -35,6 +35,15 @@ export interface ItemBoxRowSpec {
   readonly offsets: readonly number[];
 }
 
+export interface RampSpec {
+  /** Position along the lap, 0..1. */
+  readonly at: number;
+  /** Lateral offset in half-widths, -1..1. */
+  readonly offset: number;
+  /** Half-width across the road, metres. */
+  readonly width?: number;
+}
+
 export interface TrackSpec {
   readonly id: string;
   readonly name: string;
@@ -43,6 +52,7 @@ export interface TrackSpec {
   readonly points: readonly TrackControlPoint[];
   readonly itemBoxes: readonly ItemBoxRowSpec[];
   readonly boostPads: readonly BoostPadSpec[];
+  readonly ramps?: readonly RampSpec[];
   /** Visual identity. The renderer reads these; the sim ignores them. */
   readonly theme: TrackTheme;
 }
@@ -66,6 +76,10 @@ export interface TrackTheme {
   /** Roadside prop family the scene builder plants. */
   readonly props: "palm" | "neon" | "topiary";
   readonly bloom: number;
+  /** 0..1 starfield density in the sky shader (render-only). */
+  readonly stars: number;
+  /** Night circuits get kart headlights and emissive-forward dressing. */
+  readonly night: boolean;
 }
 
 export interface TrackSample {
@@ -111,6 +125,16 @@ export interface ItemBoxPlacement {
   readonly z: number;
 }
 
+export interface Ramp {
+  readonly s: number;
+  readonly lateral: number;
+  readonly halfWidth: number;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly yaw: number;
+}
+
 export interface Track {
   readonly spec: TrackSpec;
   readonly samples: readonly TrackSample[];
@@ -121,6 +145,7 @@ export interface Track {
   readonly checkpoints: readonly number[];
   readonly itemBoxes: readonly ItemBoxPlacement[];
   readonly boostPads: readonly BoostPad[];
+  readonly ramps: readonly Ramp[];
   /** Widest half width anywhere — used to size the render bounds. */
   readonly maxHalf: number;
   readonly bounds: {
@@ -346,6 +371,7 @@ export function buildTrack(spec: TrackSpec, step = TRACK_STEP): Track {
     checkpoints,
     itemBoxes: [],
     boostPads: [],
+    ramps: [],
     maxHalf,
     bounds: { minX, maxX, minZ, maxZ, minY, maxY },
   };
@@ -383,7 +409,48 @@ export function buildTrack(spec: TrackSpec, step = TRACK_STEP): Track {
     };
   });
 
-  return { ...partial, itemBoxes, boostPads };
+  const ramps: Ramp[] = (spec.ramps ?? []).map((ramp) => {
+    const s = ((ramp.at % 1) + 1) % 1 * length;
+    const sample = sampleAt(partial, s);
+    const lateral = ramp.offset * sample.half;
+    return {
+      s,
+      lateral,
+      halfWidth: ramp.width ?? Math.max(2.2, sample.half * 0.3),
+      x: sample.x + sample.rx * lateral,
+      y: surfaceHeight(sample, lateral),
+      z: sample.z + sample.rz * lateral,
+      yaw: headingOf(sample.tx, sample.tz),
+    };
+  });
+
+  return { ...partial, itemBoxes, boostPads, ramps };
+}
+
+/**
+ * The true world mirror of a circuit.
+ *
+ * Negating the control points' x is NOT enough: the tangent flips to
+ * (-tx, tz), so the derived right-vector flips too, and every lateral
+ * offset (item boxes, pads, ramps) would land on the mirror image of the
+ * WRONG side. The offsets must negate together with the points — [T10]
+ * proves it by comparing world positions against the x-negated originals.
+ */
+export function mirrorSpec(spec: TrackSpec): TrackSpec {
+  return {
+    ...spec,
+    points: spec.points.map((point) => ({ ...point, x: -point.x })),
+    itemBoxes: spec.itemBoxes.map((row) => ({
+      at: row.at,
+      offsets: row.offsets.map((offset) => -offset),
+    })),
+    boostPads: spec.boostPads.map((pad) => ({ ...pad, offset: -pad.offset })),
+    ramps: (spec.ramps ?? []).map((ramp) => ({ ...ramp, offset: -ramp.offset })),
+  };
+}
+
+export function maybeMirror(spec: TrackSpec, mirrored: boolean): TrackSpec {
+  return mirrored ? mirrorSpec(spec) : spec;
 }
 
 /** Height of the banked road surface `lateral` metres right of centre. */

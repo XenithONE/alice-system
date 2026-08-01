@@ -55,6 +55,7 @@ const SUNSET_COAST: TrackSpec = {
     { at: 0.47, offset: 0.36 },
     { at: 0.885, offset: 0 },
   ],
+  ramps: [{ at: 0.315, offset: 0.3 }, { at: 0.69, offset: -0.28 }],
   theme: {
     skyLow: 0xffb887,
     skyHigh: 0x27508f,
@@ -71,6 +72,8 @@ const SUNSET_COAST: TrackSpec = {
     groundAccent: 0x1f7f83,
     props: "palm",
     bloom: 0.55,
+    stars: 0.12,
+    night: false,
   },
 };
 
@@ -124,6 +127,7 @@ const NEON_CANYON: TrackSpec = {
     { at: 0.63, offset: 0.28 },
     { at: 0.955, offset: 0, width: 5 },
   ],
+  ramps: [{ at: 0.27, offset: -0.3 }, { at: 0.77, offset: 0.3 }],
   theme: {
     skyLow: 0x39146b,
     skyHigh: 0x04030e,
@@ -140,6 +144,8 @@ const NEON_CANYON: TrackSpec = {
     groundAccent: 0x7a2bd8,
     props: "neon",
     bloom: 1.15,
+    stars: 0.9,
+    night: true,
   },
 };
 
@@ -191,6 +197,11 @@ const SKY_GARDEN: TrackSpec = {
     { at: 0.5, offset: -0.3 },
     { at: 0.735, offset: 0.32 },
   ],
+  ramps: [
+    { at: 0.115, offset: 0 },
+    { at: 0.44, offset: 0.3 },
+    { at: 0.655, offset: -0.3 },
+  ],
   theme: {
     skyLow: 0xdff0ff,
     skyHigh: 0x3f86d6,
@@ -207,6 +218,8 @@ const SKY_GARDEN: TrackSpec = {
     groundAccent: 0xf2ead6,
     props: "topiary",
     bloom: 0.42,
+    stars: 0,
+    night: false,
   },
 };
 
