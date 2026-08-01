@@ -39,6 +39,7 @@ import {
 } from "./setpieces";
 import type { KartQuality } from "./quality";
 import { buildTrackMesh, type TrackMeshBundle } from "./trackMesh";
+import { CSM } from "three/addons/csm/CSM.js";
 
 export interface KartSceneOptions {
   readonly canvas: HTMLCanvasElement;
@@ -237,6 +238,67 @@ export function createKartScene(options: KartSceneOptions): KartScene {
   }
   scene.add(sun);
   scene.add(sun.target);
+
+  /*
+   * Cascaded shadows.
+   *
+   * The single map above covers ±78 m around the focus kart, which is why the
+   * lighthouse, the grandstands and every distant prop have always read as
+   * painted backdrop: they were outside the only shadow camera in the scene.
+   * CSM splits the view frustum into near/mid/far maps so the far half of the
+   * track casts too.
+   *
+   * `csm.setupMaterial` has to be called on every standard material in the
+   * scene, and a material that misses it silently loses its shadow — the same
+   * registration-omission bug class as a set piece missing from SET_PIECES. So
+   * nothing registers by hand: `enrol` traverses whatever it is given, and the
+   * scene calls it once after everything is built and again whenever a kart is
+   * created.
+   */
+  let csm: CSM | null = null;
+  const enrolled = new WeakSet<THREE.Material>();
+  function enrol(root: THREE.Object3D): void {
+    if (!csm) return;
+    root.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material];
+      for (const material of materials) {
+        if (!material || enrolled.has(material)) continue;
+        if (!(material as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
+          continue;
+        }
+        enrolled.add(material);
+        csm!.setupMaterial(material);
+      }
+    });
+  }
+  if (quality.shadows && quality.shadowCascades > 1) {
+    csm = new CSM({
+      maxFar: 420,
+      cascades: quality.shadowCascades,
+      mode: "practical",
+      parent: scene,
+      shadowMapSize: quality.shadowMapSize,
+      shadowBias: -0.0006,
+      lightDirection: sunDirection.clone().negate().normalize(),
+      lightIntensity: theme.sunIntensity,
+      camera,
+    });
+    // CSM builds white lights; the theme's sun is not white on any circuit
+    // here (sunset amber, canyon magenta), and leaving them white would make
+    // every shadowed surface the wrong colour relative to the sky.
+    for (const light of csm.lights) {
+      light.color.set(theme.sunColor);
+      light.shadow.normalBias = 0.03;
+    }
+    // CSM brings its own directional lights; the original would double the sun.
+    sun.castShadow = false;
+    sun.intensity = 0;
+  }
+
   const hemisphere = new THREE.HemisphereLight(
     theme.skyHigh,
     theme.ground,
@@ -359,6 +421,7 @@ export function createKartScene(options: KartSceneOptions): KartScene {
   function ensureGhost(): KartVisual {
     if (ghostVisual) return ghostVisual;
     ghostVisual = createKartVisual({ livery: 15, castShadow: false });
+    enrol(ghostVisual.root);
     ghostVisual.root.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -412,9 +475,49 @@ export function createKartScene(options: KartSceneOptions): KartScene {
     {
       onShedShadows: () => {
         sun.castShadow = false;
+        if (csm) for (const light of csm.lights) light.castShadow = false;
+      },
+      onShedCascades: () => {
+        if (!csm) return;
+        /*
+         * Back to one map, not none. Disposing CSM would need every material
+         * it patched to be recompiled mid-race — a hitch far worse than the
+         * two shadow passes being reclaimed. Switching the far cascades off
+         * keeps the near one, which is the shadow the player actually looks
+         * at, and costs nothing but a boolean.
+         */
+        csm.lights.forEach((light, index) => {
+          light.castShadow = index === 0;
+        });
       },
     },
   );
+
+  // Everything static is in the scene by now — road, set pieces, grandstands,
+  // clouds, props. One traverse registers the lot.
+  enrol(scene);
+
+  /** Debug seam: how much of the scene CSM actually reached. */
+  function countPatchedMaterials(): { patched: number; standard: number } {
+    let patched = 0;
+    let standard = 0;
+    const seen = new Set<THREE.Material>();
+    scene.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const material of list) {
+        if (!material || seen.has(material)) continue;
+        if (!(material as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
+          continue;
+        }
+        seen.add(material);
+        standard += 1;
+        if (enrolled.has(material)) patched += 1;
+      }
+    });
+    return { patched, standard };
+  }
 
   // ── Camera state ──────────────────────────────────────────────────────────
   const cameraTarget = tempVector();
@@ -450,6 +553,10 @@ export function createKartScene(options: KartSceneOptions): KartScene {
       });
       karts.set(seat, visual);
       kartRoot.add(visual.root);
+      // Karts appear after the one-shot enrolment below, so each new one
+      // registers itself. Without this the grid is the only thing in the scene
+      // with no shadow — the most visible possible version of this bug.
+      enrol(visual.root);
     }
     return visual;
   }
@@ -689,6 +796,8 @@ export function createKartScene(options: KartSceneOptions): KartScene {
         mesh = new THREE.Mesh(shellGeometry, shellMaterials[projectile.kind]!);
         mesh.castShadow = quality.shadows;
         scene.add(mesh);
+        // Shells appear after the one-shot enrolment, so they register here.
+        enrol(mesh);
         projectilePool.set(projectile.id, mesh);
       }
       mesh.position.set(projectile.x, projectile.y, projectile.z);
@@ -710,6 +819,7 @@ export function createKartScene(options: KartSceneOptions): KartScene {
         mesh.rotation.z = Math.PI / 2.4;
         mesh.castShadow = quality.shadows;
         scene.add(mesh);
+        enrol(mesh);
         hazardPool.set(hazard.id, mesh);
       }
       mesh.position.set(hazard.x, hazard.y + 0.42, hazard.z);
@@ -820,6 +930,11 @@ export function createKartScene(options: KartSceneOptions): KartScene {
       post.setWet(look.rain ? 1 : 0);
       fx.update(step);
 
+      // After the camera has moved, before the draw: the cascades are fitted to
+      // the current view frustum, so updating them earlier would aim last
+      // frame's shadow maps at this frame's picture.
+      csm?.update();
+
       renderer.info.reset();
       if (post.composer) post.composer.render(step);
       else renderer.render(scene, camera);
@@ -907,6 +1022,19 @@ export function createKartScene(options: KartSceneOptions): KartScene {
         drawCalls: lastCalls,
         triangles: lastTriangles,
         quality: quality.label,
+        /*
+         * Shadow accounting. `csmPatched` vs `standardMaterials` is the only
+         * way to see the failure this feature is most likely to have: a
+         * material that never got `setupMaterial` renders perfectly and simply
+         * has no shadow, which no headless gate and no error log will report.
+         * They must be equal.
+         */
+        shadowCascades: csm?.lights.length ?? (sun.castShadow ? 1 : 0),
+        shadowCasting:
+          (csm?.lights.filter((light) => light.castShadow).length ?? 0) +
+          (sun.castShadow ? 1 : 0),
+        csmPatched: countPatchedMaterials().patched,
+        standardMaterials: countPatchedMaterials().standard,
         shed: post.shedStages.slice(),
         fps: Math.round(lastFps),
         ghost:
@@ -921,6 +1049,7 @@ export function createKartScene(options: KartSceneOptions): KartScene {
     },
     dispose() {
       audio?.reset();
+      csm?.dispose();
       ghostVisual?.dispose();
       for (const visual of karts.values()) visual.dispose();
       karts.clear();

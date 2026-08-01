@@ -265,6 +265,102 @@ gate.expectFail(
   "路面中央 y+1.2 の 2m 箱",
 );
 
+// [BG5] the shadow passes cost too, and countDrawCalls cannot see them ──────
+{
+  /*
+   * `renderer.info.render.calls` — and therefore `countDrawCalls` — counts the
+   * colour pass. A shadow-casting mesh is drawn again per shadow map, so with
+   * three cascades a scene of 60 casters costs 180 extra draws that no gate has
+   * ever looked at. This is the gate for the cost CSM just introduced, added
+   * in the same change that introduced it.
+   */
+  /*
+   * 260, set from the measurement rather than guessed at: the worst circuit
+   * costs 195 shadow draws (65 casters × 3), so this leaves room for roughly
+   * twenty more casters on a future course and fails on anything approaching a
+   * doubling. A budget with 2.5× headroom is not a budget — it is a number
+   * that will still be passing on the day the frame rate collapses.
+   */
+  const BUDGET = 260;
+  const rows: { scene: string; casters: number; cascades: number; total: number }[] =
+    [];
+  let worst = 0;
+  let worstLabel = "";
+  for (const label of ["HIGH", "BALANCED", "LOW"] as const) {
+    const quality = qualityFor(label);
+    for (const spec of TRACKS) {
+      const track = buildTrack(spec);
+      const mesh = buildTrackMesh(
+        track,
+        { shadows: quality.shadows, propDensity: quality.propDensity },
+        STUB_TRACK_TEXTURES,
+      );
+      const group = new THREE.Group();
+      group.add(mesh.group);
+      const pieces = buildSetPieces(track, stubContext(quality));
+      if (pieces) group.add(pieces.group);
+      const stands = createGrandstands(
+        track,
+        quality.grandstands,
+        quality.shadows,
+        new THREE.Texture(),
+      );
+      group.add(stands.group);
+
+      // Measured, not assumed: only some of a kart's meshes cast (the roundel
+      // and the headlight pool do not), so the grid's contribution has to come
+      // from the same builder the game uses.
+      const grid = MACHINES.slice(0, MAX_RACERS).map((machine, seat) =>
+        createKartVisual({
+          livery: seat,
+          castShadow: quality.shadows,
+          shape: machine.shape,
+          textures: STUB_KART_TEXTURES,
+        }),
+      );
+      for (const kart of grid) group.add(kart.root);
+
+      let casters = 0;
+      group.traverse((object) => {
+        // One shadow draw per mesh per cascade; an InstancedMesh is still one.
+        if (object.visible && object.castShadow && (object as THREE.Mesh).isMesh) {
+          casters += 1;
+        }
+      });
+      for (const kart of grid) kart.dispose();
+      disposeSharedKartGeometry();
+      const total = casters * Math.max(1, quality.shadowCascades);
+      rows.push({
+        scene: `${label}/${spec.id}`,
+        casters,
+        cascades: quality.shadowCascades,
+        total,
+      });
+      if (total > worst) {
+        worst = total;
+        worstLabel = `${label}/${spec.id}`;
+      }
+      stands.dispose();
+      pieces?.dispose();
+      mesh.dispose();
+    }
+  }
+  gate.check(
+    "[BG5] 影パスの総ドロー（キャスター × カスケード）が予算内",
+    worst <= BUDGET,
+    `最悪 ${worst} / 上限 ${BUDGET}（${worstLabel}）`,
+  );
+  gate.expectFail(
+    "[BG5-neg] カスケードを6段にすると予算を超える",
+    () => {
+      const doubled = Math.round((worst / 3) * 6);
+      return doubled <= BUDGET;
+    },
+    "3段の最悪値を6段に換算",
+  );
+  console.table(rows);
+}
+
 // [BG6] the grid itself costs draw calls, and nothing has ever counted them ──
 {
   /*

@@ -18,6 +18,14 @@ export interface KartQuality {
   readonly dpr: number;
   readonly shadows: boolean;
   readonly shadowMapSize: number;
+  /**
+   * Cascades in the shadow map. 1 is the single map the game shipped with,
+   * whose ±78 m extent follows the focus kart — which is why nothing outside a
+   * 156 m box around the player has ever cast a shadow, and why the lighthouse,
+   * the grandstands and the distant props read as painted scenery. 0 means no
+   * shadows at all; `shadows` stays the gate for that.
+   */
+  readonly shadowCascades: number;
   readonly postProcessing: boolean;
   readonly bloom: boolean;
   readonly aa: AaMode;
@@ -47,6 +55,7 @@ const TIERS: Record<QualityLabel, Omit<KartQuality, "dpr" | "mobile">> = {
     label: "HIGH",
     shadows: true,
     shadowMapSize: 2048,
+    shadowCascades: 3,
     postProcessing: true,
     bloom: true,
     aa: "smaa",
@@ -64,6 +73,7 @@ const TIERS: Record<QualityLabel, Omit<KartQuality, "dpr" | "mobile">> = {
     label: "BALANCED",
     shadows: true,
     shadowMapSize: 1024,
+    shadowCascades: 1,
     postProcessing: true,
     bloom: true,
     aa: "fxaa",
@@ -81,6 +91,7 @@ const TIERS: Record<QualityLabel, Omit<KartQuality, "dpr" | "mobile">> = {
     label: "LOW",
     shadows: false,
     shadowMapSize: 0,
+    shadowCascades: 0,
     postProcessing: false,
     bloom: false,
     aa: "none",

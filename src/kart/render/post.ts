@@ -6,11 +6,13 @@
  * radial smear re-sharpen edges, so AA before it would be partially undone —
  * and before OutputPass, matching three's own SMAA example ordering.
  *
- * `shedNext()` implements the one-way degrade ladder (AA → bloom → dpr ×0.85 →
- * shadows). Prior art is the portfolio hero (glScene.ts): measure over a
- * 90-frame window, shed exactly one feature, never restore. Shadows go last
- * because toggling them forces a lights-state reprogram hitch; a dpr notch is
- * cheaper and usually bigger.
+ * `shedNext()` implements the one-way degrade ladder (cascades → AA → bloom →
+ * dpr ×0.85 → shadows). Prior art is the portfolio hero (glScene.ts): measure
+ * over a 90-frame window, shed exactly one feature, never restore. Shadows go
+ * last because toggling them forces a lights-state reprogram hitch; a dpr
+ * notch is cheaper and usually bigger. Cascades go first because dropping to
+ * one shadow map leaves the near shadow — the one under the player's kart —
+ * exactly where it was, and takes back two full shadow passes.
  */
 
 import * as THREE from "three";
@@ -86,11 +88,19 @@ const GRADE_SHADER = {
   `,
 };
 
-export type ShedStage = "aa" | "bloom" | "dpr" | "shadows";
+export type ShedStage = "csm" | "aa" | "bloom" | "dpr" | "shadows";
 
 export interface PostStackHooks {
   /** Called when the ladder reaches the shadows rung (post owns no lights). */
   readonly onShedShadows: () => void;
+  /**
+   * Called at the csm rung: drop to a single shadow map. First on the ladder
+   * because it is the one rung whose absence the player is least likely to
+   * name — the near shadow, the one under their own kart, is untouched, and
+   * only the far cascades go. Every rung below it changes something in the
+   * middle of the screen.
+   */
+  readonly onShedCascades: () => void;
 }
 
 export interface PostStack {
@@ -196,6 +206,11 @@ export function createPostStack(
       applyFxaaResolution();
     },
     shedNext() {
+      if (!shed.includes("csm") && quality.shadowCascades > 1) {
+        hooks.onShedCascades();
+        shed.push("csm");
+        return "csm";
+      }
       if (!shed.includes("aa") && (smaaPass || fxaaPass)) {
         const pass = smaaPass ?? fxaaPass!;
         composer.removePass(pass);

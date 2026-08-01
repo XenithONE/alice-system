@@ -444,7 +444,15 @@ export default function App(): React.JSX.Element {
      * pair there is no way to verify a 3D scene on this site at all.
      */
     const seam = {
-      step,
+      /*
+       * `step()` with no argument advances one frame at 60 Hz. It used to hand
+       * `undefined` straight to the sim and the camera lerp, which turns the
+       * view matrix into NaN on the first call and keeps it there — every draw
+       * after that renders nothing. The symptom is a black canvas with a
+       * working HUD and no error anywhere, and it survived several rounds of
+       * "the screenshot is black, the environment must not do WebGL".
+       */
+      step: (dt: number = 1 / 60) => step(dt),
       getDebugState: () => ({
         ...scene.getDebugState(),
         phase: sessionRef.current?.view()?.phase ?? null,
