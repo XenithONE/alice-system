@@ -396,6 +396,59 @@ const YAW_SWEEP = 32;
     "rotation.y に π を足した配置",
   );
 
+  /*
+   * [R8] the front wheels point where the wheel is turned.
+   *
+   * `setSteer` is one of the three places where two sign errors cancelled out
+   * before the frame was corrected, and the only reason it looked right was
+   * that the whole kart was on backwards. Nothing watched it; now something
+   * does.
+   */
+  {
+    let worst = 1;
+    for (let i = 0; i < YAW_SWEEP; i += 1) {
+      const yaw = (i / YAW_SWEEP) * Math.PI * 2 - Math.PI;
+      visual.root.rotation.y = yaw;
+      visual.setSteer(1);
+      visual.root.updateMatrixWorld(true);
+      const pivot = visual.frontWheels[0]!;
+      const e = pivot.matrixWorld.elements;
+      // Third column is local +Z; the wheel, like the kart, faces local -Z.
+      const wx = -e[8]!;
+      const wz = -e[10]!;
+      const norm = Math.hypot(wx, wz);
+      const [rx, rz] = rightOf(yaw);
+      worst = Math.min(worst, (wx / norm) * rx + (wz / norm) * rz);
+    }
+    visual.setSteer(0);
+    gate.check(
+      "[R8] setSteer(+1) で前輪が rightOf 側を向く",
+      worst > 0.05,
+      `最小内積 ${worst.toFixed(3)}（負なら舵と逆に向いている）`,
+    );
+    gate.expectFail(
+      "[R8-neg] 逆向きの前輪は rightOf 側を向かない",
+      () => {
+        let broken = 1;
+        for (let i = 0; i < YAW_SWEEP; i += 1) {
+          const yaw = (i / YAW_SWEEP) * Math.PI * 2 - Math.PI;
+          visual.root.rotation.y = yaw;
+          visual.setSteer(-1);
+          visual.root.updateMatrixWorld(true);
+          const e = visual.frontWheels[0]!.matrixWorld.elements;
+          const wx = -e[8]!;
+          const wz = -e[10]!;
+          const norm = Math.hypot(wx, wz);
+          const [rx, rz] = rightOf(yaw);
+          broken = Math.min(broken, (wx / norm) * rx + (wz / norm) * rz);
+        }
+        visual.setSteer(0);
+        return broken > 0.05;
+      },
+      "setSteer の符号反転",
+    );
+  }
+
   visual.dispose();
   disposeSharedKartGeometry();
 }

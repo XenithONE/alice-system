@@ -9,11 +9,25 @@
  * Run: npx tsx src/kart/sim/headlessSelftest.ts
  */
 import { createGate } from "../gate";
-import { SIM_STEP_SEC } from "./balance";
+import { DRIFT_HOP_SEC, SIM_STEP_SEC } from "./balance";
 import { createKartSim } from "./sim";
-import { forwardOf, rightOf } from "./track";
+import {
+  angleDelta,
+  forwardOf,
+  headingOf,
+  pointAt,
+  querySurface,
+  rightOf,
+} from "./track";
 import { TRACKS } from "./tracks";
-import type { RaceConfig, RaceEvent, RacerSpec } from "./types";
+import {
+  NEUTRAL_INPUT,
+  type KartInput,
+  type RaceConfig,
+  type RaceEvent,
+  type RacerSpec,
+  type RacerState,
+} from "./types";
 
 const gate = createGate();
 
@@ -435,7 +449,11 @@ gate.expectFail(
           brake: 0,
           steer: value,
           drift: false,
-          item: false,
+          gimmick: false,
+          skill: false,
+          item0: false,
+          item1: false,
+          item2: false,
           lookBack: false,
         });
         sim.step();
@@ -468,6 +486,203 @@ gate.expectFail(
     "[H14-neg] 期待する右を反転すると一致しない",
     () => project(right, -1) > 0.05 && project(left, -1) < -0.05,
     "rightOf を反転した基準",
+  );
+}
+
+// [H15] the hop is unconditional, the drift is decided on touchdown ────────
+/*
+ * Three properties of the rebuilt drift, from one scripted lap each:
+ *   (a) pressing with the wheel straight still hops — the old code demanded
+ *       0.12 of lock at the instant of the press and did nothing without it,
+ *   (b) the direction comes from the wheel AT TOUCHDOWN, not at the press,
+ *   (c) winding out of a slide unwinds it, which is what "counter-steer"
+ *       means and what a positive-only authority curve could not do.
+ */
+{
+  interface Probe {
+    hopped: boolean;
+    airborneDuringHop: boolean;
+    driftingDuringHop: boolean;
+    dirAfterLatch: number;
+    slipAfterLatch: number;
+    yawWithSteer: number;
+    yawAgainstSteer: number;
+  }
+
+  function driftProbe(latchSteer: number, release: boolean): Probe {
+    const sim = createKartSim({
+      trackId: TRACKS[0]!.id,
+      laps: 3,
+      seed: 11,
+      racers: [{ name: "P", cpu: false, livery: 0 }],
+      items: false,
+    });
+    const set = (partial: Partial<KartInput>): void => {
+      sim.setInput(0, { ...NEUTRAL_INPUT, ...partial });
+    };
+    const run = (ticks: number): void => {
+      for (let i = 0; i < ticks; i += 1) sim.step();
+    };
+    const me = (): RacerState => sim.getState().racers[0]!;
+    const ground = (): number =>
+      querySurface(sim.track, me().x, me().z, -1, 4).height;
+
+    /*
+     * Get to the drift centred and at speed. Holding a straight wheel out of
+     * the grid runs the kart off a circuit that curves, and an off-road kart
+     * scrubs below DRIFT_MIN_SPEED before the hop ends — which reads exactly
+     * like "the latch is broken" while proving nothing about the latch.
+     */
+    const follow = (seconds: number, throttle: number): void => {
+      const ticks = Math.round(seconds / SIM_STEP_SEC);
+      for (let i = 0; i < ticks; i += 1) {
+        const racer = me();
+        const length = sim.track.length;
+        const s = ((racer.distance % length) + length) % length;
+        const [aimX, , aimZ] = pointAt(sim.track, s + 14, 0);
+        const steer = Math.max(
+          -1,
+          Math.min(
+            1,
+            -angleDelta(racer.yaw, headingOf(aimX - racer.x, aimZ - racer.z)) *
+              1.6,
+          ),
+        );
+        set({ throttle, steer });
+        sim.step();
+      }
+    };
+    follow(4, 0); // coast out the countdown
+    follow(2, 1); // build speed, on the racing surface
+
+    // (a) press with zero steering.
+    set({ throttle: 1, drift: true });
+    let hopped = false;
+    let airborneDuringHop = false;
+    let driftingDuringHop = false;
+    for (let i = 0; i < 10; i += 1) {
+      sim.step();
+      const racer = me();
+      if (racer.y > ground() + 0.05) hopped = true;
+      if (racer.airborne) airborneDuringHop = true;
+      if (racer.driftDir !== 0) driftingDuringHop = true;
+    }
+
+    /*
+     * (b) let go before touchdown, or steer into the landing. Read the
+     * direction as soon as the hop is over — hold this hard for half a second
+     * and the kart is off the circuit, the drift breaks on speed, and the
+     * measurement reports "never latched" for reasons of its own making.
+     */
+    if (release) set({ throttle: 1 });
+    else set({ throttle: 1, drift: true, steer: latchSteer });
+    run(Math.round((DRIFT_HOP_SEC + 0.08) / SIM_STEP_SEC));
+    const dirAfterLatch = me().driftDir;
+    run(12); // let the body angle build before reading it
+    const slipAfterLatch = me().slip;
+
+    /*
+     * (c) into the slide, then out of it. Both rates are sampled AFTER the
+     * wheel has had time to travel: the steering lerps at 8/s, so averaging
+     * across the transition buries the reversal under the half-second it took
+     * to get there.
+     */
+    set({ throttle: 1, drift: true, steer: latchSteer });
+    run(20);
+    const yaw0 = me().yaw;
+    run(10);
+    const yawWithSteer = me().yaw - yaw0;
+    set({ throttle: 1, drift: true, steer: -latchSteer });
+    run(24);
+    const yaw1 = me().yaw;
+    run(10);
+    const yawAgainstSteer = me().yaw - yaw1;
+
+    return {
+      hopped,
+      airborneDuringHop,
+      driftingDuringHop,
+      dirAfterLatch,
+      slipAfterLatch,
+      yawWithSteer,
+      yawAgainstSteer,
+    };
+  }
+
+  const right = driftProbe(1, false);
+  const left = driftProbe(-1, false);
+  gate.check(
+    "[H15a] 無舵でもホップは出る（airborne は立てない・まだドリフトでもない）",
+    right.hopped && !right.airborneDuringHop && !right.driftingDuringHop,
+    `hop=${right.hopped} airborne=${right.airborneDuringHop} drift=${right.driftingDuringHop}`,
+  );
+  gate.check(
+    "[H15b] 着地時の舵でドリフト方向が決まる",
+    right.dirAfterLatch === 1 && left.dirAfterLatch === -1,
+    `右 ${right.dirAfterLatch} / 左 ${left.dirAfterLatch}`,
+  );
+  gate.check(
+    "[H15c] 逆に倒すとドリフトが巻き戻る（カウンターが効く）",
+    right.yawWithSteer * right.yawAgainstSteer < 0 &&
+      left.yawWithSteer * left.yawAgainstSteer < 0,
+    `右 ${right.yawWithSteer.toFixed(3)}→${right.yawAgainstSteer.toFixed(3)} / ` +
+      `左 ${left.yawWithSteer.toFixed(3)}→${left.yawAgainstSteer.toFixed(3)}`,
+  );
+  /*
+   * The body angle carries the whole drift read: the nose points INTO the
+   * corner, and the camera's outward swing is written as `+rightOf * slip`,
+   * so getting this sign wrong points the kart the wrong way AND swings the
+   * camera to the inside, hiding the corner the player is trying to see.
+   */
+  gate.check(
+    "[H15d] ドリフト中の車体角は旋回方向と逆符号（ノーズがコーナー内側）",
+    Math.sign(right.slipAfterLatch) === -right.dirAfterLatch &&
+      Math.sign(left.slipAfterLatch) === -left.dirAfterLatch,
+    `右 dir=${right.dirAfterLatch} slip=${right.slipAfterLatch.toFixed(3)} / ` +
+      `左 dir=${left.dirAfterLatch} slip=${left.slipAfterLatch.toFixed(3)}`,
+  );
+  gate.expectFail(
+    "[H15-neg1] ドリフトを押さなければホップもドリフトも起きない",
+    () => {
+      const sim = createKartSim({
+        trackId: TRACKS[0]!.id,
+        laps: 3,
+        seed: 11,
+        racers: [{ name: "P", cpu: false, livery: 0 }],
+        items: false,
+      });
+      let hopped = false;
+      for (let i = 0; i < Math.round(7 / SIM_STEP_SEC); i += 1) {
+        const racer = sim.getState().racers[0]!;
+        const length = sim.track.length;
+        const s = ((racer.distance % length) + length) % length;
+        const [aimX, , aimZ] = pointAt(sim.track, s + 14, 0);
+        const steer = Math.max(
+          -1,
+          Math.min(
+            1,
+            -angleDelta(racer.yaw, headingOf(aimX - racer.x, aimZ - racer.z)) *
+              1.6,
+          ),
+        );
+        sim.setInput(0, {
+          ...NEUTRAL_INPUT,
+          throttle: i > 240 ? 1 : 0,
+          steer,
+        });
+        sim.step();
+        const after = sim.getState().racers[0]!;
+        const height = querySurface(sim.track, after.x, after.z, -1, 4).height;
+        if (after.y > height + 0.05 && !after.airborne) hopped = true;
+      }
+      return hopped;
+    },
+    "ドリフト未押下",
+  );
+  gate.expectFail(
+    "[H15-neg2] 着地前に離すとその後どれだけ舵を入れてもドリフトしない",
+    () => driftProbe(1, true).dirAfterLatch !== 0,
+    "ホップ中にボタンを離す",
   );
 }
 

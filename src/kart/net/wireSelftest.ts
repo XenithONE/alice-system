@@ -14,7 +14,11 @@
 import { createGate } from "../gate";
 import { createKartSim } from "../sim/sim";
 import { TRACKS } from "../sim/tracks";
-import { NEUTRAL_INPUT, type KartInput } from "../sim/types";
+import {
+  NEUTRAL_INPUT,
+  type KartInput,
+  type RaceState,
+} from "../sim/types";
 import { SnapshotInterpolator } from "./interpolation";
 import {
   FLAG_SLIPSTREAM,
@@ -23,6 +27,7 @@ import {
   raceStateFromSnapshot,
   validateCup,
   validateEventForTest,
+  IN_MAX,
   validateInput,
   validateSettings,
   validateSnapshot,
@@ -50,6 +55,30 @@ function bytes(value: unknown): number {
 
 function drive(throttle = 1, steer = 0, drift = false): KartInput {
   return { ...NEUTRAL_INPUT, throttle, steer, drift };
+}
+
+/**
+ * Steer toward a centreline point ahead.
+ *
+ * The wire gates do not care where a kart goes, only that the inputs reach the
+ * host and the sim keeps running — but an open-loop straight wheel leaves the
+ * circuit at the first corner and parks against a wall, and then every gate
+ * downstream is really measuring "how fast does a kart recover from a wall".
+ * That made [W10] break on unrelated drift tuning twice.
+ */
+function centrelineSteer(
+  view: RaceState | null,
+  seat: number,
+  track: import("../sim/track").Track,
+): number {
+  const racer = view?.racers.find((entry) => entry.id === seat);
+  if (!racer) return 0;
+  const s = ((racer.distance % track.length) + track.length) % track.length;
+  const [aimX, , aimZ] = pointAt(track, s + 14, 0);
+  const desired = headingOf(aimX - racer.x, aimZ - racer.z);
+  // Negated for the same reason ai.ts is: yaw grows to the left, steer to the
+  // right (see the heading convention in track.ts).
+  return Math.max(-1, Math.min(1, -angleDelta(racer.yaw, desired) * 1.6));
 }
 
 // ── [W1] room codes ─────────────────────────────────────────────────────────
@@ -187,15 +216,22 @@ let referenceSnapshot: NitroSnapshot;
     { q: -1, t: 1, b: 0, s: 0, f: 0 },
     { q: 1, t: 2, b: 0, s: 0, f: 0 },
     { q: 1, t: 1, b: 0, s: 5, f: 0 },
-    { q: 1, t: 1, b: 0, s: 0, f: 99 },
+    /*
+     * Was 99, which the three-bit word could not represent. Seven bits can:
+     * 99 is drift+item0+skill+gimmick, a perfectly ordinary frame, and this
+     * gate would have gone on reporting PASS while testing nothing.
+     */
+    { q: 1, t: 1, b: 0, s: 0, f: IN_MAX + 1 },
+    { q: 1, t: 1, b: 0, s: 0, f: 999 },
     { q: 1, t: Number.NaN, b: 0, s: 0, f: 0 },
     { q: 1.5, t: 1, b: 0, s: 0, f: 0 },
   ];
   gate.check(
     "[W4c] 入力フレームの検証（正常受理・異常拒否）",
     validateInput({ q: 3, t: 1, b: 0, s: -0.5, f: 3 }) !== null &&
+      validateInput({ q: 4, t: 1, b: 0, s: 0, f: IN_MAX }) !== null &&
       badInputs.every((frame) => validateInput(frame) === null),
-    `異常 ${badInputs.length} 件を拒否`,
+    `f=${IN_MAX} 受理・異常 ${badInputs.length} 件を拒否`,
   );
 
   gate.check(
@@ -211,10 +247,10 @@ let referenceSnapshot: NitroSnapshot;
     "laps=0 / racerCount=9 / playerCount>racerCount を拒否",
   );
 
-  // ── v2 fields ─────────────────────────────────────────────────────────────
+  // ── v2/v3 fields ──────────────────────────────────────────────────────────
   gate.check(
-    "[W4e] v2: バージョン定数が 2（コメント慣例とゲートの同期）",
-    NITRO_PROTOCOL_VERSION === 2,
+    "[W4e] バージョン定数が 3（コメント慣例とゲートの同期）",
+    NITRO_PROTOCOL_VERSION === 3,
     `v${NITRO_PROTOCOL_VERSION}`,
   );
   gate.check(
@@ -390,16 +426,15 @@ async function integration(): Promise<void> {
     const counting = i < COUNTDOWN_TICKS;
     const coasting = !counting && i < COAST_UNTIL;
     const turning = i > COAST_UNTIL + 120 && i < COAST_UNTIL + 190;
-    host.sendInput(drive(counting ? 0 : 1, 0));
+    host.sendInput(drive(counting ? 0 : 1, centrelineSteer(host.view(), 0, host.track)));
+    // Both cars follow the line; the guest adds a lane change and a drift in
+    // the turning window so [W9] has a drift to see and [W10] hands the CPU a
+    // kart that is on the road rather than one wedged against a barrier.
+    const line = centrelineSteer(guest.view(), 1, guest.track);
     guest.sendInput(
       coasting || counting
-        ? drive(0, 0)
-        : // Negated with the heading frame so the scripted lane change lands
-          // where it always did: on the road, which is where [W10] hands the
-          // kart to the CPU. Off the road it recovers at 10 u/s and the
-          // 40 m budget below is unreachable for reasons that are not the
-          // property under test.
-          drive(1, turning ? -0.5 : 0, turning),
+        ? drive(0, line)
+        : drive(1, Math.max(-1, Math.min(1, line + (turning ? 0.45 : 0))), turning),
     );
     host.tick(step);
     guest.tick(step);
@@ -423,13 +458,22 @@ async function integration(): Promise<void> {
       : "view が null",
   );
 
-  const lag = guestView
+  /*
+   * Measured in seconds, not metres. The buffer is a duration — 100 ms of
+   * interpolation plus up to one 50 ms snapshot interval — so a metre budget
+   * is really a speed budget in disguise, and it silently tightened the moment
+   * these karts started following the racing line instead of ploughing into a
+   * barrier at walking pace.
+   */
+  const lagMetres = guestView
     ? Math.abs(hostView.racers[0]!.distance - guestView.racers[0]!.distance)
     : Infinity;
+  const hostSpeed = Math.max(1, Math.abs(hostView.racers[0]!.speed));
+  const lagSeconds = lagMetres / hostSpeed;
   gate.check(
-    "[W8b] 遅延が補間バッファ相当に収まる（100ms ≒ 4m）",
-    lag < 8,
-    `距離差 ${lag.toFixed(2)}m`,
+    "[W8b] 遅延が補間バッファ＋1スナップショット間隔に収まる",
+    lagSeconds < 0.22,
+    `${(lagSeconds * 1000).toFixed(0)}ms（${lagMetres.toFixed(2)}m / ${hostSpeed.toFixed(1)}u/s・許容 220ms）`,
   );
 
   const guestKart = hostView.racers.find((racer) => racer.id === 1)!;
@@ -444,7 +488,7 @@ async function integration(): Promise<void> {
   guest.dispose();
   await settle(60);
   for (let i = 0; i < 60 * 4; i += 1) {
-    host.sendInput(drive(1, 0));
+    host.sendInput(drive(1, centrelineSteer(host.view(), 0, host.track)));
     host.tick(step);
     if (i % 12 === 0) await settle(0);
   }
@@ -466,17 +510,12 @@ async function integration(): Promise<void> {
  * a one-lap race with it, which is all the cup lifecycle needs — the CPUS'
  * quality is headlessSelftest's business, not this gate's.
  */
-function steerFor(view: { racers: readonly { id: number; x: number; z: number; yaw: number; lastS?: number; distance: number }[] } | null, seat: number, track: import("../sim/track").Track): KartInput {
-  const racer = view?.racers.find((entry) => entry.id === seat);
-  if (!racer) return drive(1, 0);
-  // Project via distance (monotonic in-lap): distance mod length ≈ arc s.
-  const s = ((racer.distance % track.length) + track.length) % track.length;
-  const [aimX, , aimZ] = pointAt(track, s + 14, 0);
-  const desired = headingOf(aimX - racer.x, aimZ - racer.z);
-  // Negated for the same reason ai.ts is: yaw grows to the left, steer to the
-  // right (see the heading convention in track.ts).
-  const steer = Math.max(-1, Math.min(1, -angleDelta(racer.yaw, desired) * 1.6));
-  return drive(1, steer);
+function steerFor(
+  view: RaceState | null,
+  seat: number,
+  track: import("../sim/track").Track,
+): KartInput {
+  return drive(1, centrelineSteer(view, seat, track));
 }
 
 async function twoRoundCup(): Promise<void> {

@@ -30,7 +30,10 @@ import {
   DRAG_QUADRATIC,
   DRIFT_MIN_SPEED,
   DRIFT_SLIP_ANGLE,
+  DRIFT_HOP_SEC,
+  DRIFT_LATCH_STEER,
   DRIFT_STEER_INNER,
+  DRIFT_STEER_NEUTRAL,
   DRIFT_STEER_OUTER,
   DRIFT_TURN_RATE,
   ENGINE_ACCEL,
@@ -244,6 +247,8 @@ export function createKartSim(config: RaceConfig): KartSim {
       stuckMark: startS,
       wallCooldown: 0,
       hopTimer: 0,
+      driftHeld: false,
+      driftArmed: false,
       airTime: 0,
       trickQueued: false,
       rampCooldown: 0,
@@ -253,6 +258,7 @@ export function createKartSim(config: RaceConfig): KartSim {
       input: NEUTRAL_INPUT,
       cpuItemTimer: 1.2,
       cpuDriftHold: 0,
+      cpuDriftIntent: 0,
       // Seeded here so the rocket-start jitter differs per driver on the very
       // first tick, before the wander timer has ever run.
       cpuWander: random() * 2 - 1,
@@ -502,8 +508,11 @@ export function createKartSim(config: RaceConfig): KartSim {
       }
     }
 
-    const pressed = input.item && !kart.itemHeld;
-    kart.itemHeld = input.item;
+    // Three slots, one inventory: the sim still holds a single item until the
+    // three-slot rebuild lands, so any of the buttons fires it.
+    const itemPressed = input.item0 || input.item1 || input.item2;
+    const pressed = itemPressed && !kart.itemHeld;
+    kart.itemHeld = itemPressed;
     if (
       pressed &&
       kart.item &&
@@ -566,27 +575,39 @@ export function createKartSim(config: RaceConfig): KartSim {
         emit({ k: "trick", racer: kart.id });
       }
 
-      // ── Drift state machine ──────────────────────────────────────────────
-      const canDrift = !kart.airborne && kart.speed >= DRIFT_MIN_SPEED;
-      if (input.drift && canDrift && !kart.drifting) {
-        const dir =
-          Math.abs(steerTarget) > 0.12
-            ? Math.sign(steerTarget)
-            : Math.abs(kart.steer) > 0.12
-              ? Math.sign(kart.steer)
-              : 0;
-        if (dir !== 0) {
-          kart.drifting = true;
-          kart.driftDir = dir;
-          kart.driftCharge = 0;
-          kart.driftTier = 0;
-          /*
-           * The hop: a short ballistic arc that does NOT set `airborne` —
-           * airborne breaks drifts (sim rule) and grants tricks, and the hop
-           * must do neither. It is weight, not flight.
-           */
-          kart.hopTimer = (2 * DRIFT_HOP_VY) / GRAVITY;
-        }
+      /*
+       * ── Hop, then drift ──────────────────────────────────────────────────
+       *
+       * Press and the kart hops, always — no steering required, no speed
+       * required. The direction of the drift is decided when it lands. That
+       * ordering is the whole feel: the old code demanded 0.12 of lock at the
+       * instant of the press, so tapping the button while pointed straight did
+       * nothing at all, not even the hop, and the control read as broken.
+       *
+       * The hop still refuses to set `airborne` — airborne breaks drifts and
+       * grants tricks, and a hop must do neither. It is weight, not flight,
+       * and `hopTimer > 0` is the flag that says so.
+       */
+      const driftPressed = input.drift && !kart.driftHeld;
+      kart.driftHeld = input.drift;
+      if (driftPressed && !kart.airborne && !kart.drifting && kart.hopTimer <= 0) {
+        kart.hopTimer = DRIFT_HOP_SEC;
+        kart.driftArmed = true;
+        emit({ k: "hop", racer: kart.id });
+      }
+      if (!input.drift) kart.driftArmed = false;
+      if (
+        kart.driftArmed &&
+        !kart.drifting &&
+        !kart.airborne &&
+        kart.hopTimer <= 0 &&
+        kart.speed >= DRIFT_MIN_SPEED &&
+        Math.abs(steerTarget) > DRIFT_LATCH_STEER
+      ) {
+        kart.drifting = true;
+        kart.driftDir = Math.sign(steerTarget);
+        kart.driftCharge = 0;
+        kart.driftTier = 0;
       }
       if (kart.drifting) {
         const broken =
@@ -623,10 +644,16 @@ export function createKartSim(config: RaceConfig): KartSim {
       );
       let turn: number;
       if (kart.drifting) {
+        // Bent at neutral: winding into the slide tightens it, winding out of
+        // it goes past zero and unwinds. See balance.ts for why one slope
+        // could not be both.
         const alignment = clamp(kart.steer * kart.driftDir, -1, 1);
         const authority =
-          DRIFT_STEER_OUTER +
-          (DRIFT_STEER_INNER - DRIFT_STEER_OUTER) * ((alignment + 1) / 2);
+          alignment >= 0
+            ? DRIFT_STEER_NEUTRAL +
+              (DRIFT_STEER_INNER - DRIFT_STEER_NEUTRAL) * alignment
+            : DRIFT_STEER_NEUTRAL * (1 + alignment) +
+              DRIFT_STEER_OUTER * -alignment;
         turn = DRIFT_TURN_RATE * kart.driftDir * authority * speedFactor;
       } else {
         turn = BASE_TURN_RATE * kart.steer * speedFactor;
@@ -783,7 +810,7 @@ export function createKartSim(config: RaceConfig): KartSim {
       // Drift hop: pure parabola over the local surface; drift rules never
       // see it because `airborne` stays false.
       kart.hopTimer = Math.max(0, kart.hopTimer - dt);
-      const total = (2 * DRIFT_HOP_VY) / GRAVITY;
+      const total = DRIFT_HOP_SEC;
       const t = total - kart.hopTimer;
       const lift = Math.max(0, DRIFT_HOP_VY * t - 0.5 * GRAVITY * t * t);
       kart.vy = desiredVy;

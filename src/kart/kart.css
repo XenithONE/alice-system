@@ -487,8 +487,30 @@ body {
   background: rgba(53, 215, 255, 0.24) !important;
 }
 
-.nk-touch-item {
+/* Item slots sit just above the wheel, centred: clear of the drift thumb but
+   still inside its arc — the top of a phone held in landscape is not. */
+.nk-touch-items {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  display: flex;
+  gap: 10px;
+}
+
+.nk-touch-items button {
+  width: 58px;
+  height: 46px;
   background: rgba(255, 210, 63, 0.24) !important;
+}
+
+.nk-touch-ability {
+  background: rgba(180, 120, 255, 0.26) !important;
+}
+
+.nk-touch-skill {
+  background: rgba(255, 120, 180, 0.26) !important;
 }
 
 @media (pointer: coarse) {

@@ -38,15 +38,28 @@ export type BoostSource =
 export type HitCause = "banana" | "green" | "red" | "bomb" | "bolt" | "star";
 export type RacePhase = "countdown" | "race" | "finished";
 
+/**
+ * The three item slots are three independent booleans rather than a
+ * `slot: 0|1|2|null`, because the sim watches for the rising edge of a press
+ * and an enum cannot say "released". They also let a player mash two at once,
+ * which is what a three-button inventory is for.
+ */
 export interface KartInput {
   /** 0..1 */
   readonly throttle: number;
   /** 0..1 */
   readonly brake: number;
-  /** -1 (left) .. 1 (right) */
+  /** -1 (left) .. 1 (right), and truly the right of the screen — see track.ts */
   readonly steer: number;
   readonly drift: boolean;
-  readonly item: boolean;
+  /** Machine gimmick, on a cooldown. Carried on the wire before the abilities
+   * that read it exist, so the protocol is bumped once rather than twice. */
+  readonly gimmick: boolean;
+  /** Character skill, likewise. */
+  readonly skill: boolean;
+  readonly item0: boolean;
+  readonly item1: boolean;
+  readonly item2: boolean;
   readonly lookBack: boolean;
 }
 
@@ -55,7 +68,11 @@ export const NEUTRAL_INPUT: KartInput = {
   brake: 0,
   steer: 0,
   drift: false,
-  item: false,
+  gimmick: false,
+  skill: false,
+  item0: false,
+  item1: false,
+  item2: false,
   lookBack: false,
 };
 
@@ -82,6 +99,9 @@ export type RaceEvent =
     }
   | { readonly k: "drift"; readonly racer: RacerId; readonly tier: number }
   | { readonly k: "trick"; readonly racer: RacerId }
+  /* The hop itself. Its height already rides the wire in `y`; this exists so
+   * the sound and the dust land on the frame the kart left the ground. */
+  | { readonly k: "hop"; readonly racer: RacerId }
   | { readonly k: "wall"; readonly racer: RacerId; readonly speed: number }
   | { readonly k: "respawn"; readonly racer: RacerId }
   | {

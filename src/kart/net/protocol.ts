@@ -37,8 +37,32 @@ import type {
  * moment a trick flag or draft boost appears (its validator caps f at 63 and
  * whitelists boost sources). Refusing the join at hello is the honest
  * version of that failure.
+ *
+ * 3 since v3 (the controls rebuild): the input flag word grew from three bits
+ * to seven — three item slots, a machine gimmick and a character skill — and
+ * bit 2 changed meaning from "item" to "look back". A v2 host reads the new
+ * word through a validator that caps f at 7, so every frame a v3 guest sends
+ * would be dropped whole: not a degraded car, a dead one, with the throttle
+ * and the wheel both gone and nothing on screen to say why. The heading frame
+ * was corrected in the same release, so a v2 client also steers mirror-image
+ * to this one. Both are refusals, not degradations.
  */
-export const NITRO_PROTOCOL_VERSION = 2;
+export const NITRO_PROTOCOL_VERSION = 3;
+
+/**
+ * Input flag bits. One definition, read by the encoder in session.ts and by
+ * `validateInput` below — `IN_MAX` is what keeps them honest with each other.
+ */
+export const IN_DRIFT = 1;
+export const IN_ITEM0 = 2;
+export const IN_LOOKBACK = 4;
+export const IN_ITEM1 = 8;
+export const IN_ITEM2 = 16;
+export const IN_SKILL = 32;
+export const IN_GIMMICK = 64;
+/** Every bit above is in use; 128 is the next one free. */
+export const IN_MAX =
+  IN_DRIFT | IN_ITEM0 | IN_LOOKBACK | IN_ITEM1 | IN_ITEM2 | IN_SKILL | IN_GIMMICK;
 export const NITRO_ROOM_PREFIX = "nk-";
 
 export type SessionEndReason = "host-left" | "host-ended";
@@ -209,7 +233,7 @@ export interface InputFrame {
   /** throttle 0..1 */ readonly t: number;
   /** brake 0..1 */ readonly b: number;
   /** steer -1..1 */ readonly s: number;
-  /** bit 1 drift, 2 item, 4 look back */ readonly f: number;
+  /** flag word; see the IN_* bits above, capped at IN_MAX */ readonly f: number;
 }
 
 export type ClientMessage =
@@ -329,7 +353,7 @@ export function validateInput(value: unknown): InputFrame | null {
   const t = num(value.t, 0, 1);
   const b = num(value.b, 0, 1);
   const s = num(value.s, -1, 1);
-  const f = integer(value.f, 0, 7);
+  const f = integer(value.f, 0, IN_MAX);
   if (q === null || t === null || b === null || s === null || f === null) {
     return null;
   }
@@ -416,6 +440,10 @@ function validateEvent(value: unknown): RaceEvent | null {
     case "trick": {
       const seat = racer();
       return seat === null ? null : { k: "trick", racer: seat };
+    }
+    case "hop": {
+      const seat = racer();
+      return seat === null ? null : { k: "hop", racer: seat };
     }
     case "wall": {
       const seat = racer();

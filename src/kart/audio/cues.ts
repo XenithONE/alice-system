@@ -108,6 +108,8 @@ export function cueForEvent(event: RaceEvent, context: CueContext): NkCue | null
       return mine ? { kind: "charge", tier: event.tier } : null;
     case "trick":
       return mine ? { kind: "voice", name: "trick" } : null;
+    case "hop":
+      return mine ? { kind: "voice", name: "hop" } : null;
     case "wall":
       return mine ? { kind: "wall", speed: event.speed } : null;
     case "respawn":

@@ -114,24 +114,28 @@ export function Menu({
         <h2>操作</h2>
         <dl>
           <div>
-            <dt>↑ / W</dt>
-            <dd>アクセル</dd>
+            <dt>↑ ↓</dt>
+            <dd>アクセル・ブレーキ / バック</dd>
           </div>
           <div>
-            <dt>↓ / S</dt>
-            <dd>ブレーキ・バック</dd>
-          </div>
-          <div>
-            <dt>← → / A D</dt>
+            <dt>← →</dt>
             <dd>ステアリング</dd>
           </div>
           <div>
-            <dt>Space / Shift</dt>
-            <dd>ドリフト（溜めてミニターボ）</dd>
+            <dt>Space</dt>
+            <dd>ジャンプドリフト（跳ねて、着地の舵で向きが決まる）</dd>
           </div>
           <div>
-            <dt>Z / Ctrl</dt>
-            <dd>アイテム使用</dd>
+            <dt>Shift</dt>
+            <dd>マシンギミック（クールダウン制）</dd>
+          </div>
+          <div>
+            <dt>E</dt>
+            <dd>キャラスキル（クールダウン制）</dd>
+          </div>
+          <div>
+            <dt>A S D</dt>
+            <dd>アイテム 1・2・3</dd>
           </div>
           <div>
             <dt>Q</dt>
@@ -139,8 +143,10 @@ export function Menu({
           </div>
         </dl>
         <p>
-          ゲームパッド対応（RT アクセル・LT ブレーキ・B ドリフト・X アイテム）。
-          スマートフォンでは画面下のボタンで操作します。
+          アイテムが A / S / D に移ったため、ステアリングは方向キーのみになりました。
+          ゲームパッド対応（RT アクセル・LT ブレーキ・A ドリフト・X / LB / RB
+          アイテム・十字↑ スキル・十字↓ ギミック）。
+          スマートフォンでは画面のボタンで操作します。
         </p>
       </section>
     </div>
@@ -572,6 +578,19 @@ export function TouchControls({ touch }: { touch: TouchState }): React.JSX.Eleme
 
   return (
     <div className="nk-touch" aria-hidden="true">
+      {/* Item slots along the top edge: three small targets a thumb can find
+          without leaving the wheel, and far from the one that fires a drift. */}
+      <div className="nk-touch-items">
+        <button type="button" {...bind("item0", true)}>
+          1
+        </button>
+        <button type="button" {...bind("item1", true)}>
+          2
+        </button>
+        <button type="button" {...bind("item2", true)}>
+          3
+        </button>
+      </div>
       <div className="nk-touch-left">
         <button type="button" {...bind("steer", -1)}>
           ◀
@@ -581,8 +600,19 @@ export function TouchControls({ touch }: { touch: TouchState }): React.JSX.Eleme
         </button>
       </div>
       <div className="nk-touch-right">
-        <button type="button" className="nk-touch-item" {...bind("item", true)}>
-          ITEM
+        <button
+          type="button"
+          className="nk-touch-ability"
+          {...bind("gimmick", true)}
+        >
+          G
+        </button>
+        <button
+          type="button"
+          className="nk-touch-ability nk-touch-skill"
+          {...bind("skill", true)}
+        >
+          S
         </button>
         <button type="button" className="nk-touch-drift" {...bind("drift", true)}>
           DRIFT

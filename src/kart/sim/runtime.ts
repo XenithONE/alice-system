@@ -75,6 +75,10 @@ export interface KartRuntime {
   wallCooldown: number;
   /** Drift-start hop: seconds remaining of the ballistic arc. */
   hopTimer: number;
+  /** Drift button state last tick, so a press is an edge and not a hold. */
+  driftHeld: boolean;
+  /** Hopped with the button still down: touchdown will read the wheel. */
+  driftArmed: boolean;
   /** Continuous airborne seconds (tricks need real air, not a kerb blip). */
   airTime: number;
   /** A trick was queued mid-air; landing converts it to a boost. */
@@ -92,6 +96,8 @@ export interface KartRuntime {
   /** CPU scratch — unused for humans. */
   cpuItemTimer: number;
   cpuDriftHold: number;
+  /** CPU only: seconds left of "keep the drift button down" (see ai.ts). */
+  cpuDriftIntent: number;
   cpuWander: number;
   cpuWanderTimer: number;
 }

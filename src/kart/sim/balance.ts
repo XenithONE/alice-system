@@ -40,22 +40,37 @@ export const REVERSE_TOP_SPEED = 12;
 export const BASE_TURN_RATE = 2.05;
 /** Steering authority scales with speed: none parked, full by this fraction. */
 export const TURN_SPEED_REFERENCE = 0.42;
-/** How fast the steering input eases toward the stick (per second). */
-export const STEER_LERP = 9.5;
+/**
+ * How fast the steering input eases toward the stick (per second).
+ *
+ * This is now the ONLY easing on the path. input.ts used to ramp the keyboard
+ * as well, which put ~300 ms between a key and full lock and — worse — did it
+ * in a variable that only existed on the machine pressing the key, so a host
+ * and a guest smoothed the same driver differently. 8 rather than 9.5 because
+ * removing the first stage made the wheel feel abrupt.
+ */
+export const STEER_LERP = 8;
 
 /** Drift multiplies turn rate and pins the kart into a fixed rotation sense. */
 export const DRIFT_TURN_RATE = 2.9;
 /**
- * Inner/outer steering authority while drifting — the counter-steer window.
+ * Steering authority while drifting, as a bent line through three points.
  *
- * The outer end has to reach nearly zero. A fast 50 m corner at 35 u/s only
- * needs 0.7 rad/s; when the outer end was 0.28 the slowest a drift could turn
- * was 0.81 rad/s, so every drift over-rotated, the driver caught it, and the
- * charge broke before it ever reached a tier. Mini-turbos were unreachable on
- * an open circuit and headlessSelftest [H4] counted exactly zero of them.
+ * A single slope could not do this. At 0.28 the outer end still turned at
+ * 0.81 rad/s where a fast 50 m corner needs 0.7, so every drift over-rotated
+ * and [H4] counted zero mini-turbos; dropping it to 0.06 fixed the count and
+ * left the driver with no way to catch a slide at all — hold the wrong way and
+ * the kart kept turning, which is most of what "the controls fight me" meant.
+ *
+ * So: NEUTRAL is what the drift does on its own, INNER tightens it, and OUTER
+ * is negative — the wheel actually winds the slide back. Only the neutral-to-
+ * inner half is what [H4] measures, so the counter-steer half is free.
  */
 export const DRIFT_STEER_INNER = 1;
-export const DRIFT_STEER_OUTER = 0.06;
+export const DRIFT_STEER_NEUTRAL = 0.45;
+export const DRIFT_STEER_OUTER = -0.15;
+/** Steering needed at touchdown to commit a hop into a drift. */
+export const DRIFT_LATCH_STEER = 0.12;
 /** Minimum speed required to hold a drift. Below it the drift breaks. */
 export const DRIFT_MIN_SPEED = 16;
 /** Slip angle the body carries while drifting — the visual "sideways" look. */
@@ -223,6 +238,12 @@ export const SPEED_CLASSES: readonly {
 
 /** Small hop when a drift starts (visual weight; physics-neutral progress). */
 export const DRIFT_HOP_VY = 5.2;
+/**
+ * How long that hop lasts. Derived from the arc, never authored — and shared,
+ * because the CPU has to know it: the drift now commits on touchdown, so a
+ * driver that lets go before then buys a hop and nothing else.
+ */
+export const DRIFT_HOP_SEC = (2 * DRIFT_HOP_VY) / GRAVITY;
 /** Slipstream: sit in this cone behind a kart to charge a draft. */
 export const DRAFT_RANGE = 13;
 export const DRAFT_HALF_ANGLE = 0.42;

@@ -149,7 +149,11 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
       brake: 0,
       steer: 0,
       drift: false,
-      item: i % 20 < 10,
+      gimmick: false,
+      skill: false,
+      item0: i % 20 < 10,
+      item1: false,
+      item2: false,
       lookBack: false,
     });
     sim.step();
@@ -299,7 +303,11 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
         brake: 0,
         steer: Math.max(-1, Math.min(1, delta * 1.6)),
         drift: false,
-        item: false,
+        gimmick: false,
+        skill: false,
+        item0: false,
+        item1: false,
+        item2: false,
         lookBack: false,
       });
     }

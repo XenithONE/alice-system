@@ -32,6 +32,13 @@ import {
 } from "../sim/types";
 import { SnapshotInterpolator } from "./interpolation";
 import {
+  IN_DRIFT,
+  IN_GIMMICK,
+  IN_ITEM0,
+  IN_ITEM1,
+  IN_ITEM2,
+  IN_LOOKBACK,
+  IN_SKILL,
   NITRO_PROTOCOL_VERSION,
   raceStateFromSnapshot,
   validateCup,
@@ -172,7 +179,13 @@ function clampInt(
 
 function inputFlags(input: KartInput): number {
   return (
-    (input.drift ? 1 : 0) | (input.item ? 2 : 0) | (input.lookBack ? 4 : 0)
+    (input.drift ? IN_DRIFT : 0) |
+    (input.item0 ? IN_ITEM0 : 0) |
+    (input.lookBack ? IN_LOOKBACK : 0) |
+    (input.item1 ? IN_ITEM1 : 0) |
+    (input.item2 ? IN_ITEM2 : 0) |
+    (input.skill ? IN_SKILL : 0) |
+    (input.gimmick ? IN_GIMMICK : 0)
   );
 }
 
@@ -201,9 +214,13 @@ function inputFromFrame(frame: {
     throttle: frame.t,
     brake: frame.b,
     steer: frame.s,
-    drift: (frame.f & 1) !== 0,
-    item: (frame.f & 2) !== 0,
-    lookBack: (frame.f & 4) !== 0,
+    drift: (frame.f & IN_DRIFT) !== 0,
+    item0: (frame.f & IN_ITEM0) !== 0,
+    lookBack: (frame.f & IN_LOOKBACK) !== 0,
+    item1: (frame.f & IN_ITEM1) !== 0,
+    item2: (frame.f & IN_ITEM2) !== 0,
+    skill: (frame.f & IN_SKILL) !== 0,
+    gimmick: (frame.f & IN_GIMMICK) !== 0,
   };
 }
 

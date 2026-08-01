@@ -13,6 +13,7 @@
 import {
   BASE_TOP_SPEED,
   CPU_SKILL,
+  DRIFT_HOP_SEC,
   DRIFT_MIN_SPEED,
   MINI_TURBO_TIERS,
   RED_SHELL_LOCK_RANGE,
@@ -87,6 +88,35 @@ function curvatureAt(track: Track, s: number): number {
 }
 
 /**
+ * The CPU's controls, spelled out in one place.
+ *
+ * Every field is written explicitly so a new button shows up here as a
+ * compile error and gets a deliberate answer, rather than defaulting to
+ * "never pressed" through a spread and being forgotten. The ability buttons
+ * are that: not wired yet, and this is where they will be.
+ */
+function cpuControls(partial: {
+  throttle: number;
+  brake: number;
+  steer: number;
+  drift: boolean;
+  item?: boolean;
+}): KartInput {
+  return {
+    throttle: partial.throttle,
+    brake: partial.brake,
+    steer: partial.steer,
+    drift: partial.drift,
+    gimmick: false,
+    skill: false,
+    item0: partial.item ?? false,
+    item1: false,
+    item2: false,
+    lookBack: false,
+  };
+}
+
+/**
  * Where the fast line runs at arc length `s`.
  *
  * Two probes: what the road is doing here, and what it is doing a corner
@@ -144,15 +174,13 @@ export function cpuInput(
     const aim = skill.drift > 0.85 ? 0.22 : skill.drift > 0.5 ? 0.31 : 0.9;
     const spread = skill.drift > 0.85 ? 0.13 : skill.drift > 0.5 ? 0.24 : 0.4;
     const jitter = (self.cpuWander * 0.5 + 0.5) * spread;
-    return {
+    return cpuControls({
       throttle:
         self.countdownHold > 0 || world.countdown <= aim + jitter ? 1 : 0,
       brake: 0,
       steer: 0,
       drift: false,
-      item: false,
-      lookBack: false,
-    };
+    });
   }
 
   const s = self.lastS;
@@ -161,14 +189,12 @@ export function cpuInput(
   // ── Mid-air: queue a trick, keep the wheel straight-ish ────────────────────
   if (self.airborne) {
     const wantsTrick = skill.drift > 0.4 && self.airTime > 0.14 && !self.trickQueued;
-    return {
+    return cpuControls({
       throttle: 1,
       brake: 0,
       steer: clamp(self.steer * 0.4, -0.4, 0.4),
       drift: wantsTrick,
-      item: false,
-      lookBack: false,
-    };
+    });
   }
 
   // ── Aim point ───────────────────────────────────────────────────────────────
@@ -313,12 +339,24 @@ export function cpuInput(
     self.cpuDriftHold -= dt;
     if (self.cpuDriftHold <= 0) {
       self.cpuDriftHold = 0.35;
-      drift = world.random() < skill.drift;
-    } else {
-      drift = false;
+      /*
+       * A drift now commits on TOUCHDOWN, so the button has to stay down
+       * across the hop. This used to be a single-tick press, which was
+       * enough when the press itself started the drift and is enough for
+       * exactly nothing now: [H4] counted zero mini-turbos on every circuit
+       * until the CPU learned to hold.
+       */
+      if (world.random() < skill.drift) {
+        self.cpuDriftIntent = DRIFT_HOP_SEC + 0.12;
+      }
+    }
+    if (self.cpuDriftIntent > 0) {
+      self.cpuDriftIntent = Math.max(0, self.cpuDriftIntent - dt);
+      drift = true;
     }
   } else {
     self.cpuDriftHold = 0;
+    self.cpuDriftIntent = 0;
   }
 
   // ── Items ───────────────────────────────────────────────────────────────────
@@ -333,14 +371,7 @@ export function cpuInput(
     self.cpuItemTimer = skill.itemDelay;
   }
 
-  return {
-    throttle,
-    brake,
-    steer,
-    drift,
-    item: useItem,
-    lookBack: false,
-  };
+  return cpuControls({ throttle, brake, steer, drift, item: useItem });
 }
 
 function nearestAhead<T extends { readonly s: number; readonly lateral: number }>(

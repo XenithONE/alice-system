@@ -57,6 +57,9 @@ export const NK_VOICES = {
   "fanfare-place": { wave: "triangle", from: 392, to: 587, secondHz: 196, durationSec: 0.7, gain: 0.4 },
   "wrong-way": { wave: "square", from: 415, to: 415, secondHz: 29, durationSec: 0.3, gain: 0.32 },
   respawn: { wave: "sine", from: 196, to: 640, durationSec: 0.32, gain: 0.3 },
+  // Short, dry and low: the hop is a chirp of tyre, not a jump cue. It fires
+  // on every drift press, so anything longer would carpet the whole race.
+  hop: { wave: "square", from: 300, to: 210, durationSec: 0.07, gain: 0.16, noise: 0.4, noiseCutoffHz: 2600 },
   trick: { wave: "triangle", from: 520, to: 940, durationSec: 0.24, gain: 0.36 },
   "trick-land": { wave: "square", from: 700, to: 1150, durationSec: 0.2, gain: 0.4 },
   draft: { wave: "noise", from: 0, to: 0, durationSec: 0.45, gain: 0.3, noise: 0.85, noiseCutoffHz: 3400 },
