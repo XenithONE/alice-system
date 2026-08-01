@@ -91,7 +91,13 @@ export interface TrackTheme {
   readonly ground: number;
   readonly groundAccent: number;
   /** Roadside prop family the scene builder plants. */
-  readonly props: "palm" | "neon" | "topiary";
+  readonly props:
+    | "palm"
+    | "neon"
+    | "topiary"
+    | "building"
+    | "conifer"
+    | "boulder";
   readonly bloom: number;
   /** 0..1 starfield density in the sky shader (render-only). */
   readonly stars: number;

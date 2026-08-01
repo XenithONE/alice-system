@@ -20,6 +20,7 @@ import {
   surfaceHeight,
   type SurfaceKind,
   type Track,
+  type TrackTheme,
 } from "../sim/track";
 import {
   asphaltTexture,
@@ -318,6 +319,20 @@ function railPieces(
   };
 }
 
+/**
+ * How wide each prop family actually is, in metres of radius. Used both to push
+ * the prop further out and to widen its collision margin — the placement test
+ * asks about the object, not about its origin.
+ */
+const PROP_FOOTPRINT: Record<TrackTheme["props"], number> = {
+  palm: 1,
+  neon: 1.5,
+  topiary: 2.5,
+  building: 12,
+  conifer: 3,
+  boulder: 4,
+};
+
 function propPieces(
   track: Track,
   quality: TrackMeshQuality,
@@ -330,6 +345,7 @@ function propPieces(
     4,
     Math.round(track.samples.length / (46 * quality.propDensity)),
   );
+  const footprint = PROP_FOOTPRINT[theme.props];
 
   const slots: { x: number; y: number; z: number; yaw: number; scale: number }[] =
     [];
@@ -337,7 +353,7 @@ function propPieces(
     const sample = track.samples[i]!;
     for (const side of [1, -1] as const) {
       if (random() < 0.2) continue;
-      const out = RUMBLE_WIDTH + 5 + random() * 24;
+      const out = RUMBLE_WIDTH + 5 + footprint + random() * 24;
       const lateral = side * (sample.half + out);
       const x = sample.x + sample.rx * lateral;
       const z = sample.z + sample.rz * lateral;
@@ -346,8 +362,21 @@ function propPieces(
        * corner "24 m out" can land on a DIFFERENT stretch of the same road —
        * one palm grew out of the tarmac at the first hairpin exactly this
        * way. Re-project the candidate and reject anything on or near a road.
+       *
+       * `footprint` is what makes that test about the prop rather than about
+       * its origin. A palm is a metre wide and its centre point was a fair
+       * stand-in; a building is twenty, and a building whose CENTRE clears the
+       * shoulder still has ten metres of itself over the tarmac. Adding the
+       * radius to both the offset and the collision margin fixes the incoming
+       * bug class and the existing palm-overhang one in the same expression.
        */
-      const collision = querySurface(track, x, z, i, SHOULDER_WIDTH + 1.5);
+      const collision = querySurface(
+        track,
+        x,
+        z,
+        i,
+        SHOULDER_WIDTH + 1.5 + footprint,
+      );
       if (collision.onGround) continue;
       const dropT = Math.min(
         1,
@@ -445,6 +474,84 @@ function propPieces(
       new THREE.MeshBasicMaterial({ color: theme.roadEdge, toneMapped: false }),
       4.4,
       false,
+    );
+  } else if (theme.props === "building") {
+    /*
+     * A city block: one tall slab and a shorter neighbour, so the skyline reads
+     * as buildings of different ages rather than a row of identical towers. The
+     * lit band near the top is a MeshBasicMaterial so it survives the tone
+     * mapper at dusk, which is when this circuit is set.
+     */
+    place(
+      new THREE.BoxGeometry(16, 46, 14),
+      new THREE.MeshStandardMaterial({
+        color: 0x2b3242,
+        roughness: 0.78,
+        metalness: 0.18,
+      }),
+      23,
+    );
+    place(
+      new THREE.BoxGeometry(11, 26, 11),
+      new THREE.MeshStandardMaterial({
+        color: 0x39404f,
+        roughness: 0.7,
+        metalness: 0.24,
+      }),
+      13,
+    );
+    place(
+      new THREE.BoxGeometry(16.3, 1.4, 14.3),
+      new THREE.MeshBasicMaterial({
+        color: theme.groundAccent,
+        toneMapped: false,
+      }),
+      40,
+      false,
+    );
+  } else if (theme.props === "conifer") {
+    place(
+      new THREE.CylinderGeometry(0.24, 0.44, 3.2, 6),
+      new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.95 }),
+      1.6,
+    );
+    // Two stacked cones: a single one reads as a traffic cone at this scale.
+    place(
+      new THREE.ConeGeometry(2.4, 6.4, 7),
+      new THREE.MeshStandardMaterial({
+        color: 0x24512f,
+        roughness: 0.88,
+        flatShading: true,
+      }),
+      5.6,
+    );
+    place(
+      new THREE.ConeGeometry(1.5, 4.4, 7),
+      new THREE.MeshStandardMaterial({
+        color: 0x2c6438,
+        roughness: 0.88,
+        flatShading: true,
+      }),
+      9.4,
+    );
+  } else if (theme.props === "boulder") {
+    place(
+      new THREE.DodecahedronGeometry(2.9, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0x7a6046,
+        roughness: 0.96,
+        flatShading: true,
+      }),
+      1.5,
+    );
+    place(
+      new THREE.DodecahedronGeometry(1.5, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0x8d7052,
+        roughness: 0.96,
+        flatShading: true,
+      }),
+      3.4,
     );
   } else {
     place(

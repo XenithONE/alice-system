@@ -28,6 +28,14 @@ import {
   type TrackSpec,
 } from "./track";
 import { TRACKS } from "./tracks";
+// The thresholds and the arithmetic live in trackMetrics so the layout tool and
+// this gate cannot drift apart. A tool with its own copy is a second opinion.
+import {
+  roundTripError,
+  selfProximity,
+  TRACK_LIMITS,
+  turnRatio,
+} from "./trackMetrics";
 
 const gate = createGate();
 /*
@@ -69,25 +77,6 @@ for (const track of built) {
 }
 
 // [T3] projection round-trip ─────────────────────────────────────────────────
-function roundTripError(track: Track, window: number): number {
-  let worst = 0;
-  for (let i = 0; i < track.samples.length; i += 7) {
-    const sample = track.samples[i]!;
-    for (const fraction of [-0.8, -0.3, 0, 0.45, 0.9]) {
-      const lateral = sample.half * fraction;
-      const [x, , z] = pointAt(track, sample.s, lateral);
-      const hint = (i + window) % track.samples.length;
-      const query = querySurface(track, x, z, hint, SHOULDER_WIDTH);
-      worst = Math.max(
-        worst,
-        Math.abs(query.lateral - lateral),
-        Math.abs(arcDelta(track, query.s, sample.s)),
-      );
-    }
-  }
-  return worst;
-}
-
 for (const track of built) {
   const error = roundTripError(track, 0);
   gate.check(
@@ -137,63 +126,21 @@ for (const track of built) {
  * authority) jumps. The structural guarantee is therefore a ratio, not a
  * distance: every corner must be comfortably wider than the road it carries.
  */
-function turnRatio(track: Track): { ratio: number; index: number; radius: number } {
-  let worst = Infinity;
-  let index = 0;
-  let radius = Infinity;
-  for (let i = 0; i < track.samples.length; i += 1) {
-    const sample = track.samples[i]!;
-    const r =
-      Math.abs(sample.curvature) < 1e-6 ? Infinity : 1 / Math.abs(sample.curvature);
-    const ratio = r / sample.half;
-    if (ratio < worst) {
-      worst = ratio;
-      index = i;
-      radius = r;
-    }
-  }
-  return { ratio: worst, index, radius };
-}
-
 for (const track of built) {
   const { ratio, index, radius } = turnRatio(track);
   gate.check(
     `[T6:${track.spec.id}] 最小曲率半径が路肩幅を上回る（投影が別区間へ飛ばない条件）`,
-    ratio > 2.5,
+    ratio > TRACK_LIMITS.minTurnRatio,
     `最小 R/half = ${ratio.toFixed(2)}（R=${radius.toFixed(1)}m, sample ${index}）`,
   );
 }
 
 // [T8] distant stretches never overlap (protects the un-hinted projection) ──
-function selfProximity(track: Track): { gap: number; a: number; b: number } {
-  const samples = track.samples;
-  let worst = Infinity;
-  let worstA = 0;
-  let worstB = 0;
-  for (let i = 0; i < samples.length; i += 1) {
-    const a = samples[i]!;
-    for (let j = i + 1; j < samples.length; j += 1) {
-      const b = samples[j]!;
-      const along = Math.abs(arcDelta(track, a.s, b.s));
-      if (along < 120) continue;
-      const centre = Math.hypot(b.x - a.x, b.z - a.z);
-      const required = a.half + b.half + SHOULDER_WIDTH * 2;
-      const slack = centre - required;
-      if (slack < worst) {
-        worst = slack;
-        worstA = i;
-        worstB = j;
-      }
-    }
-  }
-  return { gap: worst, a: worstA, b: worstB };
-}
-
 for (const track of built) {
   const { gap, a, b } = selfProximity(track);
   gate.check(
     `[T8:${track.spec.id}] 離れた区間どうしが重ならない`,
-    gap > 2,
+    gap > TRACK_LIMITS.minSelfGap,
     `最小余裕 ${gap.toFixed(2)}m（サンプル ${a}↔${b}）`,
   );
 }
