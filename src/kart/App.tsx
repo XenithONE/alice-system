@@ -128,6 +128,7 @@ export default function App(): React.JSX.Element {
   const [lobby, setLobby] = useState<NitroLobby | null>(null);
   const [result, setResult] = useState<RaceResult | null>(null);
   const [view, setView] = useState<RaceState | null>(null);
+  const [hudSeat, setHudSeat] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -374,6 +375,10 @@ export default function App(): React.JSX.Element {
       if (uiTimer > 1 / 20) {
         uiTimer = 0;
         setView(state);
+        // The HUD follows the camera. In a real race those are the same seat;
+        // when QA spectates a rival it should read that rival's dashboard,
+        // not the local player's.
+        setHudSeat(focusOverride ?? live.seat);
       }
 
       const outcome = live.result();
@@ -403,6 +408,16 @@ export default function App(): React.JSX.Element {
         kind: sessionRef.current?.kind ?? null,
         mode: modeRef.current,
         cup: sessionRef.current?.cup() ?? null,
+        // Follows the camera, not the local seat, so spectating a CPU reports
+        // that CPU's inventory.
+        heldItems:
+          sessionRef.current
+            ?.view()
+            ?.racers.find(
+              (racer) =>
+                racer.id === (focusOverride ?? sessionRef.current?.seat ?? 0),
+            )
+            ?.items.filter((slot) => slot !== null).length ?? 0,
       }),
       setInput: (partial: Partial<KartInput> | null) => {
         inputOverride = partial;
@@ -615,7 +630,7 @@ export default function App(): React.JSX.Element {
             <Hud
               track={session!.track}
               view={view}
-              focusSeat={session!.seat}
+              focusSeat={hudSeat ?? session!.seat}
               quality={quality.label}
               cup={cup}
             />

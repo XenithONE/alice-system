@@ -7,6 +7,9 @@ import { liveryOf } from "../render/palette";
 
 const PLACE_SUFFIX = ["", "st", "nd", "rd", "th", "th", "th", "th", "th"];
 
+/** Matches DEFAULT_BINDINGS in input.ts; shown on the tiles so it is learnable. */
+const ITEM_SLOT_KEYS = ["A", "S", "D"];
+
 export function formatTime(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return "--:--.---";
   const whole = Math.max(0, seconds);
@@ -78,8 +81,44 @@ export function ItemGlyph({ item }: { item: ItemKind }): React.JSX.Element {
           <path d="M13.5 2 5 13.5h5L9 22l9.5-12.5h-5.2z" fill="#7cd6ff" stroke="#2e9fd8" strokeWidth="1" />
         </svg>
       );
-    default:
-      return <svg viewBox="0 0 24 24" aria-hidden="true" />;
+    case "turbine":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5" fill="none" stroke="#35d7ff" strokeWidth="1.6" />
+          <path d="M12 12 6 8.5a7 7 0 0 1 6-3.5z" fill="#35d7ff" />
+          <path d="M12 12 18 8.5a7 7 0 0 1 0 7z" fill="#7ce6ff" />
+          <path d="M12 12 12 19a7 7 0 0 1-6-3.5z" fill="#1ea9cc" />
+          <circle cx="12" cy="12" r="2.1" fill="#0b1620" />
+        </svg>
+      );
+    case "slipcall":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8h11M3 12h13M4 16h11" stroke="#cfe8ff" strokeWidth="2" strokeLinecap="round" />
+          <path d="M15 6.5 21.5 12 15 17.5z" fill="#8ec9ff" />
+        </svg>
+      );
+    case "mine":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="6" fill="#3a3f48" />
+          <path
+            d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4M4.6 4.6l2.8 2.8M16.6 16.6l2.8 2.8M19.4 4.6l-2.8 2.8M7.4 16.6l-2.8 2.8"
+            stroke="#ff8a2b"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+          />
+          <circle cx="12" cy="12" r="2" fill="#ff5c5c" />
+        </svg>
+      );
+    case "emp":
+      return (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" fill="#b678ff" />
+          <circle cx="12" cy="12" r="6.5" fill="none" stroke="#b678ff" strokeWidth="1.5" opacity="0.75" />
+          <circle cx="12" cy="12" r="10" fill="none" stroke="#b678ff" strokeWidth="1.2" opacity="0.4" />
+        </svg>
+      );
   }
 }
 
@@ -234,24 +273,37 @@ export function Hud({ track, view, focusSeat, quality, cup }: HudProps): React.J
       </div>
 
       <div className="nk-hud-bottomleft">
-        <div
-          className={`nk-item ${me.rouletteTimer > 0 ? "is-rolling" : ""} ${
-            me.item ? "is-held" : ""
-          }`}
-        >
-          {me.item ? (
-            <>
-              <ItemGlyph item={me.item} />
-              {me.itemCharges > 1 ? (
-                <span className="nk-item-count">×{me.itemCharges}</span>
-              ) : null}
-              <span className="nk-item-label">{ITEM_LABEL_JA[me.item]}</span>
-            </>
-          ) : me.rouletteTimer > 0 ? (
-            <span className="nk-item-label">…</span>
-          ) : (
-            <span className="nk-item-label nk-item-empty">ITEM</span>
-          )}
+        {/* Three tiles, each labelled with the key that fires it — the whole
+            point of three slots is choosing between them under pressure. */}
+        <div className="nk-items">
+          {me.items.map((held, slot) => {
+            const rolling = me.rouletteTimer > 0 && held === null;
+            return (
+              <div
+                key={slot}
+                className={`nk-item ${rolling ? "is-rolling" : ""} ${
+                  held ? "is-held" : ""
+                }`}
+              >
+                <span className="nk-item-key">{ITEM_SLOT_KEYS[slot]}</span>
+                {held ? (
+                  <>
+                    <ItemGlyph item={held.kind} />
+                    {held.charges > 1 ? (
+                      <span className="nk-item-count">×{held.charges}</span>
+                    ) : null}
+                    <span className="nk-item-label">
+                      {ITEM_LABEL_JA[held.kind]}
+                    </span>
+                  </>
+                ) : rolling ? (
+                  <span className="nk-item-label">…</span>
+                ) : (
+                  <span className="nk-item-label nk-item-empty">—</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

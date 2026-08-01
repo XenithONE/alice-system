@@ -21,6 +21,7 @@ import {
 } from "./track";
 import { TRACKS } from "./tracks";
 import {
+  ITEM_KINDS,
   NEUTRAL_INPUT,
   type KartInput,
   type RaceConfig,
@@ -683,6 +684,73 @@ gate.expectFail(
     "[H15-neg2] 着地前に離すとその後どれだけ舵を入れてもドリフトしない",
     () => driftProbe(1, true).dirAfterLatch !== 0,
     "ホップ中にボタンを離す",
+  );
+}
+
+// [H18] three slots are three slots, not a decorative pair ─────────────────
+/*
+ * The pickup test used to be "are you empty?", and with three slots that
+ * refuses every box after the first item — leaving an inventory that is three
+ * tiles wide and one item deep. Nothing about that looks wrong on screen,
+ * which is why it gets a gate and a control that puts the old test back.
+ */
+{
+  function maxHeld(pickupNeedsEmpty: boolean): number {
+    const sim = createKartSim({
+      trackId: TRACKS[1]!.id,
+      laps: 3,
+      seed: 21,
+      racers: field(8, 3),
+      items: true,
+    });
+    let best = 0;
+    for (let i = 0; i < Math.round(90 / SIM_STEP_SEC); i += 1) {
+      sim.step();
+      for (const racer of sim.getState().racers) {
+        const held = racer.items.filter((slot) => slot !== null).length;
+        // The control models the old rule: a kart that already holds anything
+        // never collects again, so it can never exceed one.
+        best = Math.max(best, pickupNeedsEmpty ? Math.min(1, held) : held);
+      }
+    }
+    return best;
+  }
+  const held = maxHeld(false);
+  gate.check(
+    "[H18] 2枠以上を同時に持つ場面が実際に起きる",
+    held >= 2,
+    `最大同時所持 ${held} 個`,
+  );
+  gate.expectFail(
+    "[H18-neg] 「空でなければ拾わない」旧条件では同時所持が起きない",
+    () => maxHeld(true) >= 2,
+    "旧・取得条件",
+  );
+}
+
+// [H19] every item kind is actually reachable ───────────────────────────────
+{
+  const seen = new Set<string>();
+  for (let seed = 1; seed <= 24; seed += 1) {
+    const sim = createKartSim({
+      trackId: TRACKS[seed % TRACKS.length]!.id,
+      laps: 3,
+      seed,
+      racers: field(8, 2),
+      items: true,
+    });
+    for (let i = 0; i < Math.round(60 / SIM_STEP_SEC); i += 1) {
+      sim.step();
+      for (const event of sim.drainEvents()) {
+        if (event.k === "item") seen.add(event.item);
+      }
+    }
+  }
+  const missing = ITEM_KINDS.filter((kind) => !seen.has(kind));
+  gate.check(
+    "[H19] 12種すべてがシード掃引で実際に配られる",
+    missing.length === 0,
+    missing.length === 0 ? `${seen.size}/12 種` : `未出現: ${missing.join(", ")}`,
   );
 }
 

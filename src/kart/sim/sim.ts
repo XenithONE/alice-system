@@ -92,6 +92,7 @@ import {
   TRICK_BOOST_SEC,
   RAMP_LAUNCH_VY,
   TRIPLE_MUSHROOM_CHARGES,
+  EMP_RADIUS,
 } from "./balance";
 import { cpuInput, type CpuWorld } from "./ai";
 import { itemCharges, rollItem } from "./items";
@@ -113,8 +114,10 @@ import {
 } from "./track";
 import { trackSpecById } from "./tracks";
 import {
+  ITEM_SLOT_COUNT,
   MAX_RACERS,
   NEUTRAL_INPUT,
+  type HazardKind,
   type HazardState,
   type HitCause,
   type KartInput,
@@ -148,7 +151,7 @@ interface Projectile {
 
 interface Hazard {
   id: number;
-  kind: "banana";
+  kind: HazardKind;
   owner: RacerId;
   x: number;
   y: number;
@@ -224,12 +227,13 @@ export function createKartSim(config: RaceConfig): KartSim {
       starTimer: 0,
       boltTimer: 0,
       graceTimer: 0,
-      item: config.startTriple === true && !spec.cpu ? "triple" : null,
-      itemCharges:
-        config.startTriple === true && !spec.cpu ? TRIPLE_MUSHROOM_CHARGES : 0,
+      items:
+        config.startTriple === true && !spec.cpu
+          ? [{ kind: "triple", charges: TRIPLE_MUSHROOM_CHARGES }, null, null]
+          : [null, null, null],
       rouletteTimer: 0,
       itemCooldown: 0,
-      itemHeld: false,
+      itemHeld: [false, false, false],
       lastS: query.s,
       lastLateral: query.lateral,
       lastHalf: query.half,
@@ -317,8 +321,14 @@ export function createKartSim(config: RaceConfig): KartSim {
     victim.boostTimer = 0;
     victim.boostSource = null;
     if (heavy) {
-      victim.item = null;
-      victim.itemCharges = 0;
+      /*
+       * One slot, not the whole inventory. A bolt used to cost its victims a
+       * single item because a single item was all anyone could carry; emptying
+       * three slots would triple the reach of one pickup without anyone having
+       * decided that it should.
+       */
+      const first = victim.items.findIndex((slot) => slot !== null);
+      if (first >= 0) victim.items[first] = null;
       victim.rouletteTimer = 0;
     }
     emit({
@@ -357,11 +367,12 @@ export function createKartSim(config: RaceConfig): KartSim {
     return best;
   }
 
-  function useItem(kart: KartRuntime): void {
-    const item = kart.item;
-    if (!item) return;
+  function useItem(kart: KartRuntime, slot: number): void {
+    const held = kart.items[slot];
+    if (!held) return;
+    const item = held.kind;
     const [fx, fz] = forwardOf(kart.yaw);
-    emit({ k: "use", racer: kart.id, item });
+    emit({ k: "use", racer: kart.id, item, slot });
     switch (item) {
       case "mushroom":
       case "triple":
@@ -424,12 +435,66 @@ export function createKartSim(config: RaceConfig): KartSim {
         }
         break;
       }
+      /*
+       * Turbine: cash a drift in early. It pays the top tier, so it is only
+       * worth anything to someone who was already committed to a corner —
+       * used on a straight it does nothing at all, which is the point.
+       */
+      case "turbine": {
+        if (kart.drifting && kart.speed > DRIFT_MIN_SPEED) {
+          const top = MINI_TURBO_BOOST[MINI_TURBO_BOOST.length - 1] ?? 0;
+          boost(kart, top, "mini", MINI_TURBO_TIERS.length);
+          kart.drifting = false;
+          kart.driftDir = 0;
+          kart.driftCharge = 0;
+          kart.driftTier = 0;
+        }
+        break;
+      }
+      /** Slipcall: the tow you would have had to earn by sitting in a wake. */
+      case "slipcall":
+        kart.drafting = true;
+        kart.draftCharge = DRAFT_CHARGE_SEC;
+        boost(kart, DRAFT_BOOST_SEC, "draft");
+        break;
+      /** Mine: a banana that answers with the weight of a bomb. */
+      case "mine": {
+        const x = kart.x - fx * 3.2;
+        const z = kart.z - fz * 3.2;
+        const query = querySurface(track, x, z, kart.sampleHint, SHOULDER_WIDTH);
+        hazards.push({
+          id: entityId++,
+          kind: "mine",
+          owner: kart.id,
+          x,
+          y: query.height,
+          z,
+          life: BANANA_LIFETIME_SEC,
+          age: 0,
+        });
+        break;
+      }
+      /*
+       * EMP: strips boost and drift charge from everyone close by, in both
+       * directions. The bolt reaches the whole field and is therefore a
+       * lottery win; this reaches a few lengths and is therefore a decision.
+       */
+      case "emp": {
+        for (const other of karts) {
+          if (other.id === kart.id) continue;
+          const distance = Math.hypot(other.x - kart.x, other.z - kart.z);
+          if (distance > EMP_RADIUS) continue;
+          other.boostTimer = 0;
+          other.boostSource = null;
+          other.driftCharge = 0;
+          other.driftTier = 0;
+          applyHit(other, "bolt", kart.id, false);
+        }
+        break;
+      }
     }
-    kart.itemCharges -= 1;
-    if (kart.itemCharges <= 0) {
-      kart.item = null;
-      kart.itemCharges = 0;
-    }
+    const remaining = held.charges - 1;
+    kart.items[slot] = remaining > 0 ? { kind: item, charges: remaining } : null;
     kart.itemCooldown = ITEM_USE_COOLDOWN_SEC;
   }
 
@@ -502,25 +567,32 @@ export function createKartSim(config: RaceConfig): KartSim {
       if (kart.rouletteTimer <= 0) {
         kart.rouletteTimer = 0;
         const kind = rollItem(random, kart.place, karts.length);
-        kart.item = kind;
-        kart.itemCharges = itemCharges(kind);
-        emit({ k: "item", racer: kart.id, item: kind });
+        const free = kart.items.findIndex((slot) => slot === null);
+        if (free >= 0) {
+          kart.items[free] = { kind, charges: itemCharges(kind) };
+          emit({ k: "item", racer: kart.id, item: kind, slot: free });
+        }
       }
     }
 
-    // Three slots, one inventory: the sim still holds a single item until the
-    // three-slot rebuild lands, so any of the buttons fires it.
-    const itemPressed = input.item0 || input.item1 || input.item2;
-    const pressed = itemPressed && !kart.itemHeld;
-    kart.itemHeld = itemPressed;
-    if (
-      pressed &&
-      kart.item &&
-      kart.rouletteTimer <= 0 &&
-      kart.itemCooldown <= 0 &&
-      !kart.finished
-    ) {
-      useItem(kart);
+    /*
+     * One press edge per slot, but a single cooldown for the kart: three keys
+     * pressed on the same frame should still fire one item, not three.
+     */
+    const buttons = [input.item0, input.item1, input.item2];
+    for (let slot = 0; slot < ITEM_SLOT_COUNT; slot += 1) {
+      const down = buttons[slot] ?? false;
+      const pressed = down && !kart.itemHeld[slot];
+      kart.itemHeld[slot] = down;
+      if (
+        pressed &&
+        kart.items[slot] &&
+        kart.rouletteTimer <= 0 &&
+        kart.itemCooldown <= 0 &&
+        !kart.finished
+      ) {
+        useItem(kart, slot);
+      }
     }
 
     const stunned =
@@ -1087,7 +1159,9 @@ export function createKartSim(config: RaceConfig): KartSim {
           consumed = true;
           break;
         }
-        if (applyHit(kart, "banana", hazard.owner, false)) {
+        // A mine is a banana that answers with the weight of a bomb.
+        const heavy = hazard.kind === "mine";
+        if (applyHit(kart, heavy ? "bomb" : "banana", hazard.owner, heavy)) {
           consumed = true;
           break;
         }
@@ -1104,7 +1178,16 @@ export function createKartSim(config: RaceConfig): KartSim {
       }
       const box = track.itemBoxes[index]!;
       for (const kart of karts) {
-        if (kart.finished || kart.item || kart.rouletteTimer > 0) continue;
+        /*
+         * "Is there room?", not "are you empty?". The old condition refused a
+         * box the moment a single item was held, which was correct when one
+         * was the maximum and is the difference between three slots and a
+         * decorative pair of them now — and it fails silently, because a kart
+         * that never picks anything up looks exactly like a kart that never
+         * drove past a box.
+         */
+        if (kart.finished || kart.rouletteTimer > 0) continue;
+        if (kart.items.every((held) => held !== null)) continue;
         if (Math.abs(kart.y - box.y) > 4) continue;
         const distance = Math.hypot(kart.x - box.x, kart.z - box.z);
         if (distance > 3) continue;
@@ -1259,8 +1342,7 @@ export function createKartSim(config: RaceConfig): KartSim {
       starTimer: kart.starTimer,
       boltTimer: kart.boltTimer,
       graceTimer: kart.graceTimer,
-      item: kart.item,
-      itemCharges: kart.itemCharges,
+      items: kart.items.map((held) => (held ? { ...held } : null)),
       rouletteTimer: kart.rouletteTimer,
       distance: kart.distance,
       lap: kart.lap,
@@ -1286,7 +1368,7 @@ export function createKartSim(config: RaceConfig): KartSim {
       kart.cpu = enabled;
       if (enabled) return;
       kart.input = NEUTRAL_INPUT;
-      kart.itemHeld = false;
+      kart.itemHeld = [false, false, false];
     },
     advance(dtSec: number): number {
       if (isFinished()) return 0;

@@ -241,15 +241,36 @@ body {
   left: 20px;
 }
 
+/* Three tiles instead of one, so each is smaller — the row still has to fit
+   beside the minimap on a phone. */
+.nk-items {
+  display: flex;
+  gap: 8px;
+}
+
 .nk-item {
   position: relative;
-  width: 96px;
-  height: 96px;
+  width: 78px;
+  height: 78px;
   display: grid;
   place-items: center;
-  border-radius: 18px;
+  border-radius: 16px;
   background: var(--nk-plate);
   border: 2px solid var(--nk-edge);
+}
+
+.nk-item-key {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  font-family: var(--nk-display);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--nk-ink-dim);
+}
+
+.nk-item.is-held .nk-item-key {
+  color: var(--nk-accent);
 }
 
 .nk-item.is-held {
@@ -268,15 +289,15 @@ body {
 }
 
 .nk-item svg {
-  width: 58px;
-  height: 58px;
+  width: 46px;
+  height: 46px;
 }
 
 .nk-item-count {
   position: absolute;
-  right: 8px;
-  bottom: 20px;
-  font-size: 18px;
+  right: 7px;
+  bottom: 18px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--nk-accent);
 }
@@ -963,12 +984,15 @@ button:focus-visible {
     height: 104px;
   }
   .nk-item {
-    width: 74px;
-    height: 74px;
+    width: 58px;
+    height: 58px;
   }
   .nk-item svg {
-    width: 44px;
-    height: 44px;
+    width: 32px;
+    height: 32px;
+  }
+  .nk-item-label {
+    display: none;
   }
 }
 

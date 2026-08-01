@@ -4,6 +4,11 @@ import type { Track } from "./track";
 export const MAX_RACERS = 8;
 export type RacerId = number;
 
+/**
+ * The last four are this game's own, and each one plugs into a mechanic the
+ * originals do not have: the drift charge, the slipstream, and a mine that is
+ * a banana with teeth. New kinds go on the END — the wire sends the index.
+ */
 export type ItemKind =
   | "mushroom"
   | "triple"
@@ -12,7 +17,11 @@ export type ItemKind =
   | "red"
   | "bomb"
   | "star"
-  | "bolt";
+  | "bolt"
+  | "turbine"
+  | "slipcall"
+  | "mine"
+  | "emp";
 
 export const ITEM_KINDS: readonly ItemKind[] = [
   "mushroom",
@@ -23,7 +32,19 @@ export const ITEM_KINDS: readonly ItemKind[] = [
   "bomb",
   "star",
   "bolt",
+  "turbine",
+  "slipcall",
+  "mine",
+  "emp",
 ];
+
+/** One inventory slot. Three of them, always — empty reads as `null`. */
+export interface ItemSlot {
+  readonly kind: ItemKind;
+  readonly charges: number;
+}
+
+export const ITEM_SLOT_COUNT = 3;
 
 /** "draft" lands with protocol v2; the type carries it early so the audio
  * vocabulary can be total from day one. */
@@ -80,8 +101,19 @@ export type RaceEvent =
   | { readonly k: "countdown"; readonly n: number }
   | { readonly k: "go" }
   | { readonly k: "pickup"; readonly racer: RacerId; readonly box: number }
-  | { readonly k: "item"; readonly racer: RacerId; readonly item: ItemKind }
-  | { readonly k: "use"; readonly racer: RacerId; readonly item: ItemKind }
+  | {
+      readonly k: "item";
+      readonly racer: RacerId;
+      readonly item: ItemKind;
+      /** Which of the three slots it landed in. */
+      readonly slot: number;
+    }
+  | {
+      readonly k: "use";
+      readonly racer: RacerId;
+      readonly item: ItemKind;
+      readonly slot: number;
+    }
   | {
       readonly k: "hit";
       readonly racer: RacerId;
@@ -155,8 +187,8 @@ export interface RacerState {
   readonly starTimer: number;
   readonly boltTimer: number;
   readonly graceTimer: number;
-  readonly item: ItemKind | null;
-  readonly itemCharges: number;
+  /** Always ITEM_SLOT_COUNT long; an empty slot is null, never a partial. */
+  readonly items: readonly (ItemSlot | null)[];
   readonly rouletteTimer: number;
   /** Total distance travelled along the centreline, metres (can be negative). */
   readonly distance: number;
@@ -179,9 +211,11 @@ export interface ProjectileState {
   readonly yaw: number;
 }
 
+export type HazardKind = "banana" | "mine";
+
 export interface HazardState {
   readonly id: number;
-  readonly kind: "banana";
+  readonly kind: HazardKind;
   readonly owner: RacerId;
   readonly x: number;
   readonly y: number;

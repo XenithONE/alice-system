@@ -1,4 +1,4 @@
-import type { BoostSource, ItemKind, KartInput, RacerId } from "./types";
+import type { BoostSource, ItemSlot, KartInput, RacerId } from "./types";
 
 /**
  * The mutable per-kart record the simulation owns.
@@ -46,11 +46,12 @@ export interface KartRuntime {
   boltTimer: number;
   graceTimer: number;
 
-  item: ItemKind | null;
-  itemCharges: number;
+  /** Mutable mirror of RacerState.items; always ITEM_SLOT_COUNT long. */
+  items: (ItemSlot | null)[];
   rouletteTimer: number;
   itemCooldown: number;
-  itemHeld: boolean;
+  /** Per-slot press edges, so holding one button does not spend the others. */
+  itemHeld: boolean[];
 
   /** Arc length of the last projection, 0..trackLength. */
   lastS: number;

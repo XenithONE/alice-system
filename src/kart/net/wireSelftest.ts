@@ -28,6 +28,10 @@ import {
   validateCup,
   validateEventForTest,
   IN_MAX,
+  ITEM_CHARGE_MAX,
+  ITEM_SLOT_MAX,
+  packItems,
+  unpackItems,
   validateInput,
   validateSettings,
   validateSnapshot,
@@ -162,7 +166,8 @@ let referenceSnapshot: NitroSnapshot;
     worst < 0.02 &&
       rebuilt.racers.every(
         (racer, index) =>
-          racer.item === state.racers[index]!.item &&
+          JSON.stringify(racer.items) ===
+            JSON.stringify(state.racers[index]!.items) &&
           racer.lap === state.racers[index]!.lap &&
           racer.place === state.racers[index]!.place &&
           racer.finished === state.racers[index]!.finished,
@@ -186,7 +191,14 @@ let referenceSnapshot: NitroSnapshot;
     { name: "席番号が範囲外", mutate: (s) => (s.racers[0].i = 99) },
     { name: "順位が 0", mutate: (s) => (s.racers[0].e = 0) },
     { name: "周回が 0", mutate: (s) => (s.racers[0].k = 0) },
-    { name: "アイテム番号が範囲外", mutate: (s) => (s.racers[0].m = 42) },
+    /*
+     * Was 42, which the single-slot encoding could not represent. The packed
+     * word can: 42 is three perfectly ordinary slots, and this mutation went
+     * on reporting PASS while testing nothing — the same way [W4c]'s f:99 did.
+     */
+    { name: "アイテム枠が範囲外", mutate: (s) => (s.racers[0].m = ITEM_SLOT_MAX + 1) },
+    { name: "アイテム枠が負", mutate: (s) => (s.racers[0].m = -1) },
+    { name: "チャージが範囲外", mutate: (s) => (s.racers[0].c = ITEM_CHARGE_MAX + 1) },
     { name: "必須フィールド欠落", mutate: (s) => delete s.racers[0].v },
     { name: "数値が文字列", mutate: (s) => (s.racers[0].a = "0.5") },
     { name: "racers が空", mutate: (s) => (s.racers.length = 0) },
@@ -233,6 +245,50 @@ let referenceSnapshot: NitroSnapshot;
       badInputs.every((frame) => validateInput(frame) === null),
     `f=${IN_MAX} 受理・異常 ${badInputs.length} 件を拒否`,
   );
+
+  // ── [W14] the three-slot pack survives every value it can hold ────────────
+  /*
+   * Exhaustive, because it can be: every (slot triple × charge triple) the
+   * encoding admits, round-tripped. A packed field is exactly the kind of
+   * thing that works for the cases someone thought to try and loses the third
+   * slot for the ones they did not.
+   */
+  {
+    let mismatches = 0;
+    let checked = 0;
+    for (let m = 0; m <= ITEM_SLOT_MAX; m += 1) {
+      for (let c = 0; c <= ITEM_CHARGE_MAX; c += 1) {
+        const slots = unpackItems(m, c);
+        const again = packItems(slots);
+        // Charges are only meaningful where an item sits, and an occupied slot
+        // always carries at least one, so compare through a re-unpack.
+        const round = unpackItems(again.m, again.c);
+        checked += 1;
+        if (JSON.stringify(round) !== JSON.stringify(slots)) mismatches += 1;
+      }
+    }
+    gate.check(
+      "[W14] 3枠アイテムの詰め直しが全数で往復する",
+      mismatches === 0,
+      `${checked} 通りを検査・不一致 ${mismatches}`,
+    );
+    gate.expectFail(
+      "[W14-neg] 3枠目を落とす詰め方は往復しない",
+      () => {
+        const broken = (items: readonly (ReturnType<typeof unpackItems>)[0][]) => {
+          const two = [items[0] ?? null, items[1] ?? null, null];
+          return packItems(two);
+        };
+        const sample = unpackItems(ITEM_SLOT_MAX, ITEM_CHARGE_MAX);
+        const again = broken(sample);
+        return (
+          JSON.stringify(unpackItems(again.m, again.c)) ===
+          JSON.stringify(sample)
+        );
+      },
+      "3枠目を捨てる詰め方",
+    );
+  }
 
   gate.check(
     "[W4d] 部屋設定の検証（人間席がグリッドを超えない等）",

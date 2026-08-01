@@ -244,6 +244,13 @@ export const DRIFT_HOP_VY = 5.2;
  * driver that lets go before then buys a hop and nothing else.
  */
 export const DRIFT_HOP_SEC = (2 * DRIFT_HOP_VY) / GRAVITY;
+/**
+ * EMP reach. Small on purpose: the bolt covers the whole field and is a
+ * lottery win, so the thing that strips a boost at close range has to be a
+ * decision about who is near you rather than a second bolt.
+ */
+export const EMP_RADIUS = 22;
+
 /** Slipstream: sit in this cone behind a kart to charge a draft. */
 export const DRAFT_RANGE = 13;
 export const DRAFT_HALF_ANGLE = 0.42;

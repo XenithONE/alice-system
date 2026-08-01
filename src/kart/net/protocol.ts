@@ -19,6 +19,7 @@ import type {
   BoostSource,
   HitCause,
   ItemKind,
+  ItemSlot,
   RaceEvent,
   RacePhase,
   RaceResult,
@@ -144,7 +145,58 @@ export const ITEM_CODES: readonly ItemKind[] = [
   "bomb",
   "star",
   "bolt",
+  "turbine",
+  "slipcall",
+  "mine",
+  "emp",
 ];
+
+/*
+ * Three slots, two numbers.
+ *
+ * The obvious encoding is two arrays, and it costs about 13 bytes a kart —
+ * 104 across a full grid, against a snapshot budget of 2600 that this file's
+ * header says is the difference between playable and not. Base-N packing puts
+ * the same information in four extra characters. `0` is the empty slot, so the
+ * radix is one more than the number of item kinds.
+ */
+export const ITEM_SLOT_RADIX = ITEM_CODES.length + 1;
+export const ITEM_SLOT_MAX = ITEM_SLOT_RADIX ** 3 - 1;
+/** Charges are 0..3 (the triple mushroom is the only stack). */
+export const ITEM_CHARGE_RADIX = 4;
+export const ITEM_CHARGE_MAX = ITEM_CHARGE_RADIX ** 3 - 1;
+
+export function packItems(items: readonly (ItemSlot | null)[]): {
+  m: number;
+  c: number;
+} {
+  let m = 0;
+  let c = 0;
+  for (let slot = 2; slot >= 0; slot -= 1) {
+    const held = items[slot] ?? null;
+    const code = held === null ? 0 : ITEM_CODES.indexOf(held.kind) + 1;
+    m = m * ITEM_SLOT_RADIX + Math.max(0, code);
+    c =
+      c * ITEM_CHARGE_RADIX +
+      Math.max(0, Math.min(ITEM_CHARGE_RADIX - 1, held?.charges ?? 0));
+  }
+  return { m, c };
+}
+
+export function unpackItems(m: number, c: number): (ItemSlot | null)[] {
+  const out: (ItemSlot | null)[] = [];
+  let slots = m;
+  let charges = c;
+  for (let slot = 0; slot < 3; slot += 1) {
+    const code = slots % ITEM_SLOT_RADIX;
+    const count = charges % ITEM_CHARGE_RADIX;
+    slots = Math.floor(slots / ITEM_SLOT_RADIX);
+    charges = Math.floor(charges / ITEM_CHARGE_RADIX);
+    const kind = code === 0 ? null : (ITEM_CODES[code - 1] ?? null);
+    out.push(kind === null ? null : { kind, charges: Math.max(1, count) });
+  }
+  return out;
+}
 
 export const PHASE_CODES: readonly RacePhase[] = [
   "countdown",
@@ -182,8 +234,8 @@ export interface RacerFrame {
   /** squash seconds */ readonly q: number;
   /** star seconds */ readonly r: number;
   /** bolt seconds */ readonly o: number;
-  /** item, index into ITEM_CODES, -1 for none */ readonly m: number;
-  /** item charges */ readonly c: number;
+  /** three item slots, base-ITEM_SLOT_RADIX packed (see packItems) */ readonly m: number;
+  /** three charge counts, base-4 packed */ readonly c: number;
   /** roulette seconds */ readonly w: number;
   /** distance travelled */ readonly g: number;
   /** lap */ readonly k: number;
@@ -385,10 +437,17 @@ function validateEvent(value: unknown): RaceEvent | null {
     case "use": {
       const seat = racer();
       const item = typeof value.item === "string" ? value.item : "";
-      if (seat === null || !ITEM_CODES.includes(item as ItemKind)) return null;
+      const slot = integer(value.slot, 0, 2);
+      if (
+        seat === null ||
+        slot === null ||
+        !ITEM_CODES.includes(item as ItemKind)
+      ) {
+        return null;
+      }
       return value.k === "item"
-        ? { k: "item", racer: seat, item: item as ItemKind }
-        : { k: "use", racer: seat, item: item as ItemKind };
+        ? { k: "item", racer: seat, item: item as ItemKind, slot }
+        : { k: "use", racer: seat, item: item as ItemKind, slot };
     }
     case "hit": {
       const seat = racer();
@@ -503,8 +562,8 @@ function validateRacerFrame(value: unknown): RacerFrame | null {
   const q = num(value.q, 0, TIMER_LIMIT);
   const r = num(value.r, 0, TIMER_LIMIT);
   const o = num(value.o, 0, TIMER_LIMIT);
-  const m = integer(value.m, -1, ITEM_CODES.length - 1);
-  const c = integer(value.c, 0, 9);
+  const m = integer(value.m, 0, ITEM_SLOT_MAX);
+  const c = integer(value.c, 0, ITEM_CHARGE_MAX);
   const w = num(value.w, 0, TIMER_LIMIT);
   const g = num(value.g, -WORLD_LIMIT * 4, WORLD_LIMIT * 4);
   const k = integer(value.k, 1, 9);
@@ -795,8 +854,7 @@ export function raceStateFromSnapshot(
     starTimer: frame.r,
     boltTimer: frame.o,
     graceTimer: (frame.f & FLAG_GRACE) !== 0 ? 1 : 0,
-    item: frame.m < 0 ? null : (ITEM_CODES[frame.m] ?? null),
-    itemCharges: frame.c,
+    items: unpackItems(frame.m, frame.c),
     rouletteTimer: frame.w,
     distance: frame.g,
     lap: frame.k,

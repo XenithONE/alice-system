@@ -142,5 +142,13 @@ export function useVoice(item: ItemKind): VoiceRecipe | null {
       return NK_VOICES["star-jingle"];
     case "bolt":
       return NK_VOICES.bolt;
+    case "turbine":
+    case "slipcall":
+      // Both pay out as a boost event on the same tick; one voice, not two.
+      return null;
+    case "mine":
+      return NK_VOICES["banana-drop"];
+    case "emp":
+      return NK_VOICES.bolt;
   }
 }

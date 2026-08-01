@@ -161,7 +161,7 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
       if (event.k === "use") uses += 1;
     }
   }
-  itemAfter = sim.getState().racers[0]!.item;
+  itemAfter = sim.getState().racers[0]!.items[0]?.kind ?? null;
   gate.check(
     "[M6] 初期3連キノコはちょうど3回使えて尽きる",
     uses === 3 && itemAfter === null,

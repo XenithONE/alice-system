@@ -12,37 +12,56 @@ import { ITEM_KINDS } from "./types";
 
 type WeightTable = Readonly<Record<ItemKind, number>>;
 
+/*
+ * The four native items sit deliberately: `turbine` and `mine` reward the
+ * driver already in front (one converts a drift you had to earn, the other is
+ * a defensive drop), while `slipcall` belongs to the pack — it is only worth
+ * anything with a car ahead — and `emp` to the chasers, as a bolt that reaches
+ * a few lengths rather than the whole field.
+ */
 const FRONT: WeightTable = {
   mushroom: 10,
   triple: 4,
-  banana: 30,
-  green: 30,
+  banana: 26,
+  green: 26,
   red: 8,
-  bomb: 14,
+  bomb: 12,
   star: 0,
   bolt: 0,
+  turbine: 14,
+  slipcall: 0,
+  mine: 16,
+  emp: 0,
 };
 
 const MIDDLE: WeightTable = {
-  mushroom: 20,
+  mushroom: 18,
   triple: 12,
-  banana: 12,
-  green: 16,
-  red: 22,
-  bomb: 12,
+  banana: 10,
+  green: 14,
+  red: 20,
+  bomb: 10,
   star: 5,
   bolt: 1,
+  turbine: 10,
+  slipcall: 14,
+  mine: 8,
+  emp: 10,
 };
 
 const BACK: WeightTable = {
   mushroom: 16,
-  triple: 22,
+  triple: 20,
   banana: 4,
   green: 6,
-  red: 18,
+  red: 16,
   bomb: 6,
-  star: 18,
-  bolt: 10,
+  star: 16,
+  bolt: 9,
+  turbine: 4,
+  slipcall: 10,
+  mine: 2,
+  emp: 12,
 };
 
 function blend(a: WeightTable, b: WeightTable, t: number): WeightTable {
@@ -87,7 +106,7 @@ export function itemCharges(kind: ItemKind): number {
 
 /** A held item that keeps protecting you while it is out (dragged banana). */
 export function isDefensive(kind: ItemKind): boolean {
-  return kind === "banana" || kind === "green";
+  return kind === "banana" || kind === "green" || kind === "mine";
 }
 
 export const ITEM_LABEL: Readonly<Record<ItemKind, string>> = {
@@ -99,6 +118,10 @@ export const ITEM_LABEL: Readonly<Record<ItemKind, string>> = {
   bomb: "BOMB",
   star: "STAR",
   bolt: "BOLT",
+  turbine: "TURBINE",
+  slipcall: "SLIPCALL",
+  mine: "MINE",
+  emp: "EMP",
 };
 
 export const ITEM_LABEL_JA: Readonly<Record<ItemKind, string>> = {
@@ -110,4 +133,8 @@ export const ITEM_LABEL_JA: Readonly<Record<ItemKind, string>> = {
   bomb: "ボム",
   star: "スター",
   bolt: "サンダー",
+  turbine: "タービン",
+  slipcall: "ドラフトコール",
+  mine: "スパイクマイン",
+  emp: "EMP",
 };

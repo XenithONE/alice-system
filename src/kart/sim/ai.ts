@@ -15,6 +15,7 @@ import {
   CPU_SKILL,
   DRIFT_HOP_SEC,
   DRIFT_MIN_SPEED,
+  EMP_RADIUS,
   MINI_TURBO_TIERS,
   RED_SHELL_LOCK_RANGE,
 } from "./balance";
@@ -32,7 +33,7 @@ import {
   type Track,
 } from "./track";
 import type { KartRuntime } from "./runtime";
-import type { KartInput, RacerId } from "./types";
+import type { ItemKind, KartInput, RacerId } from "./types";
 
 export interface CpuHazardView {
   readonly x: number;
@@ -100,8 +101,9 @@ function cpuControls(partial: {
   brake: number;
   steer: number;
   drift: boolean;
-  item?: boolean;
+  itemSlot?: number | null;
 }): KartInput {
+  const slot = partial.itemSlot ?? null;
   return {
     throttle: partial.throttle,
     brake: partial.brake,
@@ -109,9 +111,9 @@ function cpuControls(partial: {
     drift: partial.drift,
     gimmick: false,
     skill: false,
-    item0: partial.item ?? false,
-    item1: false,
-    item2: false,
+    item0: slot === 0,
+    item1: slot === 1,
+    item2: slot === 2,
     lookBack: false,
   };
 }
@@ -206,7 +208,7 @@ export function cpuInput(
   // ── Detours worth taking ────────────────────────────────────────────────────
   // An item box when the slot is empty, or a boost pad when it is close to the
   // line already. Never worth leaving the road for.
-  if (!self.item && self.rouletteTimer <= 0) {
+  if (self.items.some((held) => held === null) && self.rouletteTimer <= 0) {
     const box = nearestAhead(
       world.boxes.filter((_, index) => (world.boxCooldowns[index] ?? 0) <= 0),
       track,
@@ -361,17 +363,18 @@ export function cpuInput(
 
   // ── Items ───────────────────────────────────────────────────────────────────
   self.cpuItemTimer -= dt;
-  let useItem = false;
-  if (self.item && self.rouletteTimer <= 0 && self.cpuItemTimer <= 0) {
-    useItem = wantsItem(self, world, skill, cornerSoon);
-    if (useItem) self.cpuItemTimer = skill.itemDelay * 0.5 + 0.2;
-  } else if (self.item && self.rouletteTimer <= 0 && self.cpuItemTimer > 0) {
+  const carrying = self.items.some((held) => held !== null);
+  let slot: number | null = null;
+  if (carrying && self.rouletteTimer <= 0 && self.cpuItemTimer <= 0) {
+    slot = pickItemSlot(self, world, skill, cornerSoon);
+    if (slot !== null) self.cpuItemTimer = skill.itemDelay * 0.5 + 0.2;
+  } else if (carrying && self.rouletteTimer <= 0 && self.cpuItemTimer > 0) {
     // Freshly acquired: the delay is the CPU's "reaction time".
   } else {
     self.cpuItemTimer = skill.itemDelay;
   }
 
-  return cpuControls({ throttle, brake, steer, drift, item: useItem });
+  return cpuControls({ throttle, brake, steer, drift, itemSlot: slot });
 }
 
 function nearestAhead<T extends { readonly s: number; readonly lateral: number }>(
@@ -393,11 +396,37 @@ function nearestAhead<T extends { readonly s: number; readonly lateral: number }
   return best;
 }
 
-function wantsItem(
+/**
+ * Which slot to fire, if any.
+ *
+ * The roll is drawn ONCE, unconditionally, and shared by every slot the driver
+ * considers. It used to be drawn inside two of the branches, which meant the
+ * number of draws per tick depended on what the kart happened to be carrying —
+ * with one slot that was survivable, with three it would give each seat a
+ * different number of draws and pull the whole field's random stream apart.
+ */
+function pickItemSlot(
   self: KartRuntime,
   world: CpuWorld,
   skill: (typeof CPU_SKILL)[number],
   cornerSoon: number,
+): number | null {
+  const roll = world.random();
+  for (let slot = 0; slot < self.items.length; slot += 1) {
+    const held = self.items[slot];
+    if (!held) continue;
+    if (wantsItem(held.kind, self, world, skill, cornerSoon, roll)) return slot;
+  }
+  return null;
+}
+
+function wantsItem(
+  kind: ItemKind,
+  self: KartRuntime,
+  world: CpuWorld,
+  skill: (typeof CPU_SKILL)[number],
+  cornerSoon: number,
+  roll: number,
 ): boolean {
   const track = world.track;
   const [fx, fz] = forwardOf(self.yaw);
@@ -421,7 +450,7 @@ function wantsItem(
     }
   }
 
-  switch (self.item) {
+  switch (kind) {
     case "star":
       // Best spent where there is traffic, but never hoarded.
       return closestAhead < 60 || closestBehind < 30 || skill.drift < 0.5;
@@ -438,14 +467,26 @@ function wantsItem(
     case "green":
       if (alignedAhead < 46) return true;
       // Otherwise keep it as a shield unless someone is on the bumper.
-      return closestBehind < 12 && world.random() < 0.5;
+      return closestBehind < 12 && roll < 0.5;
     case "bomb":
       return alignedAhead < 60 || closestBehind < 10;
     case "banana":
       // A dragged banana is a shield; drop it when it will actually land on
       // someone, or when the corner ahead makes it hard to avoid.
       if (closestBehind < 16) return true;
-      return cornerSoon > 0.018 && world.random() < 0.35;
+      return cornerSoon > 0.018 && roll < 0.35;
+    case "mine":
+      // Same shield logic, but worth spending sooner: it actually stops them.
+      return closestBehind < 20 || (cornerSoon > 0.015 && roll < 0.5);
+    case "turbine":
+      // Only ever worth anything mid-drift, and only once it has charge.
+      return self.drifting && self.driftTier < MINI_TURBO_TIERS.length;
+    case "slipcall":
+      // A tow needs someone to tow off, and room to use the speed.
+      return alignedAhead < 60 && cornerSoon < 0.012 && self.boostTimer <= 0;
+    case "emp":
+      // Close-range, so wait until it will actually catch someone.
+      return closestAhead < EMP_RADIUS * 0.9 || closestBehind < EMP_RADIUS * 0.7;
     default:
       return false;
   }
