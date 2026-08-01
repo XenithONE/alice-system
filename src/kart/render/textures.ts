@@ -67,6 +67,64 @@ export function asphaltTexture(color: number, repeat = 8): THREE.Texture {
   return texture;
 }
 
+/**
+ * Loose road: dirt or gravel. Coarser and blotchier than asphalt, with ruts
+ * running with the direction of travel rather than the smeared streaks tarmac
+ * gets — a car on dirt follows the ruts, and that is the read.
+ */
+export function looseTexture(color: number, repeat = 8): THREE.Texture {
+  const { element, context } = canvas(512);
+  context.fillStyle = hex(color);
+  context.fillRect(0, 0, 512, 512);
+  const random = noise(0x51d7);
+  // Patchy tone first, so the speckle sits on an uneven base rather than flat.
+  for (let i = 0; i < 220; i += 1) {
+    const shade = random();
+    context.fillStyle =
+      shade > 0.5
+        ? `rgba(255,236,198,${0.04 + shade * 0.07})`
+        : `rgba(58,36,18,${0.05 + shade * 0.09})`;
+    const size = 18 + random() * 70;
+    context.beginPath();
+    context.ellipse(
+      random() * 512,
+      random() * 512,
+      size,
+      size * (0.5 + random() * 0.6),
+      random() * Math.PI,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+  }
+  for (let i = 0; i < 16_000; i += 1) {
+    const shade = random();
+    context.fillStyle =
+      shade > 0.62
+        ? `rgba(255,240,210,${0.06 + shade * 0.14})`
+        : `rgba(40,24,12,${0.05 + shade * 0.13})`;
+    const size = 1 + Math.floor(random() * 3.6);
+    context.fillRect(random() * 512, random() * 512, size, size);
+  }
+  // Ruts: long, nearly straight, always with the road.
+  for (let i = 0; i < 22; i += 1) {
+    context.strokeStyle = `rgba(30,18,8,${0.05 + random() * 0.08})`;
+    context.lineWidth = 2 + random() * 9;
+    const x = random() * 512;
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.bezierCurveTo(x + 8, 170, x - 8, 340, x + random() * 10 - 5, 512);
+    context.stroke();
+  }
+  const texture = new THREE.CanvasTexture(element);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(1, repeat);
+  texture.anisotropy = 8;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 /** A rumble strip: alternating blocks along the length of the road. */
 export function rumbleTexture(a: number, b: number): THREE.Texture {
   const { element, context } = canvas(64);

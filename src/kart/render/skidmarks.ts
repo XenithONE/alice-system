@@ -18,6 +18,7 @@ import {
   surfaceHeight,
   forwardOf,
   rightOf,
+  type SurfaceKind,
   type Track,
 } from "../sim/track";
 import { SHOULDER_WIDTH } from "../sim/balance";
@@ -39,6 +40,13 @@ export interface SkidBuffers {
   readonly position: Float32Array;
   readonly birth: Float32Array;
   readonly strength: Float32Array;
+  /**
+   * 0 = rubber, 1 = dust. Per vertex rather than a material uniform, because
+   * a strip laid down across a dirt-to-asphalt joint has to be both — with one
+   * uniform the whole scene's marks would change colour at the moment the
+   * leading kart crossed, including marks laid minutes ago.
+   */
+  readonly tint: Float32Array;
   readonly index: Uint32Array;
 }
 
@@ -48,6 +56,7 @@ export function createSkidBuffers(capacity: number): SkidBuffers {
   // Far in the past: an unwritten quad is fully faded, not a flash at t=0.
   birth.fill(-1e9);
   const strength = new Float32Array(capacity * 4);
+  const tint = new Float32Array(capacity * 4);
   const index = new Uint32Array(capacity * 6);
   for (let quad = 0; quad < capacity; quad += 1) {
     const v = quad * 4;
@@ -59,7 +68,7 @@ export function createSkidBuffers(capacity: number): SkidBuffers {
     index[i + 4] = v + 2;
     index[i + 5] = v + 3;
   }
-  return { capacity, position, birth, strength, index };
+  return { capacity, position, birth, strength, tint, index };
 }
 
 /**
@@ -75,6 +84,7 @@ export function writeSkidQuad(
   curRight: readonly [number, number, number],
   time: number,
   strength: number,
+  tint = 0,
 ): number {
   const quad = cursor % buffers.capacity;
   const p = quad * 4 * 3;
@@ -86,6 +96,7 @@ export function writeSkidQuad(
     buffers.position[p + corner * 3 + 2] = z;
     buffers.birth[quad * 4 + corner] = time;
     buffers.strength[quad * 4 + corner] = strength;
+    buffers.tint[quad * 4 + corner] = tint;
   }
   return (cursor + 1) % buffers.capacity;
 }
@@ -150,6 +161,14 @@ export function skidStrength(
   return 0;
 }
 
+/** How much dust a mark on each surface carries. Asphalt is pure rubber. */
+const SKID_TINT: Record<SurfaceKind, number> = {
+  asphalt: 0,
+  dirt: 1,
+  gravel: 0.85,
+  wet: 0.15,
+};
+
 interface EmitterState {
   lastLeft: [number, number, number];
   lastRight: [number, number, number];
@@ -172,12 +191,15 @@ export function createSkidMarks(track: Track, capacity: number): SkidMarks {
   const positionAttribute = new THREE.BufferAttribute(buffers.position, 3);
   const birthAttribute = new THREE.BufferAttribute(buffers.birth, 1);
   const strengthAttribute = new THREE.BufferAttribute(buffers.strength, 1);
+  const tintAttribute = new THREE.BufferAttribute(buffers.tint, 1);
   positionAttribute.setUsage(THREE.DynamicDrawUsage);
   birthAttribute.setUsage(THREE.DynamicDrawUsage);
   strengthAttribute.setUsage(THREE.DynamicDrawUsage);
+  tintAttribute.setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute("position", positionAttribute);
   geometry.setAttribute("birth", birthAttribute);
   geometry.setAttribute("strength", strengthAttribute);
+  geometry.setAttribute("tint", tintAttribute);
   geometry.setIndex(new THREE.BufferAttribute(buffers.index, 1));
   geometry.boundingSphere = new THREE.Sphere(
     new THREE.Vector3(),
@@ -189,11 +211,14 @@ export function createSkidMarks(track: Track, capacity: number): SkidMarks {
     vertexShader: /* glsl */ `
       attribute float birth;
       attribute float strength;
+      attribute float tint;
       varying float vBirth;
       varying float vStrength;
+      varying float vTint;
       void main() {
         vBirth = birth;
         vStrength = strength;
+        vTint = tint;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
@@ -201,12 +226,16 @@ export function createSkidMarks(track: Track, capacity: number): SkidMarks {
       uniform float uTime;
       varying float vBirth;
       varying float vStrength;
+      varying float vTint;
       void main() {
         float age = uTime - vBirth;
         float fade = clamp(1.0 - age / ${SKID_FADE_SEC.toFixed(1)}, 0.0, 1.0);
-        float alpha = vStrength * 0.52 * fade;
+        // Dust scatters rather than stains, so it also sits lighter than rubber.
+        float alpha = vStrength * mix(0.52, 0.38, vTint) * fade;
         if (alpha < 0.012) discard;
-        gl_FragColor = vec4(0.055, 0.06, 0.07, alpha);
+        vec3 rubber = vec3(0.055, 0.06, 0.07);
+        vec3 dust = vec3(0.46, 0.34, 0.20);
+        gl_FragColor = vec4(mix(rubber, dust, vTint), alpha);
       }
     `,
     transparent: true,
@@ -286,6 +315,10 @@ export function createSkidMarks(track: Track, capacity: number): SkidMarks {
         contact.right,
         time,
         strength,
+        SKID_TINT[
+          querySurface(track, racer.x, racer.z, state.hint, SHOULDER_WIDTH)
+            .surface
+        ],
       );
       markDirty(quad);
       state.lastLeft = [...contact.left] as [number, number, number];
@@ -305,6 +338,9 @@ export function createSkidMarks(track: Track, capacity: number): SkidMarks {
       strengthAttribute.clearUpdateRanges();
       strengthAttribute.addUpdateRange(vertexFrom, vertexCount);
       strengthAttribute.needsUpdate = true;
+      tintAttribute.clearUpdateRanges();
+      tintAttribute.addUpdateRange(vertexFrom, vertexCount);
+      tintAttribute.needsUpdate = true;
       dirtyFrom = -1;
       dirtyTo = -1;
     },

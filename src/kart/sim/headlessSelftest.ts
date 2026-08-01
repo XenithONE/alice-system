@@ -11,10 +11,11 @@
 import { REFERENCE_CHARACTER_ID } from "../content/characters";
 import { REFERENCE_MACHINE_ID } from "../content/machines";
 import { createGate } from "../gate";
-import { DRIFT_HOP_SEC, SIM_STEP_SEC } from "./balance";
+import { DRIFT_HOP_SEC, SIM_STEP_SEC, SURFACE } from "./balance";
 import { createKartSim } from "./sim";
 import {
   angleDelta,
+  buildTrack,
   forwardOf,
   headingOf,
   pointAt,
@@ -402,6 +403,99 @@ for (const spec of TRACKS) {
   }
   gate.check(
     "[H13b] 雨でも twin-sim が完全一致（天候は決定論の内側）",
+    !diverged,
+    "1800 tick 一致",
+  );
+}
+
+// [H22] road surface: a dirt lap is measurably slower, and the table is why ─
+{
+  /*
+   * Built here rather than added to a shipping circuit, so the three paved
+   * tracks stay bit-identical and this measures one variable. The zones cover
+   * a contiguous 45 % of the lap; anything smaller and the difference sits
+   * inside the noise of eight CPUs bumping each other.
+   */
+  const base = TRACKS[0]!;
+  const dirty: typeof base = {
+    ...base,
+    id: `${base.id}@dirt`,
+    surfaceZones: [
+      { from: 0.15, to: 0.45, kind: "dirt" },
+      { from: 0.55, to: 0.7, kind: "gravel" },
+    ],
+  };
+
+  function raceTime(spec: typeof base): number {
+    const sim = createKartSim({
+      trackId: spec.id,
+      laps: 2,
+      seed: 515151,
+      racers: field(4, 3),
+      items: false,
+      track: buildTrack(spec),
+    });
+    for (let i = 0; i < 60 * 260 && !sim.result(); i += 1) sim.step();
+    return sim.result()?.durationSec ?? Number.NaN;
+  }
+  const paved = raceTime(base);
+  const loose = raceTime(dirty);
+  gate.check(
+    "[H22] ダート/砂利の周回は舗装より遅い",
+    loose > paved * 1.02,
+    `asphalt=${paved.toFixed(1)}s dirt+gravel=${loose.toFixed(1)}s（+${(((loose - paved) / paved) * 100).toFixed(1)}%）`,
+  );
+
+  /*
+   * The control. If SURFACE were all ones the two laps would coincide, and
+   * [H22] would be reporting on CPU noise rather than on the table. Measured
+   * against the paved lap the same way, so a difference here can only come
+   * from the coefficients.
+   */
+  gate.expectFail(
+    "[H22-neg] SURFACE を全て1にすると差が消える（計測が表を見ている証明）",
+    () => {
+      const saved = { ...SURFACE.dirt };
+      const savedGravel = { ...SURFACE.gravel };
+      Object.assign(SURFACE.dirt, SURFACE.asphalt);
+      Object.assign(SURFACE.gravel, SURFACE.asphalt);
+      const flat = raceTime(dirty);
+      Object.assign(SURFACE.dirt, saved);
+      Object.assign(SURFACE.gravel, savedGravel);
+      return flat > paved * 1.02;
+    },
+    "dirt/gravel の係数を asphalt に差し替え",
+  );
+
+  // Determinism is not weakened by the new branch.
+  const twinA = createKartSim({
+    trackId: dirty.id,
+    laps: 1,
+    seed: 616263,
+    racers: field(4, 2),
+    track: buildTrack(dirty),
+  });
+  const twinB = createKartSim({
+    trackId: dirty.id,
+    laps: 1,
+    seed: 616263,
+    racers: field(4, 2),
+    track: buildTrack(dirty),
+  });
+  let diverged = false;
+  for (let i = 0; i < 1800; i += 1) {
+    twinA.step();
+    twinB.step();
+    if (
+      i % 60 === 0 &&
+      JSON.stringify(twinA.getState()) !== JSON.stringify(twinB.getState())
+    ) {
+      diverged = true;
+      break;
+    }
+  }
+  gate.check(
+    "[H22b] ダートでも twin-sim が完全一致",
     !diverged,
     "1800 tick 一致",
   );

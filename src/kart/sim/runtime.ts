@@ -1,3 +1,4 @@
+import type { SurfaceKind } from "./balance";
 import type { KartTuning } from "../content/tuning";
 import type { BoostSource, ItemSlot, KartInput, RacerId } from "./types";
 
@@ -89,6 +90,13 @@ export interface KartRuntime {
   lastLateral: number;
   /** Road half width at the last projection. */
   lastHalf: number;
+  /**
+   * What the road under the kart is made of, from the last projection. Not on
+   * `RacerState` and not on the wire: a guest has the same `Track`, so it can
+   * ask `querySurface` itself. That one decision leaves protocol.ts, wire.ts,
+   * snapshot.ts and wireSelftest.ts completely untouched by this feature.
+   */
+  surface: SurfaceKind;
   /** Signed total distance along the centreline; the only progress authority. */
   distance: number;
   sampleHint: number;

@@ -18,10 +18,12 @@ import {
   querySurface,
   sampleAt,
   surfaceHeight,
+  type SurfaceKind,
   type Track,
 } from "../sim/track";
 import {
   asphaltTexture,
+  looseTexture,
   boostPadTexture,
   checkerTexture,
   groundTexture,
@@ -43,6 +45,8 @@ export interface TrackMeshQuality {
  */
 export interface TrackTextureFactory {
   asphalt(color: number, repeat?: number): THREE.Texture;
+  /** Dirt and gravel. Blended over the asphalt map by `aSurface`. */
+  loose(color: number, repeat?: number): THREE.Texture;
   rumble(a: number, b: number): THREE.Texture;
   checker(squares?: number): THREE.Texture;
   ground(base: number, accent: number): THREE.Texture;
@@ -52,6 +56,7 @@ export interface TrackTextureFactory {
 
 export const CANVAS_TRACK_TEXTURES: TrackTextureFactory = {
   asphalt: asphaltTexture,
+  loose: looseTexture,
   rumble: rumbleTexture,
   checker: checkerTexture,
   ground: groundTexture,
@@ -176,12 +181,25 @@ export function bothSides(
   return merged;
 }
 
+/**
+ * How much of the loose-surface texture each kind shows. Asphalt is 0 so a
+ * circuit with no `surfaceZones` samples the paved map alone and renders
+ * exactly as it did before this attribute existed.
+ */
+const SURFACE_BLEND: Record<SurfaceKind, number> = {
+  asphalt: 0,
+  dirt: 1,
+  gravel: 0.82,
+  wet: 0.25,
+};
+
 /** The tarmac itself: a band spanning −half..+half with lanes across it. */
 export function roadGeometry(track: Track): THREE.BufferGeometry {
   const samples = track.samples;
   const count = samples.length;
   const positions: number[] = [];
   const uvs: number[] = [];
+  const loose: number[] = [];
   const indices: number[] = [];
   const across = 6;
   for (let i = 0; i <= count; i += 1) {
@@ -195,6 +213,15 @@ export function roadGeometry(track: Track): THREE.BufferGeometry {
         sample.z + sample.rz * lateral,
       );
       uvs.push(t, (i * track.step) / 14);
+      /*
+       * 0 = asphalt, 1 = loose. Interpolated across the ring by the rasteriser,
+       * which is exactly what is wanted here even though the SIM must never
+       * blend it: the sim needs one answer per point, and the picture needs the
+       * joint not to be a hard line. The blend band is one sample either side,
+       * about 4 m at 60 km/h — long enough to read as a transition, short
+       * enough that where the grip changes is still where the colour changes.
+       */
+      loose.push(SURFACE_BLEND[sample.surface]);
     }
   }
   const stride = across + 1;
@@ -210,6 +237,7 @@ export function roadGeometry(track: Track): THREE.BufferGeometry {
     new THREE.Float32BufferAttribute(positions, 3),
   );
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setAttribute("aSurface", new THREE.Float32BufferAttribute(loose, 1));
   geometry.setIndex(indices);
   faceUp(geometry);
   geometry.computeBoundingSphere();
@@ -450,12 +478,50 @@ export function buildTrackMesh(
 
   // ── Tarmac ────────────────────────────────────────────────────────────────
   const roadMap = textures.asphalt(theme.road, 1);
+  const looseMap = textures.loose(theme.looseRoad ?? 0x8a6a44, 1);
   const roadGeo = roadGeometry(track);
   const roadMaterial = new THREE.MeshStandardMaterial({
     map: roadMap,
     roughness: 0.87,
     metalness: 0.05,
   });
+  /*
+   * One material, two maps, mixed by the `aSurface` attribute — so a circuit
+   * with dirt in it costs exactly the draw calls a paved one does. A second
+   * mesh for the loose stretches would have been simpler to write and would
+   * have doubled the road's contribution to the budget on the one course that
+   * needs it most.
+   *
+   * A paved circuit sets `aSurface` to 0 everywhere, so `mix` returns the
+   * asphalt sample unchanged and the three shipping tracks render bit for bit
+   * as they did. The extra texture fetch happens either way; that is the price
+   * of not branching in a fragment shader.
+   */
+  roadMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uLooseMap = { value: looseMap };
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nattribute float aSurface;\nvarying float vSurface;",
+      )
+      .replace(
+        "#include <begin_vertex>",
+        "#include <begin_vertex>\nvSurface = aSurface;",
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nuniform sampler2D uLooseMap;\nvarying float vSurface;",
+      )
+      .replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+        vec4 looseTexel = texture2D( uLooseMap, vMapUv );
+        diffuseColor = mix( diffuseColor, looseTexel, clamp( vSurface, 0.0, 1.0 ) );`,
+      );
+  };
+  // Materials with different `onBeforeCompile` bodies must not share a program.
+  roadMaterial.customProgramCacheKey = () => `nk-road-surface`;
   const road = new THREE.Mesh(roadGeo, roadMaterial);
   road.receiveShadow = quality.shadows;
   group.add(road);
@@ -463,6 +529,7 @@ export function buildTrackMesh(
     { dispose: () => roadGeo.dispose() },
     { dispose: () => roadMaterial.dispose() },
     { dispose: () => roadMap.dispose() },
+    { dispose: () => looseMap.dispose() },
   );
 
   // ── Edge line, just inside the drivable width ─────────────────────────────

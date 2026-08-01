@@ -8,7 +8,9 @@
  * both the road mesh and the surface query read the same `samples` array.
  */
 
-import { CHECKPOINT_COUNT } from "./balance";
+import { CHECKPOINT_COUNT, type SurfaceKind } from "./balance";
+
+export type { SurfaceKind };
 
 export interface TrackControlPoint {
   readonly x: number;
@@ -53,8 +55,21 @@ export interface TrackSpec {
   readonly itemBoxes: readonly ItemBoxRowSpec[];
   readonly boostPads: readonly BoostPadSpec[];
   readonly ramps?: readonly RampSpec[];
+  /**
+   * Stretches of road that are not asphalt, as fractions of a lap. Omit for a
+   * fully paved circuit — the three that shipped omit it and are unchanged to
+   * the bit. Ranges are `from` < `to` in 0..1; anything uncovered is asphalt.
+   */
+  readonly surfaceZones?: readonly SurfaceZoneSpec[];
   /** Visual identity. The renderer reads these; the sim ignores them. */
   readonly theme: TrackTheme;
+}
+
+export interface SurfaceZoneSpec {
+  /** 0..1 along the lap. */
+  readonly from: number;
+  readonly to: number;
+  readonly kind: SurfaceKind;
 }
 
 export interface TrackTheme {
@@ -69,6 +84,8 @@ export interface TrackTheme {
   readonly fog: number;
   readonly fogDensity: number;
   readonly road: number;
+  /** Base colour for dirt/gravel stretches. Omit on fully paved circuits. */
+  readonly looseRoad?: number;
   readonly roadEdge: number;
   readonly rail: number;
   readonly ground: number;
@@ -103,6 +120,13 @@ export interface TrackSample {
   readonly bank: number;
   /** Slope of the centreline, radians. Positive climbs. */
   readonly pitch: number;
+  /**
+   * What this stretch of road is made of. Derived once here from
+   * `spec.surfaceZones`; `querySurface` returns it verbatim rather than
+   * blending, because a blended surface kind would be a second answer to a
+   * question this field already answers.
+   */
+  readonly surface: SurfaceKind;
 }
 
 export interface BoostPad {
@@ -178,6 +202,8 @@ export interface SurfaceQuery {
   readonly onRoad: boolean;
   /** |lateral| <= half + shoulder — still ground, but slow. */
   readonly onGround: boolean;
+  /** The nearest sample's surface, not blended. See TrackSample.surface. */
+  readonly surface: SurfaceKind;
 }
 
 /** Sample spacing. Fine enough that a 42 u/s kart never skips a sample. */
@@ -369,6 +395,7 @@ export function buildTrack(spec: TrackSpec, step = TRACK_STEP): Track {
         Math.min(MAX_BANK, curvature * BANK_PER_CURVATURE),
       ),
       pitch,
+      surface: surfaceKindAt(spec.surfaceZones, i / count),
     });
   }
 
@@ -581,7 +608,27 @@ export function querySurface(
     pitch: sample.pitch,
     onRoad: Math.abs(lateral) <= half,
     onGround: Math.abs(lateral) <= half + shoulder,
+    surface: sample.surface,
   };
+}
+
+/**
+ * The road surface at a fraction of a lap. Last matching zone wins, so a
+ * later entry can carve a patch out of an earlier one; anything uncovered is
+ * asphalt, which is why a spec with no zones reproduces the paved circuit
+ * exactly. `mirrorSpec` spreads `...spec`, so zones survive mirroring with no
+ * special handling — a mirrored lap runs the same distances in the same order.
+ */
+function surfaceKindAt(
+  zones: readonly SurfaceZoneSpec[] | undefined,
+  at: number,
+): SurfaceKind {
+  if (!zones) return "asphalt";
+  let kind: SurfaceKind = "asphalt";
+  for (const zone of zones) {
+    if (at >= zone.from && at < zone.to) kind = zone.kind;
+  }
+  return kind;
 }
 
 /**

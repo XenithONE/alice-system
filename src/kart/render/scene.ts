@@ -13,7 +13,7 @@
  */
 
 import * as THREE from "three";
-import { BASE_TOP_SPEED } from "../sim/balance";
+import { BASE_TOP_SPEED, SHOULDER_WIDTH } from "../sim/balance";
 import { forwardOf, querySurface, rightOf, type Track } from "../sim/track";
 import type { RaceEvent, RaceState, RacerState } from "../sim/types";
 import { machineById } from "../content/machines";
@@ -768,6 +768,33 @@ export function createKartScene(options: KartSceneOptions): KartScene {
       }
       if (racer.offRoad && racer.speed > 6) {
         fx.spawn("dust", tailX, racer.y + 0.2, tailZ, theme.ground, 2, 2, 0.4, 1.6);
+      } else if (racer.speed > 20) {
+        /*
+         * On-road dust: only loose surfaces throw any, so a paved circuit
+         * spawns nothing here and its particle count is unchanged. The colour
+         * is the road's own, which is why a dirt section reads as dirt from the
+         * spray before the texture under the wheels is even visible.
+         */
+        const surface = querySurface(
+          track,
+          racer.x,
+          racer.z,
+          -1,
+          SHOULDER_WIDTH,
+        ).surface;
+        if (surface === "dirt" || surface === "gravel") {
+          fx.spawn(
+            "dust",
+            tailX,
+            racer.y + 0.18,
+            tailZ,
+            theme.looseRoad ?? 0x8a6a44,
+            surface === "dirt" ? 2 : 1,
+            1.5,
+            0.36,
+            1.4,
+          );
+        }
       }
       if (racer.starTimer > 0) {
         fx.spawn("star", racer.x, racer.y + 1.1, racer.z, 0xfff2a0, 2, 2, 1.6, 2);

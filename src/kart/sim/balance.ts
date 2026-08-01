@@ -215,6 +215,40 @@ export const WEATHER_GRIP: Record<
   rain: { turn: 0.9, brake: 0.8, offroad: 1.3, top: 0.94 },
 };
 
+// ── Road surface ───────────────────────────────────────────────────────────────
+
+/**
+ * What the road itself is made of, distinct from the weather on top of it.
+ * "asphalt" is the surface every circuit had before this existed and its
+ * entries are all exactly 1 — a track with no `surfaceZones` is bit-identical
+ * to the one that shipped.
+ *
+ * Discrete on purpose. The road is asphalt or it is dirt; there is no 40 %
+ * gravel. `buildTrack` derives the kind per sample once and `querySurface`
+ * hands it back without interpolating, because an interpolated surface would
+ * be a second source of truth that disagrees with the first at every joint.
+ */
+export type SurfaceKind = "asphalt" | "dirt" | "gravel" | "wet";
+
+export const SURFACE: Record<
+  SurfaceKind,
+  {
+    /** Top-speed multiplier on this surface. */
+    readonly top: number;
+    /** Cornering multiplier. Below ~0.86 a 200cc kart cannot hold the line. */
+    readonly turn: number;
+    /** Extra lateral scrub, added to the base friction. */
+    readonly friction: number;
+    /** Multiplies the off-road penalty; loose surfaces blur the edge. */
+    readonly offroadTop: number;
+  }
+> = {
+  asphalt: { top: 1, turn: 1, friction: 0, offroadTop: 1 },
+  dirt: { top: 0.93, turn: 0.9, friction: 1.6, offroadTop: 1.12 },
+  gravel: { top: 0.88, turn: 0.86, friction: 2.8, offroadTop: 1.2 },
+  wet: { top: 0.95, turn: 0.88, friction: 0.8, offroadTop: 1.05 },
+};
+
 // ── Speed classes ──────────────────────────────────────────────────────────────
 
 /**

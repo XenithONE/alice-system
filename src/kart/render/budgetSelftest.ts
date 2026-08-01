@@ -43,6 +43,7 @@ const gate = createGate();
 const stubTexture = (): THREE.Texture => new THREE.Texture();
 const STUB_TRACK_TEXTURES: TrackTextureFactory = {
   asphalt: stubTexture,
+  loose: stubTexture,
   rumble: stubTexture,
   checker: stubTexture,
   ground: stubTexture,

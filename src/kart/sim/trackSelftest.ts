@@ -11,7 +11,7 @@
  * Run: npx tsx src/kart/sim/trackSelftest.ts
  */
 import { createGate } from "../gate";
-import { KART_RADIUS, SHOULDER_WIDTH } from "./balance";
+import { KART_RADIUS, SHOULDER_WIDTH, SURFACE } from "./balance";
 import {
   angleDelta,
   arcDelta,
@@ -467,6 +467,76 @@ gate.expectFail(
   () => bankViolations(built[0]!, -1) === 0,
   "bank 符号反転",
 );
+
+// [T12] surface zones are well formed, and the paved circuits stay paved ────
+{
+  let malformed = 0;
+  for (const spec of TRACKS) {
+    for (const zone of spec.surfaceZones ?? []) {
+      if (
+        !(zone.from >= 0 && zone.to <= 1 && zone.from < zone.to) ||
+        !(zone.kind in SURFACE)
+      ) {
+        malformed += 1;
+      }
+    }
+  }
+  const pavedSamples = built.every((track) =>
+    track.spec.surfaceZones
+      ? true
+      : track.samples.every((sample) => sample.surface === "asphalt"),
+  );
+  gate.check(
+    "[T12] ゾーン定義が整合し、未指定のコースは全面 asphalt",
+    malformed === 0 && pavedSamples,
+    `不正ゾーン ${malformed} 件・未指定コースは全サンプル asphalt`,
+  );
+}
+
+// [T13] derivation and read-out agree, including through the mirror ─────────
+{
+  /*
+   * The zone list is authored once and read in two places — `buildTrack` bakes
+   * it into every sample, and `querySurface` hands that back. This walks the
+   * lap and confirms the query at a point on the centreline returns the sample
+   * it came from, which is the only way to catch the derivation and the reader
+   * drifting apart. `mirrorSpec` spreads `...spec`, so the mirrored lap must
+   * report the same surface at the same arc length.
+   */
+  const zoned = {
+    ...TRACKS[0]!,
+    id: `${TRACKS[0]!.id}@zoned`,
+    surfaceZones: [
+      { from: 0.2, to: 0.4, kind: "dirt" as const },
+      { from: 0.6, to: 0.75, kind: "gravel" as const },
+    ],
+  };
+  const track = buildTrack(zoned);
+  const mirrored = buildTrack(mirrorSpec(zoned));
+  let mismatches = 0;
+  let mirrorMismatches = 0;
+  const kinds = new Set<string>();
+  for (let i = 0; i < track.samples.length; i += 1) {
+    const sample = track.samples[i]!;
+    kinds.add(sample.surface);
+    const query = querySurface(track, sample.x, sample.z, i, SHOULDER_WIDTH);
+    if (query.surface !== sample.surface) mismatches += 1;
+    if (mirrored.samples[i]!.surface !== sample.surface) mirrorMismatches += 1;
+  }
+  gate.check(
+    "[T13] 導出と読み出しが全サンプルで一致（ミラーでも同じ）",
+    mismatches === 0 && mirrorMismatches === 0 && kinds.size === 3,
+    `不一致 ${mismatches} / ミラー差 ${mirrorMismatches} / 種別 ${[...kinds].sort().join(",")}`,
+  );
+  gate.expectFail(
+    "[T13-neg] ゾーンを消すと種別が1つになる（検査がゾーンを見ている証明）",
+    () => {
+      const plain = buildTrack({ ...zoned, surfaceZones: undefined });
+      return new Set(plain.samples.map((s) => s.surface)).size === 3;
+    },
+    "surfaceZones を外したコース",
+  );
+}
 
 console.table(
   built.map((track) => ({

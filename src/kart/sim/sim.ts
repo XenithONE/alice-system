@@ -50,6 +50,7 @@ import {
   MUSHROOM_BOOST_SEC,
   OFFROAD_FRICTION,
   OFFROAD_SPEED_MULT,
+  SURFACE,
   PAD_BOOST_SEC,
   RED_SHELL_LOCK_RANGE,
   RED_SHELL_TURN_RATE,
@@ -272,6 +273,7 @@ export function createKartSim(config: RaceConfig): KartSim {
       lastS: query.s,
       lastLateral: query.lateral,
       lastHalf: query.half,
+      surface: query.surface,
       distance: startS,
       sampleHint: query.index,
       lap: 1,
@@ -801,6 +803,13 @@ export function createKartSim(config: RaceConfig): KartSim {
      * multiplications has one evaluation order for the whole frame.
      */
     const T = effectiveTuning(kart);
+    /*
+     * The road under this kart. Read from the surface the kart was standing on
+     * at the end of last tick rather than re-querying: the position integration
+     * below has not happened yet, so a fresh query here would describe a place
+     * the kart has not reached. It also keeps the query count per tick at one.
+     */
+    const surface = SURFACE[kart.surface];
 
     const stunned =
       kart.spinTimer > 0 || kart.squashTimer > 0 || kart.stallTimer > 0;
@@ -937,7 +946,13 @@ export function createKartSim(config: RaceConfig): KartSim {
       } else {
         turn = BASE_TURN_RATE * kart.steer * speedFactor;
       }
-      turn *= T.turnScale * weather.turn;
+      /*
+       * Surface last, after the weather. The order is not free — floating
+       * multiplication is not associative, and every lap time and every gate
+       * threshold in this file was measured with `turnScale` applied before
+       * `weather.turn`. A new factor goes on the end.
+       */
+      turn *= T.turnScale * weather.turn * surface.turn;
       if (kart.airborne) turn *= AIR_CONTROL * T.airControlScale;
       if (kart.speed < 0) turn = -turn;
       /*
@@ -963,7 +978,8 @@ export function createKartSim(config: RaceConfig): KartSim {
       const catchup =
         1 +
         (CATCHUP_MAX_BONUS * (kart.place - 1)) / Math.max(1, karts.length - 1);
-      let topSpeed = BASE_TOP_SPEED * T.speedScale * weather.top * catchup;
+      let topSpeed =
+        BASE_TOP_SPEED * T.speedScale * weather.top * catchup * surface.top;
       if (kart.drafting && kart.boostSource === "draft") {
         topSpeed *= DRAFT_TOP_SPEED_MULT;
       }
@@ -993,8 +1009,12 @@ export function createKartSim(config: RaceConfig): KartSim {
       if (kart.offRoad && kart.speed > 0) {
         kart.speed = Math.max(
           0,
-          kart.speed - OFFROAD_FRICTION * weather.offroad * dt,
+          kart.speed - OFFROAD_FRICTION * weather.offroad * surface.offroadTop * dt,
         );
+      } else if (surface.friction > 0 && kart.speed > 0) {
+        // Loose road scrubs even on the racing line — that is what makes dirt
+        // feel like dirt rather than like slower asphalt.
+        kart.speed = Math.max(0, kart.speed - surface.friction * dt);
       }
       if (kart.speed > topSpeed) {
         kart.speed -= (kart.speed - topSpeed) * Math.min(1, 3.2 * dt);
@@ -1011,6 +1031,7 @@ export function createKartSim(config: RaceConfig): KartSim {
     kart.sampleHint = query.index;
     kart.offRoad = !query.onRoad;
     kart.lastHalf = query.half;
+    kart.surface = query.surface;
 
     if (!query.onGround) {
       const limit = query.half + SHOULDER_WIDTH;
