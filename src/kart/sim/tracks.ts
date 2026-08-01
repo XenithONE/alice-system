@@ -511,12 +511,162 @@ const ALPINE_PASS: TrackSpec = {
   },
 };
 
+/**
+ * The first circuit that is not made of tarmac.
+ *
+ * A paved farm road across the top of a mesa, a cliff lip that drops the whole
+ * 24 m in a fifth of a lap, then a basin floor of dirt and one gravel wash
+ * before the climb back up. The drop needs no ramp: the sim launches a kart
+ * when the ground stops falling as fast as it is, so a short steep face taken
+ * at speed does it by itself.
+ *
+ * Surface budget, chosen against the limits rather than by eye:
+ *   dirt   47% of the lap
+ *   gravel 12% — 197 m, under the 220 m of continuous gravel that would drop a
+ *          200cc kart below DRIFT_MIN_SPEED and strand [H2]'s mini-turbo floor
+ *   asphalt 41% — the farm road, and the only place on the circuit with grip
+ *          to spare. That is where the overtake is.
+ *
+ * Corners are 34.3 m at the tightest against a 30.5 m floor: [T14], not [T6],
+ * is what sets that — the verge folds through its own centre before the
+ * projection ever gets confused.
+ */
+const DUST_BASIN: TrackSpec = {
+  id: "dust-basin",
+  name: "DUST BASIN",
+  nameJa: "土煙の窪地",
+  blurb: "台地の農道から崖を飛び降り、ダートと砂利の窪地を回る。掴めるのは舗装区間だけ。",
+  points: [
+    { x: 13.4, y: 24, z: 249, width: 26 },
+    { x: 4.5, y: 24, z: 249.2, width: 26 },
+    { x: -4.3, y: 24, z: 248.4, width: 26 },
+    { x: -13, y: 24, z: 246.6, width: 26 },
+    { x: -33.9, y: 24, z: 241.1, width: 26 },
+    { x: -54.9, y: 24, z: 235.6, width: 26 },
+    { x: -75.8, y: 24, z: 230.1, width: 26 },
+    { x: -96.7, y: 24, z: 224.6, width: 26 },
+    { x: -117.6, y: 24, z: 219.1, width: 26 },
+    { x: -138.5, y: 24, z: 213.6, width: 26 },
+    { x: -159.4, y: 24, z: 208.1, width: 26 },
+    { x: -177.6, y: 24, z: 200.4, width: 26 },
+    { x: -192.9, y: 24, z: 187.9, width: 26 },
+    { x: -204.2, y: 24, z: 171.7, width: 26 },
+    { x: -213.5, y: 24, z: 152.9, width: 25.7 },
+    { x: -222.9, y: 24, z: 134.1, width: 25.3 },
+    { x: -232.3, y: 24, z: 115.4, width: 25 },
+    { x: -241.7, y: 24, z: 96.6, width: 24.7 },
+    { x: -251.1, y: 24, z: 77.8, width: 24.3 },
+    { x: -260.5, y: 23.9, z: 59.1, width: 24 },
+    { x: -265.1, y: 23.3, z: 46.3, width: 24 },
+    { x: -266.8, y: 22.3, z: 32.7, width: 24 },
+    { x: -265.4, y: 20.9, z: 19.2, width: 24 },
+    { x: -260.8, y: 19.2, z: -1.2, width: 23.1 },
+    { x: -256.3, y: 17.4, z: -21.7, width: 22.3 },
+    { x: -251.8, y: 15.3, z: -42.1, width: 21.4 },
+    { x: -247.2, y: 13.2, z: -62.5, width: 20.6 },
+    { x: -242.7, y: 11, z: -83, width: 19.7 },
+    { x: -238.1, y: 8.9, z: -103.4, width: 18.9 },
+    { x: -233.6, y: 6.9, z: -123.9, width: 18 },
+    { x: -230.1, y: 5, z: -133.7, width: 18 },
+    { x: -224.2, y: 3.3, z: -142.4, width: 18 },
+    { x: -216.4, y: 1.9, z: -149.4, width: 18 },
+    { x: -198.7, y: 0.8, z: -161.6, width: 18.9 },
+    { x: -180.9, y: 0.2, z: -173.7, width: 19.7 },
+    { x: -163.2, y: 0, z: -185.9, width: 20.6 },
+    { x: -145.5, y: 0, z: -198.1, width: 21.4 },
+    { x: -127.7, y: 0, z: -210.3, width: 22.3 },
+    { x: -110, y: 0, z: -222.5, width: 23.1 },
+    { x: -92.3, y: 0, z: -234.7, width: 24 },
+    { x: -77, y: 0, z: -242.9, width: 24 },
+    { x: -60.3, y: 0, z: -247.6, width: 24 },
+    { x: -43, y: 0, z: -248.6, width: 24 },
+    { x: -20.9, y: 0, z: -247.5, width: 23.1 },
+    { x: 1.2, y: 0, z: -246.4, width: 22.3 },
+    { x: 23.3, y: 0, z: -245.3, width: 21.4 },
+    { x: 45.4, y: 0, z: -244.2, width: 20.6 },
+    { x: 67.6, y: 0, z: -243.1, width: 19.7 },
+    { x: 89.7, y: 0, z: -242, width: 18.9 },
+    { x: 111.8, y: 0, z: -240.9, width: 18 },
+    { x: 123, y: 0, z: -238.8, width: 18 },
+    { x: 133.3, y: 0, z: -233.7, width: 18 },
+    { x: 141.8, y: 0, z: -226, width: 18 },
+    { x: 156.7, y: 0, z: -208.3, width: 18.9 },
+    { x: 171.7, y: 0, z: -190.6, width: 19.7 },
+    { x: 186.6, y: 0, z: -172.9, width: 20.6 },
+    { x: 201.6, y: 0, z: -155.2, width: 21.4 },
+    { x: 216.5, y: 0, z: -137.4, width: 22.3 },
+    { x: 231.5, y: 0.2, z: -119.7, width: 23.1 },
+    { x: 246.5, y: 0.6, z: -102, width: 24 },
+    { x: 256.3, y: 1.2, z: -86.7, width: 24 },
+    { x: 261.8, y: 1.9, z: -69.4, width: 24 },
+    { x: 262.7, y: 2.7, z: -51.3, width: 24 },
+    { x: 261, y: 3.7, z: -29, width: 24.3 },
+    { x: 259.2, y: 4.7, z: -6.8, width: 24.7 },
+    { x: 257.5, y: 5.9, z: 15.5, width: 25 },
+    { x: 255.7, y: 7.1, z: 37.8, width: 25.3 },
+    { x: 253.9, y: 8.4, z: 60.1, width: 25.7 },
+    { x: 252.2, y: 9.7, z: 82.4, width: 26 },
+    { x: 248.8, y: 11, z: 99.8, width: 26 },
+    { x: 241.7, y: 12.4, z: 116.1, width: 26 },
+    { x: 231.2, y: 13.7, z: 130.4, width: 26 },
+    { x: 215.2, y: 15.1, z: 147.7, width: 26 },
+    { x: 199.3, y: 16.4, z: 165, width: 26 },
+    { x: 183.3, y: 17.6, z: 182.3, width: 26 },
+    { x: 167.3, y: 18.8, z: 199.6, width: 26 },
+    { x: 151.3, y: 19.9, z: 216.9, width: 26 },
+    { x: 136.1, y: 20.9, z: 229.7, width: 26 },
+    { x: 118.2, y: 21.8, z: 238.4, width: 26 },
+    { x: 98.7, y: 22.5, z: 242.4, width: 26 },
+    { x: 77.4, y: 23.2, z: 244, width: 26 },
+    { x: 56.1, y: 23.6, z: 245.7, width: 26 },
+    { x: 34.8, y: 23.9, z: 247.3, width: 26 },
+  ],
+  surfaceZones: [
+    { from: 0.26, to: 0.62, kind: "dirt" },
+    { from: 0.66, to: 0.78, kind: "gravel" },
+    { from: 0.82, to: 0.93, kind: "dirt" },
+  ],
+  itemBoxes: [
+    { at: 0.12, offsets: [-0.6, -0.2, 0.2, 0.6] },
+    { at: 0.45, offsets: [-0.5, 0.5] },
+    { at: 0.64, offsets: [-0.6, -0.2, 0.2, 0.6] },
+    { at: 0.88, offsets: [-0.55, 0, 0.55] },
+  ],
+  boostPads: [
+    { at: 0.15, offset: 0 },
+    { at: 0.5, offset: -0.32 },
+    { at: 0.86, offset: 0.3 },
+  ],
+  theme: {
+    skyLow: 0xf6d9a8,
+    skyHigh: 0x4f86c6,
+    sunColor: 0xffe6c0,
+    sunDir: [0.5, 0.72, -0.48],
+    sunIntensity: 3.9,
+    ambient: 0.85,
+    fog: 0xe3c69a,
+    fogDensity: 0.0021,
+    road: 0x50504e,
+    // The dirt and gravel stretches sample this instead; see SURFACE_BLEND.
+    looseRoad: 0x9a6f45,
+    roadEdge: 0xf0e6d2,
+    rail: 0xa8815a,
+    ground: 0xb98d5c,
+    groundAccent: 0xe0a15a,
+    props: "boulder",
+    bloom: 0.5,
+    stars: 0,
+    night: false,
+  },
+};
+
 export const TRACKS: readonly TrackSpec[] = [
   SUNSET_COAST,
   NEON_CANYON,
   SKY_GARDEN,
   CITY_LOOP,
   ALPINE_PASS,
+  DUST_BASIN,
 ];
 
 export type TrackId = (typeof TRACKS)[number]["id"];

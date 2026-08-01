@@ -41,6 +41,9 @@ import type { KartQuality } from "./quality";
 import { buildTrackMesh, type TrackMeshBundle } from "./trackMesh";
 import { CSM } from "three/addons/csm/CSM.js";
 
+/** three installs this no-op on every Material; it is not a real hook. */
+const DEFAULT_ON_BEFORE_COMPILE = THREE.Material.prototype.onBeforeCompile;
+
 export interface KartSceneOptions {
   readonly canvas: HTMLCanvasElement;
   readonly track: Track;
@@ -256,6 +259,8 @@ export function createKartScene(options: KartSceneOptions): KartScene {
    * created.
    */
   let csm: CSM | null = null;
+  /** Materials whose own shader hook survived CSM registration. See `enrol`. */
+  let chainedHooks = 0;
   const enrolled = new WeakSet<THREE.Material>();
   function enrol(root: THREE.Object3D): void {
     if (!csm) return;
@@ -271,7 +276,34 @@ export function createKartScene(options: KartSceneOptions): KartScene {
           continue;
         }
         enrolled.add(material);
+        /*
+         * `csm.setupMaterial` ASSIGNS `material.onBeforeCompile`, so it silently
+         * discards any hook the material already had. The road's dirt/gravel
+         * blend is exactly such a hook, and losing it produced the most
+         * confusing symptom of this whole feature: the sim said gravel, the
+         * dust plume came up orange, and the tarmac under it stayed grey.
+         *
+         * They can both run — CSM patches `ShaderChunk` globally and its own
+         * hook only writes uniforms, so there is no chunk-replace collision.
+         * Chain them rather than choosing.
+         */
+        /*
+         * Against the prototype default, not against undefined: three gives
+         * every Material a no-op `onBeforeCompile`, so "does it have one" is
+         * true for all of them and chaining would wrap 54 materials around a
+         * function that does nothing. Only a hook the material actually
+         * installed is worth preserving — and counting.
+         */
+        const own = material.onBeforeCompile;
         csm!.setupMaterial(material);
+        const fromCsm = material.onBeforeCompile;
+        if (own && own !== DEFAULT_ON_BEFORE_COMPILE && own !== fromCsm) {
+          material.onBeforeCompile = function (shader, renderer) {
+            fromCsm.call(this, shader, renderer);
+            own.call(this, shader, renderer);
+          };
+          chainedHooks += 1;
+        }
       }
     });
   }
@@ -1062,6 +1094,13 @@ export function createKartScene(options: KartSceneOptions): KartScene {
           (sun.castShadow ? 1 : 0),
         csmPatched: countPatchedMaterials().patched,
         standardMaterials: countPatchedMaterials().standard,
+        /*
+         * At least one, always: the road carries the dirt/gravel blend. Zero
+         * here means CSM overwrote it, which renders perfectly and simply
+         * paints every surface as tarmac — the sim still says gravel, the dust
+         * still comes up orange, and only the road disagrees.
+         */
+        csmChainedHooks: chainedHooks,
         shed: post.shedStages.slice(),
         fps: Math.round(lastFps),
         ghost:
