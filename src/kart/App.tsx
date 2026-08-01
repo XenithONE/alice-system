@@ -60,6 +60,7 @@ import {
 } from "./ui/MetaScreens";
 import { Lobby, Menu, Results, SoloSetup, TouchControls } from "./ui/Screens";
 import { GarageScreen } from "./ui/GarageScreen";
+import { cupIdForTrack } from "./modes/gp";
 import { CHARACTERS, REFERENCE_CHARACTER_ID } from "./content/characters";
 import { MACHINES, REFERENCE_MACHINE_ID } from "./content/machines";
 
@@ -262,6 +263,7 @@ export default function App(): React.JSX.Element {
         tricksLanded: stats.tricksLanded,
         itemHits: stats.itemHits,
         gpGoldClass: wonCup ? session.settings.speedClass : null,
+        cupId: cupIdForTrack(session.settings.trackId),
       });
 
       let nextDaily = daily;

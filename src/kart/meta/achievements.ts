@@ -54,7 +54,15 @@ export function evaluateAchievements(
   const mirrorWins = Object.entries(records.byCombo).some(
     ([key, combo]) => key.endsWith("|m") && combo.wins > 0,
   );
-  const gold200 = Object.keys(records.gpGold).some((key) => key.startsWith("2"));
+  /*
+   * Against the speed-class half of the key, not its start. The key gained a
+   * `${cupId}|` prefix when the cups split, and `startsWith("2")` silently
+   * stopped matching anything — the achievement would have quietly become
+   * unobtainable rather than erroring.
+   */
+  const gold200 = Object.keys(records.gpGold).some(
+    (key) => (key.split("|")[1] ?? key).startsWith("2"),
+  );
 
   has("first_win", records.wins >= 1);
   has("wins_5", records.wins >= 5);

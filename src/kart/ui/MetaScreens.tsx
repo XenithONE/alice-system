@@ -10,6 +10,7 @@ import { dailyCombo, kartDayKey, type DailyState } from "../meta/daily";
 import { comboKey, type NkRecords } from "../meta/records";
 import type { RoomSettings } from "../net/protocol";
 import type { CupView } from "../net/session";
+import { CUP_IDS, CUPS, cupIdForTrack } from "../modes/gp";
 import { LIVERIES } from "../render/palette";
 import { SPEED_CLASSES, WEATHER_KINDS } from "../sim/balance";
 import { TRACKS } from "../sim/tracks";
@@ -83,8 +84,32 @@ export function GpSetup({
     <div className="nk-screen nk-setup">
       <h2>グランプリ</h2>
       <p className="nk-note">
-        全3コースを連戦し、順位ポイント（10/8/6/5/4/3/2/1）の合計で総合優勝を争います。
+        3コースを連戦し、順位ポイント（10/8/6/5/4/3/2/1）の合計で総合優勝を争います。
       </p>
+      {/* The cup is chosen by choosing a circuit — the grid below IS the cup
+          selector, so the only thing missing was saying which one you picked. */}
+      <div className="nk-cup-pick">
+        {CUP_IDS.map((id) => {
+          const active = cupIdForTrack(settings.trackId) === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              className={active ? "is-active" : ""}
+              onClick={() => onChange({ trackId: CUPS[id].tracks[0]! })}
+            >
+              <b>{CUPS[id].name}</b>
+              <small>
+                {CUPS[id].tracks
+                  .map((trackId) =>
+                    TRACKS.find((spec) => spec.id === trackId)?.name ?? trackId,
+                  )
+                  .join(" → ")}
+              </small>
+            </button>
+          );
+        })}
+      </div>
       <div className="nk-dials">
         <label>
           <span>クラス</span>

@@ -329,7 +329,8 @@ export function createSoloSession(config: SoloConfig): NitroSession {
       specs[chosen] = { ...specs[chosen], livery: 0 };
     }
   }
-  const cupOrder = cupTrackOrder();
+  // The circuit chosen in the menu picks the cup; that is the whole selector.
+  const cupOrder = cupTrackOrder(settings.trackId);
   let round = 0;
   let cupPoints: number[] = specs.map(() => 0);
   let lastResult: RaceResult | null = null;
@@ -477,7 +478,7 @@ export async function createHostSession(
   let finalResult: RaceResult | null = null;
   let disposed = false;
   // Grand prix state (host-authoritative).
-  const cupOrder = cupTrackOrder();
+  const cupOrder = cupTrackOrder(settings.trackId);
   let cupRound = 0;
   let cupPoints: number[] = [];
   let cupScored: RaceResult | null = null;
@@ -996,7 +997,7 @@ export async function createGuestSession(
         latestView = null;
         const isCup = settings.gp;
         const trackId = isCup
-          ? (cupTrackOrder()[parsed.round] ?? settings.trackId)
+          ? (cupTrackOrder(settings.trackId)[parsed.round] ?? settings.trackId)
           : settings.trackId;
         track = buildTrack(
           maybeMirror(trackSpecById(trackId), settings.mirror),

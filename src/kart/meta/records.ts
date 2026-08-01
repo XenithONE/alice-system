@@ -35,8 +35,30 @@ export interface NkRecords {
   /** keyed `${trackId}|${speedClass}` + ("|m" when mirrored) */
   byCombo: Record<string, ComboRecord>;
   tt: Record<string, TtRecord>;
-  /** `${speedClass}` or `${speedClass}m` → won that cup */
+  /** `${cupId}|${speedClass}` + ("m" when mirrored) → won that cup */
   gpGold: Record<string, boolean>;
+}
+
+export function gpGoldKey(
+  cupId: string,
+  speedClass: number,
+  mirror: boolean,
+): string {
+  return `${cupId}|${speedClass}${mirror ? "m" : ""}`;
+}
+
+/**
+ * Reads a pre-split key as a CROWN win.
+ *
+ * The key used to be `${speedClass}` alone, because there was only one cup.
+ * Left unmigrated, a player who had won it would find their "CUP CHAMPION"
+ * achievement gone; migrated to the wrong cup, winning the easy one would
+ * unlock the hard one's reward. The old cup WAS crown — same three circuits,
+ * same order — so that is the honest reading.
+ */
+export function migrateGpGoldKey(key: string): string {
+  if (key.includes("|")) return key;
+  return `crown|${key}`;
 }
 
 export function emptyRecords(): NkRecords {
@@ -114,8 +136,10 @@ export function coerceRecords(raw: unknown): NkRecords {
     }
   }
   if (typeof source.gpGold === "object" && source.gpGold !== null) {
+    // Migrated on read, which is why no stored version number has to change:
+    // `coerceRecords` already rebuilds the blob from whatever was on disk.
     for (const [key, value] of Object.entries(source.gpGold as Record<string, unknown>)) {
-      if (value === true) records.gpGold[key] = true;
+      if (value === true) records.gpGold[migrateGpGoldKey(key)] = true;
     }
   }
   return records;
@@ -132,6 +156,8 @@ export interface RaceOutcomeEntry {
   readonly itemHits: number;
   /** Set on the FINAL round of a won cup. */
   readonly gpGoldClass: number | null;
+  /** Which cup it was. Only read when `gpGoldClass` is set. */
+  readonly cupId: string;
 }
 
 export interface NewBests {
@@ -194,7 +220,7 @@ export function applyRace(
     }
   }
   if (entry.gpGoldClass !== null) {
-    const goldKey = `${entry.gpGoldClass}${entry.mirror ? "m" : ""}`;
+    const goldKey = gpGoldKey(entry.cupId, entry.gpGoldClass, entry.mirror);
     if (!next.gpGold[goldKey]) {
       next.gpGold[goldKey] = true;
       next.gpGolds += 1;

@@ -172,8 +172,21 @@ export function createKartScene(options: KartSceneOptions): KartScene {
    * of both. Taking the reset by hand makes the numbers describe the scene.
    */
   renderer.info.autoReset = false;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.98;
+  /*
+   * Per-circuit tone mapping. ACES is what the game shipped with and what the
+   * first three circuits were graded against; AgX keeps saturated colour from
+   * shifting hue as it clips, which is worth having on the neon skyline and
+   * the red dirt and is worth nothing on the coast. AgX is slightly darker at
+   * the top end, so it takes a little more exposure to sit where ACES did.
+   */
+  const TONEMAP = {
+    aces: THREE.ACESFilmicToneMapping,
+    agx: THREE.AgXToneMapping,
+    neutral: THREE.NeutralToneMapping,
+  } as const;
+  const tonemap = track.spec.theme.tonemap ?? "aces";
+  renderer.toneMapping = TONEMAP[tonemap];
+  renderer.toneMappingExposure = tonemap === "agx" ? 1.12 : 0.98;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   if (quality.shadows) {
     renderer.shadowMap.enabled = true;

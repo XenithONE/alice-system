@@ -103,6 +103,15 @@ export interface TrackTheme {
   readonly stars: number;
   /** Night circuits get kart headlights and emissive-forward dressing. */
   readonly night: boolean;
+  /**
+   * Tone mapping curve. Omit for ACES, which every circuit shipped with —
+   * stated explicitly on the original three so their look is a decision rather
+   * than a default, and so changing the fallback later cannot move them.
+   *
+   * AgX holds saturated colour without the hue shift ACES puts on it, which
+   * matters on the neon skyline and the red dirt and nowhere else.
+   */
+  readonly tonemap?: "aces" | "agx" | "neutral";
 }
 
 export interface TrackSample {

@@ -27,16 +27,40 @@ export const GP_POINTS: readonly number[] = [10, 8, 6, 5, 4, 3, 2, 1];
  */
 export const CUP_ROUNDS = 3;
 
+export type CupId = "crown" | "summit";
+
 /**
- * Which circuits the cup runs, in order.
+ * Two cups of three. Which one you race is decided by the circuit you pick,
+ * so the existing course grid doubles as the cup selector and nothing new
+ * rides the wire — `StartPayload` is unchanged by this.
  *
- * Still the first three, so an existing `gpGold` record keeps meaning what it
- * meant. The plan's split into two named cups needs a key migration on that
- * record — otherwise winning the easy cup unlocks the achievement for both —
- * and that belongs with the migration, not with a new circuit.
+ * CROWN is the three that shipped, in their shipped order, so a `gpGold`
+ * record migrated to `crown|N` still means what it meant.
  */
-export function cupTrackOrder(): readonly string[] {
-  return TRACKS.slice(0, CUP_ROUNDS).map((spec) => spec.id);
+export const CUPS: Record<CupId, { name: string; tracks: readonly string[] }> = {
+  crown: {
+    name: "CROWN CUP",
+    tracks: ["sunset-coast", "neon-canyon", "sky-garden"],
+  },
+  summit: {
+    name: "SUMMIT CUP",
+    tracks: ["city-loop", "alpine-pass", "dust-basin"],
+  },
+};
+
+export const CUP_IDS: readonly CupId[] = ["crown", "summit"];
+
+/** Which cup a circuit belongs to. Unknown ids fall back to CROWN. */
+export function cupIdForTrack(trackId: string): CupId {
+  for (const id of CUP_IDS) {
+    if (CUPS[id].tracks.includes(trackId)) return id;
+  }
+  return "crown";
+}
+
+/** The circuits that cup runs, in order. */
+export function cupTrackOrder(trackId: string): readonly string[] {
+  return CUPS[cupIdForTrack(trackId)].tracks;
 }
 
 /** Per-round race seed, derived so every round differs but replays match. */

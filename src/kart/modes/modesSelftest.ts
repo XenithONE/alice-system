@@ -16,7 +16,10 @@ import { TRACKS } from "../sim/tracks";
 import type { RaceResult } from "../sim/types";
 import {
   applyCupPoints,
+  CUP_IDS,
   CUP_ROUNDS,
+  CUPS,
+  cupIdForTrack,
   cupStandings,
   cupTrackOrder,
   GP_POINTS,
@@ -119,7 +122,7 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
 
 // ── [M3] rotation and per-round seeds ───────────────────────────────────────
 {
-  const order = cupTrackOrder();
+  const order = cupTrackOrder("sunset-coast");
   const unique = new Set(order);
   const seeds = [0, 1, 2].map((round) => raceSeedForRound(777, round));
   gate.check(
@@ -133,6 +136,108 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
       order.every((id) => TRACKS.some((spec) => spec.id === id)) &&
       new Set(seeds).size === seeds.length,
     `order=${order.join("→")} seeds=${seeds.join(",")}`,
+  );
+}
+
+// ── [M3b] every circuit belongs to exactly one cup ─────────────────────────
+{
+  const seen = new Map<string, string[]>();
+  for (const id of CUP_IDS) {
+    for (const trackId of CUPS[id].tracks) {
+      seen.set(trackId, [...(seen.get(trackId) ?? []), id]);
+    }
+  }
+  const missing = TRACKS.filter((spec) => !seen.has(spec.id)).map((s) => s.id);
+  const doubled = [...seen].filter(([, cups]) => cups.length > 1).map(([t]) => t);
+  const unknown = [...seen.keys()].filter(
+    (id) => !TRACKS.some((spec) => spec.id === id),
+  );
+  const sized = CUP_IDS.every(
+    (id) => CUPS[id].tracks.length === CUP_ROUNDS,
+  );
+  gate.check(
+    "[M3b] 全コースがちょうど1つのカップに属し、各カップが CUP_ROUNDS 戦",
+    missing.length === 0 &&
+      doubled.length === 0 &&
+      unknown.length === 0 &&
+      sized,
+    `未所属 ${missing.join(",") || "なし"} / 重複 ${doubled.join(",") || "なし"} / 未知 ${unknown.join(",") || "なし"}`,
+  );
+  gate.expectFail(
+    "[M3b-neg] 1コースを両方のカップに入れると重複検査に落ちる",
+    () => {
+      const both = [...CUPS.crown.tracks, ...CUPS.summit.tracks, "sunset-coast"];
+      return new Set(both).size === both.length;
+    },
+    "sunset-coast を SUMMIT にも追加",
+  );
+
+  // Picking any circuit runs the cup that circuit is in.
+  const routed = TRACKS.every((spec) =>
+    cupTrackOrder(spec.id).includes(spec.id),
+  );
+  gate.check(
+    "[M3c] 選んだコースは必ずそのカップの日程に含まれる",
+    routed,
+    `${TRACKS.map((s) => `${s.id}→${cupIdForTrack(s.id)}`).join(" ")}`,
+  );
+}
+
+// ── [M11] the gpGold key migration ─────────────────────────────────────────
+{
+  /*
+   * The key was `${speedClass}` when there was one cup. Unmigrated, a player
+   * who had won it loses "CUP CHAMPION"; migrated to the wrong cup, winning
+   * the easy one unlocks the hard one's reward. The old cup was CROWN — same
+   * three circuits, same order — so that is the honest reading.
+   */
+  const legacy = coerceRecords({
+    ...emptyRecords(),
+    gpGolds: 2,
+    gpGold: { "1": true, "2m": true },
+  });
+  const kept =
+    legacy.gpGold["crown|1"] === true && legacy.gpGold["crown|2m"] === true;
+  const noStale =
+    legacy.gpGold["1"] === undefined && legacy.gpGold["2m"] === undefined;
+  const stillChampion = evaluateAchievements(legacy, { streak: 0 }).includes(
+    "gp_gold",
+  );
+  // The 200cc achievement reads the class half of the key, not its start.
+  const still200 = evaluateAchievements(legacy, { streak: 0 }).includes(
+    "gp_gold_200",
+  );
+  gate.check(
+    "[M11] 旧 gpGold キーは CROWN の勝利として読まれ、実績も残る",
+    kept && noStale && stillChampion && still200,
+    `keys=${Object.keys(legacy.gpGold).join(",")} champion=${stillChampion} 200cc=${still200}`,
+  );
+  gate.expectFail(
+    "[M11-neg] 移行を外すと旧キーのままで実績が消える",
+    () => {
+      const unmigrated = { ...emptyRecords(), gpGold: { "1": true } };
+      return evaluateAchievements(unmigrated, { streak: 0 }).includes("gp_gold_200");
+    },
+    "coerceRecords を通さない生の旧キー",
+  );
+
+  // Winning one cup must not credit the other.
+  const won = applyRace(emptyRecords(), {
+    kind: "race",
+    result: fakeResult([1, 2, 3, 4]),
+    seat: 0,
+    speedClass: 1,
+    mirror: false,
+    miniTurbos: 0,
+    tricksLanded: 0,
+    itemHits: 0,
+    gpGoldClass: 1,
+    cupId: "summit",
+  }).records;
+  gate.check(
+    "[M11b] SUMMIT 優勝は CROWN の記録を作らない",
+    won.gpGold["summit|1"] === true && won.gpGold["crown|1"] === undefined,
+    `keys=${Object.keys(won.gpGold).join(",")}`,
   );
 }
 
@@ -416,6 +521,7 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
     tricksLanded: 2,
     itemHits: 1,
     gpGoldClass: null,
+    cupId: "crown",
   };
   const first = applyRace(emptyRecords(), entry);
   const second = applyRace(first.records, entry);
@@ -460,6 +566,7 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
     tricksLanded: 0,
     itemHits: 0,
     gpGoldClass: null,
+    cupId: "crown",
   }).records;
   const afterWin = unlockedLiveries(winner, { streak: 0 });
   gate.check(
@@ -477,7 +584,7 @@ function fakeResult(places: readonly number[], trackId = TRACKS[0]!.id): RaceRes
 
 console.table({
   gpPoints: GP_POINTS.join("/"),
-  cupOrder: cupTrackOrder().join("→"),
+  cupOrder: cupTrackOrder("sunset-coast").join("→"),
 });
 
 gate.finish("MODES SELFTEST");

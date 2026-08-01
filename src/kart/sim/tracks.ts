@@ -76,6 +76,7 @@ const SUNSET_COAST: TrackSpec = {
     bloom: 0.55,
     stars: 0.12,
     night: false,
+    tonemap: "aces",
   },
 };
 
@@ -148,6 +149,7 @@ const NEON_CANYON: TrackSpec = {
     bloom: 1.15,
     stars: 0.9,
     night: true,
+    tonemap: "agx",
   },
 };
 
@@ -222,6 +224,7 @@ const SKY_GARDEN: TrackSpec = {
     bloom: 0.42,
     stars: 0,
     night: false,
+    tonemap: "aces",
   },
 };
 
@@ -348,6 +351,7 @@ const CITY_LOOP: TrackSpec = {
     // Headlights on. Not a night circuit, but the light is going and the grid
     // is the only thing on the road that can carry its own.
     night: true,
+    tonemap: "agx",
   },
 };
 
@@ -508,6 +512,7 @@ const ALPINE_PASS: TrackSpec = {
     bloom: 0.42,
     stars: 0,
     night: false,
+    tonemap: "neutral",
   },
 };
 
@@ -657,6 +662,7 @@ const DUST_BASIN: TrackSpec = {
     bloom: 0.5,
     stars: 0,
     night: false,
+    tonemap: "agx",
   },
 };
 

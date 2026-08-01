@@ -1560,3 +1560,40 @@ button:focus-visible {
     grid-template-columns: 1fr;
   }
 }
+
+.nk-cup-pick {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  max-width: 640px;
+  width: 100%;
+}
+
+.nk-cup-pick button {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 13px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--nk-edge);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--nk-ink);
+  cursor: pointer;
+}
+
+.nk-cup-pick button.is-active {
+  border-color: var(--nk-accent);
+  background: rgba(255, 210, 63, 0.14);
+}
+
+.nk-cup-pick b {
+  font-family: var(--nk-display);
+  font-size: 18px;
+  letter-spacing: 0.12em;
+}
+
+.nk-cup-pick small {
+  font-size: 11px;
+  color: var(--nk-ink-dim);
+  line-height: 1.6;
+}
