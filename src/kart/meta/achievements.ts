@@ -7,6 +7,9 @@
  * of evaluate() before and after the single records write.
  */
 
+import { CHARACTERS } from "../content/characters";
+import { MACHINES } from "../content/machines";
+import type { UnlockRule } from "../content/index";
 import type { DailyState } from "./daily";
 import type { NkRecords } from "./records";
 
@@ -81,4 +84,26 @@ export function unlockedLiveries(
     }
   }
   return unlocked;
+}
+
+/**
+ * Which garage entries are open, derived the same way the liveries are — the
+ * unlock rule lives on the catalog entry, so adding a character cannot leave
+ * an unlock table out of date behind it.
+ */
+export function unlockedKit(
+  records: NkRecords,
+  daily: Pick<DailyState, "streak">,
+): { characters: Set<string>; machines: Set<string> } {
+  const earned = new Set(evaluateAchievements(records, daily));
+  const open = (rule: UnlockRule): boolean =>
+    rule.kind === "free" || earned.has(rule.id);
+  return {
+    characters: new Set(
+      CHARACTERS.filter((entry) => open(entry.unlock)).map((entry) => entry.id),
+    ),
+    machines: new Set(
+      MACHINES.filter((entry) => open(entry.unlock)).map((entry) => entry.id),
+    ),
+  };
 }

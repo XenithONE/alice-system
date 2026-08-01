@@ -59,9 +59,13 @@ import {
   TtSetup,
 } from "./ui/MetaScreens";
 import { Lobby, Menu, Results, SoloSetup, TouchControls } from "./ui/Screens";
+import { GarageScreen } from "./ui/GarageScreen";
+import { CHARACTERS, REFERENCE_CHARACTER_ID } from "./content/characters";
+import { MACHINES, REFERENCE_MACHINE_ID } from "./content/machines";
 
 type Screen =
   | "menu"
+  | "garage"
   | "solo-setup"
   | "gp-setup"
   | "tt-setup"
@@ -74,6 +78,30 @@ type Mode = "vs" | "gp" | "tt" | "daily" | "mp";
 
 const NAME_KEY = "nk_name";
 const LIVERY_KEY = "nk_livery";
+const CHARACTER_KEY = "nk_character";
+const MACHINE_KEY = "nk_machine";
+
+/**
+ * Reads a stored kit id, falling back to the reference when it names something
+ * that no longer exists. Catalog entries can be renamed between releases, and a
+ * stale id must not leave the player driving nothing.
+ */
+function readKitId(key: string, known: ReadonlySet<string>, fallback: string): string {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw !== null && known.has(raw) ? raw : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function storeKitId(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Private browsing.
+  }
+}
 
 function readName(): string {
   try {
@@ -122,6 +150,20 @@ export default function App(): React.JSX.Element {
   const [screen, setScreen] = useState<Screen>("menu");
   const [name, setName] = useState(readName);
   const [livery, setLivery] = useState(readLivery);
+  const [characterId, setCharacterId] = useState(() =>
+    readKitId(
+      CHARACTER_KEY,
+      new Set(CHARACTERS.map((entry) => entry.id)),
+      REFERENCE_CHARACTER_ID,
+    ),
+  );
+  const [machineId, setMachineId] = useState(() =>
+    readKitId(
+      MACHINE_KEY,
+      new Set(MACHINES.map((entry) => entry.id)),
+      REFERENCE_MACHINE_ID,
+    ),
+  );
   const [settings, setSettings] = useState<RoomSettings>(() =>
     normalizeSettings({ playerCount: 1 }),
   );
@@ -139,6 +181,12 @@ export default function App(): React.JSX.Element {
   const [quality] = useState<KartQuality>(() =>
     resolveQuality(readQualityChoice(), probeEnvironment()),
   );
+
+  const garageSummary = `${
+    CHARACTERS.find((entry) => entry.id === characterId)?.name ?? "—"
+  } × ${MACHINES.find((entry) => entry.id === machineId)?.name ?? "—"} · ${
+    LIVERIES[livery]?.name ?? ""
+  }`;
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sessionRef = useRef<NitroSession | null>(null);
@@ -407,6 +455,14 @@ export default function App(): React.JSX.Element {
             ?.distance ?? 0,
         kind: sessionRef.current?.kind ?? null,
         mode: modeRef.current,
+        // What each seat is actually driving. "The garage pick reached the
+        // race" is otherwise unobservable from outside — the ids never appear
+        // on screen, only the silhouette does.
+        grid:
+          sessionRef.current
+            ?.view()
+            ?.racers.map((racer) => `${racer.characterId}/${racer.machineId}`) ??
+          [],
         cup: sessionRef.current?.cup() ?? null,
         // Follows the camera, not the local seat, so spectating a CPU reports
         // that CPU's inventory.
@@ -458,6 +514,8 @@ export default function App(): React.JSX.Element {
       sessionRef.current = createSoloSession({
         name: name || "PLAYER",
         livery,
+        characterId,
+        machineId,
         settings: {
           ...settings,
           gp,
@@ -468,7 +526,15 @@ export default function App(): React.JSX.Element {
       ghostSamplerRef.current = null;
       beginLocalRace();
     },
-    [name, settings, livery, teardownSession, beginLocalRace],
+    [
+      name,
+      settings,
+      livery,
+      characterId,
+      machineId,
+      teardownSession,
+      beginLocalRace,
+    ],
   );
 
   const startTimeTrial = useCallback(() => {
@@ -507,6 +573,9 @@ export default function App(): React.JSX.Element {
     teardownSession();
     modeRef.current = "daily";
     const combo = dailyCombo(kartDayKey());
+    // No kit, deliberately: the daily is a leaderboard, and a leaderboard whose
+    // entries were set on different machines is not comparing anything. Colour
+    // still travels, because colour changes nothing.
     sessionRef.current = createSoloSession({
       name: name || "PLAYER",
       livery,
@@ -540,6 +609,8 @@ export default function App(): React.JSX.Element {
         name: name || "PLAYER",
         wire: chooseWire(),
         livery,
+        characterId,
+        machineId,
         settings: { ...settings, playerCount: 4 },
         callbacks: {
           onLobby: setLobby,
@@ -560,7 +631,7 @@ export default function App(): React.JSX.Element {
         cause instanceof Error ? cause.message : "ルームを作成できませんでした",
       );
     }
-  }, [name, settings, livery, teardownSession]);
+  }, [name, settings, livery, characterId, machineId, teardownSession]);
 
   const startGuest = useCallback(
     async (code: string) => {
@@ -598,6 +669,9 @@ export default function App(): React.JSX.Element {
           },
         });
         sessionRef.current = session;
+        // Sent after the handshake rather than folded into it: the host has to
+        // have seated us before it can record what this seat is driving.
+        session.setKit({ characterId, machineId }, livery);
         setBusy(null);
         setScreen("lobby");
       } catch (cause) {
@@ -607,7 +681,7 @@ export default function App(): React.JSX.Element {
         );
       }
     },
-    [name, livery, teardownSession],
+    [name, livery, characterId, machineId, teardownSession],
   );
 
   const leave = useCallback(() => {
@@ -670,22 +744,39 @@ export default function App(): React.JSX.Element {
           onGp={() => setScreen("gp-setup")}
           onTt={() => setScreen("tt-setup")}
           onRecords={() => setScreen("records")}
+          onGarage={() => setScreen("garage")}
           onHost={() => void startHost()}
           onJoin={(code) => void startGuest(code)}
           busy={busy}
           error={error}
+          garageSummary={garageSummary}
           dailyCard={<DailyCard daily={daily} onStart={startDaily} />}
-          liveryPicker={
-            <LiveryPicker
-              records={records}
-              daily={daily}
-              value={livery}
-              onChange={(value) => {
-                setLivery(value);
-                storeLivery(value);
-              }}
-            />
-          }
+        />
+      ) : null}
+
+      {screen === "garage" ? (
+        <GarageScreen
+          records={records}
+          daily={daily}
+          characterId={characterId}
+          machineId={machineId}
+          livery={livery}
+          onCharacter={(id) => {
+            setCharacterId(id);
+            storeKitId(CHARACTER_KEY, id);
+            sessionRef.current?.setKit({ characterId: id, machineId }, livery);
+          }}
+          onMachine={(id) => {
+            setMachineId(id);
+            storeKitId(MACHINE_KEY, id);
+            sessionRef.current?.setKit({ characterId, machineId: id }, livery);
+          }}
+          onLivery={(value) => {
+            setLivery(value);
+            storeLivery(value);
+            sessionRef.current?.setKit({ characterId, machineId }, value);
+          }}
+          onBack={() => setScreen(lobby ? "lobby" : "menu")}
         />
       ) : null}
 
@@ -741,6 +832,7 @@ export default function App(): React.JSX.Element {
             setReady(value);
             session?.setReady(value);
           }}
+          onGarage={() => setScreen("garage")}
           onSettings={(patch) => session?.updateSettings(patch)}
           onStart={() => {
             lastResultRef.current = null;

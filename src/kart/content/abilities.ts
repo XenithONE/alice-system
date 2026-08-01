@@ -58,7 +58,7 @@ export interface AbilityDef {
   readonly effects: readonly AbilityEffect[];
 }
 
-/** One per character. The切り札 half: a single decisive press. */
+/** One per character. The trump-card half: a single decisive press. */
 export const CHARACTER_SKILLS: readonly AbilityDef[] = [
   {
     id: "nitro-pulse",

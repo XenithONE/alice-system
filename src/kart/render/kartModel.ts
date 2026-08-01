@@ -63,7 +63,7 @@ interface ShapeSpec {
 }
 
 const SHAPE_SPECS: Readonly<Record<MachineShape, ShapeSpec>> = {
-  // The numbers the kart shipped with. [K4] holds them to it.
+  // The numbers the kart shipped with. [K3] holds them to it.
   standard: {
     hull: { w: 2.05, h: 0.62, l: 3.15, radius: 0.24 },
     hullY: 0.52,
@@ -205,11 +205,15 @@ function buildShape(shape: MachineShape): ShapeGeometry {
   ).toNonIndexed();
   hull.translate(0, spec.hullY, 0);
   parts.push(hull);
+  // 14 sides rather than 8: the nose is the one part the garage turntable
+  // shows in close-up, and at eight it reads as an octagonal slab bolted to
+  // the front rather than a cone. It merges into the same body geometry, so
+  // the extra sides cost triangles and not a single draw call.
   const nose = new THREE.CylinderGeometry(
     spec.nose.front,
     spec.nose.back,
     spec.nose.length,
-    8,
+    14,
   ).toNonIndexed();
   nose.rotateX(Math.PI / 2);
   nose.translate(0, spec.hullY - 0.04, spec.nose.z);

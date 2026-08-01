@@ -1348,3 +1348,215 @@ button:focus-visible {
   font-family: var(--nk-mono);
   font-size: 13px;
 }
+
+/* ── Garage ───────────────────────────────────────────────────────────── */
+
+.nk-garage-body {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 20px;
+  align-items: start;
+  max-width: 1000px;
+  width: 100%;
+}
+
+.nk-garage-stage {
+  position: relative;
+  border: 1px solid var(--nk-edge);
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 90% at 50% 10%, rgba(53, 215, 255, 0.16), transparent 62%),
+    var(--nk-plate);
+  overflow: hidden;
+}
+
+.nk-garage-stage canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+}
+
+.nk-garage-caption {
+  margin: 0;
+  padding: 10px 14px;
+  border-top: 1px solid var(--nk-edge);
+  font-family: var(--nk-display);
+  font-size: 17px;
+  letter-spacing: 0.12em;
+  color: var(--nk-accent-2);
+}
+
+.nk-garage-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.nk-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.nk-tabs button {
+  flex: 1;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--nk-edge);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--nk-ink-dim);
+  font-family: var(--nk-display);
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+
+.nk-tabs button.is-active {
+  color: #0b0e14;
+  background: var(--nk-accent);
+  border-color: transparent;
+}
+
+.nk-riders,
+.nk-machines {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.nk-kit-card {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--nk-edge);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--nk-ink);
+  cursor: pointer;
+}
+
+.nk-kit-card strong {
+  font-family: var(--nk-display);
+  font-size: 16px;
+  letter-spacing: 0.1em;
+}
+
+.nk-kit-card small {
+  font-size: 11px;
+  color: var(--nk-ink-dim);
+}
+
+.nk-kit-card.is-active {
+  border-color: var(--nk-accent);
+  background: rgba(255, 210, 63, 0.14);
+}
+
+.nk-kit-card.is-locked {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.nk-kit-detail {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--nk-edge);
+  border-radius: 12px;
+  background: var(--nk-plate);
+}
+
+.nk-kit-blurb {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--nk-ink-dim);
+}
+
+.nk-stat-block {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.nk-stat-block div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.nk-stat-block dt {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--nk-ink-dim);
+  font-family: var(--nk-display);
+}
+
+.nk-stat-block dd {
+  margin: 0;
+}
+
+.nk-stars {
+  color: var(--nk-accent);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.nk-stars i {
+  font-style: normal;
+  color: rgba(255, 255, 255, 0.16);
+}
+
+.nk-kit-ability {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--nk-edge);
+}
+
+.nk-kbd {
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--nk-edge);
+  background: rgba(255, 255, 255, 0.06);
+  font-family: var(--nk-mono);
+  font-size: 11px;
+  color: var(--nk-accent-2);
+}
+
+.nk-kit-ability strong {
+  font-family: var(--nk-display);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+}
+
+.nk-kit-ability em {
+  flex: 1 1 100%;
+  font-style: normal;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--nk-ink-dim);
+}
+
+.nk-cooldown {
+  font-family: var(--nk-mono);
+  font-size: 11px;
+  color: var(--nk-accent);
+}
+
+.nk-seat-kit {
+  font-style: normal;
+  font-family: var(--nk-display);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--nk-accent-2);
+}
+
+@media (max-width: 860px) {
+  .nk-garage-body {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,6 +1,7 @@
 import type { NitroLobby, RoomSettings } from "../net/protocol";
 import type { CupView } from "../net/session";
 import { liveryOf } from "../render/palette";
+import { machineById } from "../content/machines";
 import { SPEED_CLASSES } from "../sim/balance";
 import type { RaceResult } from "../sim/types";
 import { TRACKS } from "../sim/tracks";
@@ -17,12 +18,13 @@ export function Menu({
   onGp,
   onTt,
   onRecords,
+  onGarage,
   onHost,
   onJoin,
   busy,
   error,
+  garageSummary,
   dailyCard,
-  liveryPicker,
 }: {
   name: string;
   onName(value: string): void;
@@ -30,12 +32,14 @@ export function Menu({
   onGp(): void;
   onTt(): void;
   onRecords(): void;
+  onGarage(): void;
   onHost(): void;
   onJoin(code: string): void;
   busy: string | null;
   error: string | null;
+  /** "VERA × WISP · AZURE" — what the garage button is currently holding. */
+  garageSummary?: string;
   dailyCard?: React.ReactNode;
-  liveryPicker?: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div className="nk-screen nk-menu">
@@ -74,6 +78,10 @@ export function Menu({
           タイムトライアル
           <small>ゴーストと自己ベスト</small>
         </button>
+        <button type="button" onClick={onGarage} disabled={busy !== null}>
+          ガレージ
+          <small>{garageSummary ?? "ドライバー・マシン・カラー"}</small>
+        </button>
         <button type="button" onClick={onRecords} disabled={busy !== null}>
           記録
           <small>実績・ベスト・解放カラー</small>
@@ -106,7 +114,6 @@ export function Menu({
       </div>
 
       {dailyCard}
-      {liveryPicker}
       {busy ? <p className="nk-note">{busy}</p> : null}
       {error ? <p className="nk-error">{error}</p> : null}
 
@@ -313,6 +320,21 @@ export function SettingsPanel({
           </select>
         </label>
         ) : null}
+        {show("freeKit") ? (
+        <label>
+          <span>マシン</span>
+          <select
+            value={settings.freeKit ? "free" : "uniform"}
+            disabled={!editable}
+            onChange={(event) =>
+              onChange({ freeKit: event.target.value === "free" })
+            }
+          >
+            <option value="uniform">全員そろえる（公平）</option>
+            <option value="free">各自の選択を使う</option>
+          </select>
+        </label>
+        ) : null}
       </div>
     </div>
   );
@@ -336,7 +358,9 @@ export function SoloSetup({
         settings={settings}
         editable
         onChange={onChange}
-        hideDials={["gp"]}
+        // `freeKit` is a room rule about players racing each other; solo has
+        // no second player, so the garage pick simply applies.
+        hideDials={["gp", "freeKit"]}
       />
       <div className="nk-row">
         <button type="button" onClick={onBack}>
@@ -359,6 +383,7 @@ export function Lobby({
   onSettings,
   onStart,
   onLeave,
+  onGarage,
   note,
 }: {
   lobby: NitroLobby | null;
@@ -369,6 +394,7 @@ export function Lobby({
   onSettings(patch: Partial<RoomSettings>): void;
   onStart(): void;
   onLeave(): void;
+  onGarage(): void;
   note: string | null;
 }): React.JSX.Element {
   const humans = lobby?.seats.filter((seat) => seat.occupant !== "cpu") ?? [];
@@ -419,6 +445,11 @@ export function Lobby({
                     ? "CPU"
                     : "空席"}
             </span>
+            {seat.occupant === "empty" ? null : (
+              <em className="nk-seat-kit">
+                {machineById(seat.machineId).name}
+              </em>
+            )}
           </li>
         ))}
       </ul>
@@ -436,6 +467,9 @@ export function Lobby({
       <div className="nk-row">
         <button type="button" onClick={onLeave}>
           退出
+        </button>
+        <button type="button" onClick={onGarage}>
+          ガレージ
         </button>
         {isHost ? (
           <button type="button" className="nk-primary" onClick={onStart}>
