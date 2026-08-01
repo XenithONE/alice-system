@@ -25,7 +25,12 @@ import {
 } from "../sim/track";
 import { TRACKS } from "../sim/tracks";
 import { bothSides, roadGeometry } from "./trackMesh";
-import { createKartVisual, disposeSharedKartGeometry } from "./kartModel";
+import {
+  createKartVisual,
+  disposeSharedKartGeometry,
+  sharedKartShapeCount,
+} from "./kartModel";
+import type { MachineShape } from "../content/machines";
 import { LIVERIES, liveryOf } from "./palette";
 import {
   createSkidBuffers,
@@ -340,7 +345,7 @@ const YAW_SWEEP = 32;
 
 // [R7] the kart model's nose points where the kart is going ─────────────────
 {
-  const visual = createKartVisual(0, false);
+  const visual = createKartVisual({ livery: 0, castShadow: false });
   let worst = 1;
   for (let i = 0; i < YAW_SWEEP; i += 1) {
     const yaw = (i / YAW_SWEEP) * Math.PI * 2 - Math.PI;
@@ -451,6 +456,119 @@ const YAW_SWEEP = 32;
 
   visual.dispose();
   disposeSharedKartGeometry();
+}
+
+// [K] the four chassis shapes ───────────────────────────────────────────────
+{
+  /*
+   * The reference plates in docs/design/img2threejs-inputs/ are the source of
+   * these silhouettes, and none of them ships: a shape is boxes, cylinders and
+   * a cone, so the bundle carries zero image bytes. What the gate can check is
+   * that each shape is a real solid — finite, non-degenerate, and actually a
+   * different size from the others rather than four names for one box.
+   */
+  const shapeIds: readonly MachineShape[] = [
+    "standard",
+    "heavy",
+    "light",
+    "buggy",
+  ];
+  const spans = new Map<MachineShape, string>();
+  let finite = true;
+  let empty = false;
+  for (const shape of shapeIds) {
+    const built = createKartVisual({ livery: 0, castShadow: false, shape });
+    const box = new THREE.Box3().setFromObject(built.root);
+    const size = box.getSize(new THREE.Vector3());
+    if (
+      !Number.isFinite(size.x) ||
+      !Number.isFinite(size.y) ||
+      !Number.isFinite(size.z)
+    ) {
+      finite = false;
+    }
+    if (size.x < 0.5 || size.y < 0.3 || size.z < 1.0) empty = true;
+    spans.set(
+      shape,
+      `${size.x.toFixed(2)}×${size.y.toFixed(2)}×${size.z.toFixed(2)}`,
+    );
+    built.dispose();
+  }
+  gate.check(
+    "[K1] 4形状すべてが有限で潰れていない寸法を持つ",
+    finite && !empty,
+    [...spans].map(([id, span]) => `${id} ${span}`).join(" / "),
+  );
+
+  const distinct = new Set(spans.values());
+  gate.check(
+    "[K2] 4形状の寸法が互いに異なる（名前だけ違う同じ箱ではない）",
+    distinct.size === shapeIds.length,
+    `相異なる寸法 ${distinct.size}/${shapeIds.length}`,
+  );
+
+  /*
+   * [K3] the backward-compatibility proof. Omitting `shape` must produce the
+   * kart that shipped in v2 — bit for bit the same vertex buffer, not merely a
+   * similar one. If this ever fails, every existing screenshot, every course
+   * theme tuned against that silhouette, and the [R7b] nose test are all
+   * describing a car that no longer exists.
+   */
+  const implicit = createKartVisual({ livery: 0, castShadow: false });
+  const explicit = createKartVisual({
+    livery: 0,
+    castShadow: false,
+    shape: "standard",
+  });
+  const implicitBox = new THREE.Box3()
+    .setFromObject(implicit.root)
+    .getSize(new THREE.Vector3());
+  const standardBox = new THREE.Box3()
+    .setFromObject(explicit.root)
+    .getSize(new THREE.Vector3());
+  gate.check(
+    "[K3] shape 省略時は standard と完全一致（v2 の見た目の据置証明）",
+    implicitBox.equals(standardBox),
+    `省略 ${implicitBox.x.toFixed(4)}×${implicitBox.z.toFixed(4)} / standard ${standardBox.x.toFixed(4)}×${standardBox.z.toFixed(4)}`,
+  );
+  gate.expectFail(
+    "[K3-neg] 別形状を指定すれば standard とは一致しない",
+    () => {
+      const other = createKartVisual({
+        livery: 0,
+        castShadow: false,
+        shape: "heavy",
+      });
+      const size = new THREE.Box3()
+        .setFromObject(other.root)
+        .getSize(new THREE.Vector3());
+      other.dispose();
+      return size.equals(standardBox);
+    },
+    "shape: 'heavy' を standard と比べる",
+  );
+
+  /*
+   * [K4] the shared cache is shared, and it lets go. Eight karts across four
+   * shapes must have built four shape entries, not eight — and the teardown
+   * must empty the map, not merely dispose what is in it (an entry that
+   * removed itself would be mutating the collection its caller iterates).
+   */
+  const grid = shapeIds
+    .concat(shapeIds)
+    .map((shape, seat) =>
+      createKartVisual({ livery: seat, castShadow: true, shape }),
+    );
+  const cachedWhileAlive = sharedKartShapeCount();
+  for (const entry of grid) entry.dispose();
+  implicit.dispose();
+  explicit.dispose();
+  disposeSharedKartGeometry();
+  gate.check(
+    "[K4] 形状ジオメトリは共有され、破棄でキャッシュが空になる",
+    cachedWhileAlive === shapeIds.length && sharedKartShapeCount() === 0,
+    `生存中 ${cachedWhileAlive} 形状（8台）→ 破棄後 ${sharedKartShapeCount()}`,
+  );
 }
 
 gate.finish("RENDER SELFTEST");

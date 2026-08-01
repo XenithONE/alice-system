@@ -82,6 +82,9 @@ export function createTimeTrialSession(
       return null;
     },
     setReady() {},
+    // Records must stay condition-pure: a time trial always runs the reference
+    // kit, so there is nothing here for a garage pick to change.
+    setKit() {},
     beginRace() {
       return false;
     },

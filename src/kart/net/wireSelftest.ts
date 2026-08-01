@@ -39,6 +39,8 @@ import {
   type NitroSnapshot,
 } from "./protocol";
 import { angleDelta, headingOf, pointAt } from "../sim/track";
+import { CHARACTERS, REFERENCE_CHARACTER_ID } from "../content/characters";
+import { MACHINES, REFERENCE_MACHINE_ID } from "../content/machines";
 import {
   createGuestSession,
   createHostSession,
@@ -59,6 +61,23 @@ function bytes(value: unknown): number {
 
 function drive(throttle = 1, steer = 0, drift = false): KartInput {
   return { ...NEUTRAL_INPUT, throttle, steer, drift };
+}
+
+/**
+ * The control for [W4k]: a validator written the way it is easy to write it,
+ * checking that the kit arrays are arrays of catalog ids but never that there
+ * is one per seat. It must ACCEPT the short array the real validator rejects —
+ * if this ever returns false the length check has stopped being what does the
+ * work, and [W4k] is passing for some other reason.
+ */
+function looseStartAcceptsShortKit(base: Record<string, unknown>): boolean {
+  const short = { ...base, characters: [REFERENCE_CHARACTER_ID] };
+  const ids = new Set(CHARACTERS.map((entry) => entry.id));
+  const value = short.characters;
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => typeof entry === "string" && ids.has(entry))
+  );
 }
 
 /**
@@ -147,6 +166,8 @@ let referenceSnapshot: NitroSnapshot;
     names: state.racers.map((racer) => racer.name),
     cpu: state.racers.map((racer) => racer.cpu),
     liveries: state.racers.map((racer) => racer.livery),
+    characters: state.racers.map((racer) => racer.characterId),
+    machines: state.racers.map((racer) => racer.machineId),
     trackId: state.trackId,
     laps: state.laps,
   };
@@ -305,8 +326,8 @@ let referenceSnapshot: NitroSnapshot;
 
   // ── v2/v3 fields ──────────────────────────────────────────────────────────
   gate.check(
-    "[W4e] バージョン定数が 3（コメント慣例とゲートの同期）",
-    NITRO_PROTOCOL_VERSION === 3,
+    "[W4e] バージョン定数が 4（コメント慣例とゲートの同期）",
+    NITRO_PROTOCOL_VERSION === 4,
     `v${NITRO_PROTOCOL_VERSION}`,
   );
   gate.check(
@@ -356,6 +377,8 @@ let referenceSnapshot: NitroSnapshot;
       names: ["A", "B"],
       cpu: [false, true],
       liveries: [0, 1],
+      characters: [REFERENCE_CHARACTER_ID, CHARACTERS[1]!.id],
+      machines: [REFERENCE_MACHINE_ID, MACHINES[1]!.id],
       round: 1,
       rounds: 3,
     };
@@ -366,6 +389,46 @@ let referenceSnapshot: NitroSnapshot;
       "[W4i] v2 start の round/rounds 検証",
       good && badRound && badRounds,
       `round<rounds 受理 / round>=rounds 拒否 / rounds=0 拒否`,
+    );
+
+    /*
+     * The silent-fallback gate. Every rejection here is a case where a guest
+     * would otherwise race beside a car with a machine it invented itself:
+     * `raceStateFromSnapshot` reads `?? REFERENCE_*`, so a short or misspelled
+     * array produces a different chassis and a different gimmick name with no
+     * error and no log line. The only way to see it is to look at the screen.
+     */
+    const shortChars =
+      validateStart({ ...base, characters: [REFERENCE_CHARACTER_ID] }) === null;
+    const shortMachines =
+      validateStart({ ...base, machines: [REFERENCE_MACHINE_ID] }) === null;
+    const unknownChar =
+      validateStart({
+        ...base,
+        characters: [REFERENCE_CHARACTER_ID, "nobody"],
+      }) === null;
+    const unknownMachine =
+      validateStart({ ...base, machines: [REFERENCE_MACHINE_ID, "ghost"] }) ===
+      null;
+    const missing =
+      validateStart({ ...base, characters: undefined }) === null &&
+      validateStart({ ...base, machines: undefined }) === null;
+    const stringly =
+      validateStart({ ...base, machines: [REFERENCE_MACHINE_ID, 3] }) === null;
+    gate.check(
+      "[W4k] start のキット配列検証（短い・未知id・欠落・型違いを拒否）",
+      shortChars &&
+        shortMachines &&
+        unknownChar &&
+        unknownMachine &&
+        missing &&
+        stringly,
+      "長さ2件・未知id2件・欠落2件・型違い1件を拒否",
+    );
+    gate.check(
+      "[W4k-neg] 長さ検証を外すと短い配列が通ってしまう",
+      looseStartAcceptsShortKit(base),
+      "破壊で落ちる: 長さ検証なしの受理器",
     );
   }
   {
@@ -560,6 +623,50 @@ async function integration(): Promise<void> {
   await settle(30);
 }
 
+// ── [W15/W16] the garage over the real transport ────────────────────────────
+/**
+ * Two rooms, one difference. Both let a guest pick a buggy; only the `freeKit`
+ * room lets it keep one. The pair matters because either half alone is
+ * satisfiable by a bug: a room that always honours the pick passes the first,
+ * and a room that ignores every pick passes the second.
+ */
+async function garage(freeKit: boolean): Promise<{
+  lobbyMachine: string;
+  startMachines: readonly string[];
+}> {
+  const room = makeRoomCode(() => (freeKit ? 0.42 : 0.58));
+  const host = await createHostSession({
+    roomCode: room,
+    name: "HOST",
+    wire: createBroadcastChannelWire(),
+    settings: { playerCount: 2, racerCount: 2, laps: 1, seed: 7, freeKit },
+  });
+  let lobbyMachine = "";
+  let startMachines: readonly string[] = [];
+  const guest = await createGuestSession({
+    roomCode: room,
+    name: "GUEST",
+    wire: createBroadcastChannelWire(),
+    callbacks: {
+      onLobby: (lobby) => {
+        lobbyMachine = lobby.seats[1]?.machineId ?? "";
+      },
+      onStart: (payload) => {
+        startMachines = payload.machines;
+      },
+    },
+  });
+  await settle(60);
+  guest.setKit({ characterId: "pike", machineId: "duneskip" }, 5);
+  await settle(60);
+  host.beginRace();
+  await settle(60);
+  guest.dispose();
+  host.dispose();
+  await settle(30);
+  return { lobbyMachine, startMachines };
+}
+
 // ── [W12] a real two-round grand prix over the real transport ──────────────
 /**
  * Minimal self-steering: aim at a centreline point ahead. Both humans finish
@@ -707,6 +814,21 @@ async function main(): Promise<void> {
     await integration();
     await twoRoundCup();
     await versionRefusal();
+
+    const free = await garage(true);
+    gate.check(
+      "[W15] freeKit の部屋ではゲストの着替えがロビーとレースの両方に届く",
+      free.lobbyMachine === "duneskip" && free.startMachines[1] === "duneskip",
+      `ロビー ${free.lobbyMachine || "(なし)"} / start ${free.startMachines.join(",") || "(なし)"}`,
+    );
+
+    const uniform = await garage(false);
+    gate.check(
+      "[W16] 統一部屋ではゲストが何を送っても基準キットで走る",
+      uniform.lobbyMachine === REFERENCE_MACHINE_ID &&
+        uniform.startMachines.every((id) => id === REFERENCE_MACHINE_ID),
+      `ロビー ${uniform.lobbyMachine || "(なし)"} / start ${uniform.startMachines.join(",") || "(なし)"}`,
+    );
   }
   gate.finish("WIRE SELFTEST");
   // Node keeps BroadcastChannel handles alive; the gate has said its piece.

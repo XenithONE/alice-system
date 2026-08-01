@@ -15,7 +15,8 @@
 import * as THREE from "three";
 import { BASE_TOP_SPEED } from "../sim/balance";
 import { forwardOf, querySurface, rightOf, type Track } from "../sim/track";
-import type { RaceEvent, RaceState } from "../sim/types";
+import type { RaceEvent, RaceState, RacerState } from "../sim/types";
+import { machineById } from "../content/machines";
 import { createFxSystem, type FxSystem } from "./fx";
 import { createKartVisual, disposeSharedKartGeometry, type KartVisual } from "./kartModel";
 import {
@@ -357,7 +358,7 @@ export function createKartScene(options: KartSceneOptions): KartScene {
   let ghostVisual: KartVisual | null = null;
   function ensureGhost(): KartVisual {
     if (ghostVisual) return ghostVisual;
-    ghostVisual = createKartVisual(15, false);
+    ghostVisual = createKartVisual({ livery: 15, castShadow: false });
     ghostVisual.root.traverse((object) => {
       const mesh = object as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -437,10 +438,16 @@ export function createKartScene(options: KartSceneOptions): KartScene {
   let wrongWayAt = 0;
   let rouletteAt = 0;
 
-  function visualFor(seat: number, livery: number): KartVisual {
+  function visualFor(seat: number, racer: RacerState): KartVisual {
     let visual = karts.get(seat);
     if (!visual) {
-      visual = createKartVisual(livery, quality.shadows, seat + 1, theme.night);
+      visual = createKartVisual({
+        livery: racer.livery,
+        castShadow: quality.shadows,
+        raceNumber: seat + 1,
+        headlights: theme.night,
+        shape: machineById(racer.machineId).shape,
+      });
       karts.set(seat, visual);
       kartRoot.add(visual.root);
     }
@@ -517,7 +524,7 @@ export function createKartScene(options: KartSceneOptions): KartScene {
     const seen = new Set<number>();
     for (const racer of view.racers) {
       seen.add(racer.id);
-      const visual = visualFor(racer.id, racer.livery);
+      const visual = visualFor(racer.id, racer);
       visual.root.position.set(racer.x, racer.y, racer.z);
       visual.root.rotation.y = racer.yaw;
       visual.body.rotation.y = racer.slip;

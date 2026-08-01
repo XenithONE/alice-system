@@ -15,6 +15,9 @@
  * guests; compacting them is the difference between playable and not.
  */
 
+import { abilityById } from "../content/abilities";
+import { CHARACTERS, REFERENCE_CHARACTER_ID } from "../content/characters";
+import { MACHINES, REFERENCE_MACHINE_ID } from "../content/machines";
 import type {
   BoostSource,
   HitCause,
@@ -47,8 +50,17 @@ import type {
  * and the wheel both gone and nothing on screen to say why. The heading frame
  * was corrected in the same release, so a v2 client also steers mirror-image
  * to this one. Both are refusals, not degradations.
+ *
+ * 4 since v4 (characters and machines): the start payload carries a character
+ * id and a machine id per seat, and both are required. This one is a refusal
+ * for the opposite reason from the others — nothing here would crash. A v3
+ * host simply omits the arrays, the guest falls through to the reference kit,
+ * and every car on the grid is a standard chassis with a gimmick the host
+ * never gave it. That failure is invisible: no error, no log, no dropped
+ * frame, just two players looking at different cars and disagreeing about
+ * what happened. Silence is the reason to refuse, not an excuse to allow.
  */
-export const NITRO_PROTOCOL_VERSION = 3;
+export const NITRO_PROTOCOL_VERSION = 4;
 
 /**
  * Input flag bits. One definition, read by the encoder in session.ts and by
@@ -87,6 +99,15 @@ export interface RoomSettings {
   readonly weather: number;
   /** Grand-prix room: results carry cup points, host restarts rounds. */
   readonly gp: boolean;
+  /**
+   * v4: let guests bring their own character and machine. Default false — a
+   * uniform grid is the fair one, and this is the only object the host both
+   * owns and validates, so switching it off is enforceable rather than merely
+   * requested. A guest can send any kit it likes; with `freeKit` false the
+   * host overwrites every seat with the reference pair before the race is
+   * built, so a modified client gains nothing.
+   */
+  readonly freeKit: boolean;
 }
 
 export interface LobbySeat {
@@ -95,6 +116,9 @@ export interface LobbySeat {
   readonly occupant: "host" | "guest" | "cpu" | "empty";
   readonly ready: boolean;
   readonly livery: number;
+  /** v4: what this seat is driving, so the lobby can show the grid. */
+  readonly characterId: string;
+  readonly machineId: string;
 }
 
 export interface NitroLobby {
@@ -108,6 +132,8 @@ export interface StartPayload {
   readonly names: readonly string[];
   readonly cpu: readonly boolean[];
   readonly liveries: readonly number[];
+  readonly characters: readonly string[];
+  readonly machines: readonly string[];
   /** 0-based round index and total rounds (1/1 for a single race). */
   readonly round: number;
   readonly rounds: number;
@@ -297,6 +323,17 @@ export type ClientMessage =
       readonly livery?: number;
     }
   | { readonly t: "ready"; readonly ready: boolean }
+  /**
+   * v4: changing kit in the lobby. Separate from `hello` because a guest keeps
+   * browsing the garage after it has joined, and re-sending a handshake to
+   * change a colour would mean re-resolving the seat.
+   */
+  | {
+      readonly t: "pick";
+      readonly characterId: string;
+      readonly machineId: string;
+      readonly livery: number;
+    }
   | { readonly t: "input"; readonly input: InputFrame };
 
 export type HostMessage =
@@ -380,6 +417,7 @@ export function validateSettings(value: unknown): RoomSettings | null {
     typeof value.items !== "boolean" ||
     typeof value.mirror !== "boolean" ||
     typeof value.gp !== "boolean" ||
+    typeof value.freeKit !== "boolean" ||
     playerCount > racerCount
   ) {
     return null;
@@ -396,7 +434,21 @@ export function validateSettings(value: unknown): RoomSettings | null {
     mirror: value.mirror,
     weather,
     gp: value.gp,
+    freeKit: value.freeKit,
   };
+}
+
+/** The kit ids a guest may name. Unknown ids are rejected, never coerced. */
+export function validateKit(
+  characterId: unknown,
+  machineId: unknown,
+): { characterId: string; machineId: string } | null {
+  if (typeof characterId !== "string" || typeof machineId !== "string") {
+    return null;
+  }
+  if (!CHARACTERS.some((entry) => entry.id === characterId)) return null;
+  if (!MACHINES.some((entry) => entry.id === machineId)) return null;
+  return { characterId, machineId };
 }
 
 export function validateInput(value: unknown): InputFrame | null {
@@ -503,6 +555,17 @@ function validateEvent(value: unknown): RaceEvent | null {
     case "hop": {
       const seat = racer();
       return seat === null ? null : { k: "hop", racer: seat };
+    }
+    case "skill":
+    case "gimmick": {
+      const seat = racer();
+      const ability = typeof value.ability === "string" ? value.ability : "";
+      // Checked against the catalog, not merely against "is a string": an id
+      // the guest cannot resolve would leave a cooldown dial running forever.
+      if (seat === null || abilityById(ability) === null) return null;
+      return value.k === "skill"
+        ? { k: "skill", racer: seat, ability }
+        : { k: "gimmick", racer: seat, ability };
     }
     case "wall": {
       const seat = racer();
@@ -721,10 +784,12 @@ export function validateLobby(value: unknown): NitroLobby | null {
     if (!isRecord(entry)) return null;
     const seat = integer(entry.seat, 0, 7);
     const livery = integer(entry.livery, 0, 15);
+    const kit = validateKit(entry.characterId, entry.machineId);
     const occupant = entry.occupant;
     if (
       seat === null ||
       livery === null ||
+      kit === null ||
       typeof entry.name !== "string" ||
       typeof entry.ready !== "boolean" ||
       (occupant !== "host" &&
@@ -740,6 +805,8 @@ export function validateLobby(value: unknown): NitroLobby | null {
       occupant,
       ready: entry.ready,
       livery,
+      characterId: kit.characterId,
+      machineId: kit.machineId,
     });
   }
   return {
@@ -765,7 +832,16 @@ export function validateStart(value: unknown): StartPayload | null {
     !Array.isArray(value.liveries) ||
     value.names.length !== settings.racerCount ||
     value.cpu.length !== settings.racerCount ||
-    value.liveries.length !== settings.racerCount
+    value.liveries.length !== settings.racerCount ||
+    !Array.isArray(value.characters) ||
+    !Array.isArray(value.machines) ||
+    /*
+     * Length-checked as strictly as the names are. A short array does not
+     * throw: it falls through `?? REFERENCE_*` in raceStateFromSnapshot and
+     * the guest quietly races beside a car whose machine it has invented.
+     */
+    value.characters.length !== settings.racerCount ||
+    value.machines.length !== settings.racerCount
   ) {
     return null;
   }
@@ -785,7 +861,28 @@ export function validateStart(value: unknown): StartPayload | null {
     if (livery === null) return null;
     liveries.push(livery);
   }
-  return { settings, names, cpu, liveries, round, rounds };
+  const characterIds = new Set(CHARACTERS.map((entry) => entry.id));
+  const machineIds = new Set(MACHINES.map((entry) => entry.id));
+  const characters: string[] = [];
+  for (const entry of value.characters) {
+    if (typeof entry !== "string" || !characterIds.has(entry)) return null;
+    characters.push(entry);
+  }
+  const machines: string[] = [];
+  for (const entry of value.machines) {
+    if (typeof entry !== "string" || !machineIds.has(entry)) return null;
+    machines.push(entry);
+  }
+  return {
+    settings,
+    names,
+    cpu,
+    liveries,
+    characters,
+    machines,
+    round,
+    rounds,
+  };
 }
 
 /** Validates the optional cup block on a result. */
@@ -820,6 +917,8 @@ export interface Roster {
   readonly names: readonly string[];
   readonly cpu: readonly boolean[];
   readonly liveries: readonly number[];
+  readonly characters: readonly string[];
+  readonly machines: readonly string[];
   readonly trackId: string;
   readonly laps: number;
 }
@@ -833,6 +932,8 @@ export function raceStateFromSnapshot(
     name: roster.names[frame.i] ?? `P${frame.i + 1}`,
     cpu: roster.cpu[frame.i] ?? true,
     livery: roster.liveries[frame.i] ?? frame.i,
+    characterId: roster.characters[frame.i] ?? REFERENCE_CHARACTER_ID,
+    machineId: roster.machines[frame.i] ?? REFERENCE_MACHINE_ID,
     x: frame.x,
     y: frame.y,
     z: frame.z,

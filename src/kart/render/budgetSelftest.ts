@@ -29,6 +29,13 @@ import {
 } from "./setpieces";
 import { createClouds } from "./clouds";
 import { createGrandstands } from "./grandstand";
+import {
+  createKartVisual,
+  disposeSharedKartGeometry,
+  type KartTextureFactory,
+} from "./kartModel";
+import { MACHINES } from "../content/machines";
+import { MAX_RACERS } from "../sim/types";
 
 const gate = createGate();
 
@@ -41,6 +48,10 @@ const STUB_TRACK_TEXTURES: TrackTextureFactory = {
   ground: stubTexture,
   itemBox: stubTexture,
   boostPad: stubTexture,
+};
+const STUB_KART_TEXTURES: KartTextureFactory = {
+  roundel: stubTexture,
+  headlightPool: stubTexture,
 };
 
 function stubContext(quality: KartQuality): SetPieceContext {
@@ -253,6 +264,66 @@ gate.expectFail(
   },
   "路面中央 y+1.2 の 2m 箱",
 );
+
+// [BG6] the grid itself costs draw calls, and nothing has ever counted them ──
+{
+  /*
+   * The budgets above measure the track and the set pieces. The eight karts
+   * standing on that track were simply absent from the accounting — a blind
+   * spot that widened the moment machines got their own silhouettes, because
+   * from here on a shape can gain parts without any gate noticing.
+   *
+   * 128 is the ceiling because BUDGETS.LOW is 90: a low-tier scene plus a full
+   * grid has to stay inside what a phone will actually draw.
+   */
+  const grid = new THREE.Group();
+  const built = MACHINES.slice(0, MAX_RACERS).map((machine, seat) =>
+    createKartVisual({
+      livery: seat,
+      castShadow: true,
+      raceNumber: seat + 1,
+      headlights: true,
+      shape: machine.shape,
+      textures: STUB_KART_TEXTURES,
+    }),
+  );
+  // Six machines, eight seats: the last two repeat, exactly as a full room does.
+  while (built.length < MAX_RACERS) {
+    const machine = MACHINES[built.length % MACHINES.length]!;
+    built.push(
+      createKartVisual({
+        livery: built.length,
+        castShadow: true,
+        raceNumber: built.length + 1,
+        headlights: true,
+        shape: machine.shape,
+        textures: STUB_KART_TEXTURES,
+      }),
+    );
+  }
+  for (const entry of built) grid.add(entry.root);
+  const calls = countDrawCalls(grid);
+  gate.check(
+    "[BG6] 8台満載のグリッドが 128 ドローコール以内",
+    calls <= 128,
+    `${calls} calls（1台あたり ${(calls / MAX_RACERS).toFixed(1)}・LOW予算 ${BUDGETS.LOW} との合計 ${calls + BUDGETS.LOW}）`,
+  );
+  gate.expectFail(
+    "[BG6-neg] 1台あたり8メッシュ増やすと予算を超える",
+    () => {
+      const bloat = new THREE.Group();
+      const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+      const material = new THREE.MeshBasicMaterial();
+      for (let i = 0; i < MAX_RACERS * 8; i += 1) {
+        bloat.add(new THREE.Mesh(geometry, material));
+      }
+      return calls + countDrawCalls(bloat) <= 128;
+    },
+    "1台あたり8メッシュの水増し",
+  );
+  for (const entry of built) entry.dispose();
+  disposeSharedKartGeometry();
+}
 
 console.table(
   Object.entries(counts).map(([key, calls]) => ({ scene: key, calls })),

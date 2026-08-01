@@ -8,6 +8,8 @@
  *
  * Run: npx tsx src/kart/sim/headlessSelftest.ts
  */
+import { REFERENCE_CHARACTER_ID } from "../content/characters";
+import { REFERENCE_MACHINE_ID } from "../content/machines";
 import { createGate } from "../gate";
 import { DRIFT_HOP_SEC, SIM_STEP_SEC } from "./balance";
 import { createKartSim } from "./sim";
@@ -725,6 +727,125 @@ gate.expectFail(
     "[H18-neg] 「空でなければ拾わない」旧条件では同時所持が起きない",
     () => maxHeld(true) >= 2,
     "旧・取得条件",
+  );
+}
+
+// [H20] the reference kit is the identity, at runtime ──────────────────────
+/*
+ * `x * 1 === x` holds in IEEE 754, so a kit whose every coefficient is exactly
+ * 1 must produce the same race as no kit at all. That is the entire safety
+ * argument for inserting a tuning layer under gates that were tuned before it
+ * existed — and an argument is not evidence, so here are two full races
+ * compared state by state.
+ *
+ * Note what this does NOT do: compare against numbers written down earlier.
+ * Those move whenever anything else in the sim moves, and reading a changed
+ * lap time as "the tuning layer is not the identity" would be a conclusion
+ * about the wrong change.
+ */
+{
+  const base: RaceConfig = {
+    trackId: TRACKS[0]!.id,
+    laps: 3,
+    seed: 909,
+    racers: field(8, 3),
+    items: true,
+  };
+  const withoutKit = createKartSim(base);
+  const withKit = createKartSim({
+    ...base,
+    racers: field(8, 3).map((spec) => ({
+      ...spec,
+      characterId: REFERENCE_CHARACTER_ID,
+      machineId: REFERENCE_MACHINE_ID,
+    })),
+  });
+  let diverged = -1;
+  for (let tick = 0; tick < 1800; tick += 1) {
+    withoutKit.step();
+    withKit.step();
+    if (tick % 30 !== 0) continue;
+    if (
+      JSON.stringify(withoutKit.getState()) !==
+      JSON.stringify(withKit.getState())
+    ) {
+      diverged = tick;
+      break;
+    }
+  }
+  gate.check(
+    "[H20] 基準キットを明示しても未指定でもレースが完全一致する",
+    diverged < 0,
+    diverged < 0 ? "1800 tick 一致" : `tick ${diverged} で相違`,
+  );
+  gate.expectFail(
+    "[H20-neg] 係数が 1 でないキットは一致しない",
+    () => {
+      const a = createKartSim(base);
+      const b = createKartSim({
+        ...base,
+        racers: field(8, 3).map((spec, index) => ({
+          ...spec,
+          // One seat on a machine that is not the reference is enough.
+          machineId: index === 3 ? "lancet" : REFERENCE_MACHINE_ID,
+        })),
+      });
+      for (let tick = 0; tick < 600; tick += 1) {
+        a.step();
+        b.step();
+      }
+      return JSON.stringify(a.getState()) === JSON.stringify(b.getState());
+    },
+    "1席だけ別マシン",
+  );
+}
+
+// [H21] abilities actually get used in a race ───────────────────────────────
+{
+  function abilityEvents(cooldownFree: boolean): number {
+    const sim = createKartSim({
+      trackId: TRACKS[0]!.id,
+      laps: 3,
+      seed: 55,
+      racers: field(8, 3),
+      items: true,
+    });
+    let fired = 0;
+    for (let i = 0; i < Math.round(90 / SIM_STEP_SEC); i += 1) {
+      sim.step();
+      for (const event of sim.drainEvents()) {
+        if (event.k === "skill" || event.k === "gimmick") fired += 1;
+      }
+    }
+    return cooldownFree ? fired : fired;
+  }
+  const fired = abilityEvents(false);
+  gate.check(
+    "[H21] CPU がスキルとギミックを実戦で使う",
+    fired > 20,
+    `発火 ${fired} 件`,
+  );
+  gate.expectFail(
+    "[H21-neg] 押されなければ発火しない（イベントが入力に依存している証明）",
+    () => {
+      const sim = createKartSim({
+        trackId: TRACKS[0]!.id,
+        laps: 3,
+        seed: 55,
+        racers: [{ name: "P", cpu: false, livery: 0 }],
+        items: false,
+      });
+      let fired = 0;
+      for (let i = 0; i < Math.round(30 / SIM_STEP_SEC); i += 1) {
+        sim.setInput(0, { ...NEUTRAL_INPUT, throttle: 1 });
+        sim.step();
+        for (const event of sim.drainEvents()) {
+          if (event.k === "skill" || event.k === "gimmick") fired += 1;
+        }
+      }
+      return fired > 0;
+    },
+    "スキル/ギミック未押下の人間",
   );
 }
 

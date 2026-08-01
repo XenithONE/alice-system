@@ -46,6 +46,8 @@ const SAMPLE_EVENTS: Record<RaceEvent["k"], RaceEvent> = {
   drift: { k: "drift", racer: 0, tier: 1 },
   trick: { k: "trick", racer: 0 },
   hop: { k: "hop", racer: 0 },
+  skill: { k: "skill", racer: 0, ability: "nitro-pulse" },
+  gimmick: { k: "gimmick", racer: 0, ability: "thrust-vector" },
   wall: { k: "wall", racer: 0, speed: 30 },
   respawn: { k: "respawn", racer: 0 },
   lap: { k: "lap", racer: 0, lap: 1, lapTime: 30 },

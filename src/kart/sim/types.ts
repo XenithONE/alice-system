@@ -134,6 +134,11 @@ export type RaceEvent =
   /* The hop itself. Its height already rides the wire in `y`; this exists so
    * the sound and the dust land on the frame the kart left the ground. */
   | { readonly k: "hop"; readonly racer: RacerId }
+  /* Abilities announce themselves rather than riding the snapshot: a guest
+   * knows every seat's kit from the roster, so it can run the cooldown dial
+   * locally from the catalog and the frame stays the size it was. */
+  | { readonly k: "skill"; readonly racer: RacerId; readonly ability: string }
+  | { readonly k: "gimmick"; readonly racer: RacerId; readonly ability: string }
   | { readonly k: "wall"; readonly racer: RacerId; readonly speed: number }
   | { readonly k: "respawn"; readonly racer: RacerId }
   | {
@@ -187,6 +192,10 @@ export interface RacerState {
   readonly starTimer: number;
   readonly boltTimer: number;
   readonly graceTimer: number;
+  /** Catalog ids. Static for the race, so the wire carries them in the roster
+   * rather than in every frame — the same deal livery has. */
+  readonly characterId: string;
+  readonly machineId: string;
   /** Always ITEM_SLOT_COUNT long; an empty slot is null, never a partial. */
   readonly items: readonly (ItemSlot | null)[];
   readonly rouletteTimer: number;
@@ -258,7 +267,13 @@ export interface RaceResult {
   readonly standings: readonly RaceStanding[];
 }
 
+/**
+ * A seat's kit. Plain ids rather than catalog objects, so `sim/types.ts` stays
+ * free of a dependency on `content/` and the wire can carry them unchanged.
+ */
 export interface RacerSpec {
+  readonly characterId?: string;
+  readonly machineId?: string;
   readonly name: string;
   readonly cpu: boolean;
   /** 1..3; ignored for humans. */

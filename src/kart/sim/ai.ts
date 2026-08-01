@@ -32,6 +32,8 @@ import {
   type Ramp,
   type Track,
 } from "./track";
+import { characterById } from "../content/characters";
+import { machineById } from "../content/machines";
 import type { KartRuntime } from "./runtime";
 import type { ItemKind, KartInput, RacerId } from "./types";
 
@@ -102,6 +104,8 @@ function cpuControls(partial: {
   steer: number;
   drift: boolean;
   itemSlot?: number | null;
+  skill?: boolean;
+  gimmick?: boolean;
 }): KartInput {
   const slot = partial.itemSlot ?? null;
   return {
@@ -109,8 +113,8 @@ function cpuControls(partial: {
     brake: partial.brake,
     steer: partial.steer,
     drift: partial.drift,
-    gimmick: false,
-    skill: false,
+    gimmick: partial.gimmick ?? false,
+    skill: partial.skill ?? false,
     item0: slot === 0,
     item1: slot === 1,
     item2: slot === 2,
@@ -374,7 +378,28 @@ export function cpuInput(
     self.cpuItemTimer = skill.itemDelay;
   }
 
-  return cpuControls({ throttle, brake, steer, drift, itemSlot: slot });
+  // ── Abilities ───────────────────────────────────────────────────────────────
+  /*
+   * Same shape as the item decision, and deliberately no random draw: every
+   * branch is a state test, so adding abilities cannot shift the field's
+   * shared random stream the way an extra roll would.
+   */
+  const useSkill =
+    self.skillCooldown <= 0 &&
+    wantsAbility(characterById(self.characterId).skillId, self, cornerSoon);
+  const useGimmick =
+    self.gimmickCooldown <= 0 &&
+    wantsAbility(machineById(self.machineId).gimmickId, self, cornerSoon);
+
+  return cpuControls({
+    throttle,
+    brake,
+    steer,
+    drift,
+    itemSlot: slot,
+    skill: useSkill,
+    gimmick: useGimmick,
+  });
 }
 
 function nearestAhead<T extends { readonly s: number; readonly lateral: number }>(
@@ -487,6 +512,51 @@ function wantsItem(
     case "emp":
       // Close-range, so wait until it will actually catch someone.
       return closestAhead < EMP_RADIUS * 0.9 || closestBehind < EMP_RADIUS * 0.7;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Should the CPU press this ability now?
+ *
+ * A switch on the id rather than an interpretation of the effect list: the
+ * catalog stays declarative (no callbacks, see content/abilities.ts) and the
+ * driver's opinion about when a thing is worth using stays here, where the
+ * rest of its opinions are. The sim re-checks the ability's own condition, so
+ * a wrong answer here wastes a press rather than breaking a rule.
+ */
+function wantsAbility(
+  id: string,
+  self: KartRuntime,
+  cornerSoon: number,
+): boolean {
+  switch (id) {
+    case "nitro-pulse":
+    case "thrust-vector":
+      // Straights only, and never on top of a boost already running.
+      return self.boostTimer <= 0 && cornerSoon < 0.009 && self.speed > 18;
+    case "phase-veil":
+    case "spike-guard":
+      return self.place > 1 && self.speed > DRIFT_MIN_SPEED;
+    case "gyro-lock":
+    case "hover-jump":
+      return self.airborne ? self.airTime > 0.2 : cornerSoon < 0.007;
+    case "hard-brake":
+    case "ballast-shift":
+      return cornerSoon > 0.018 && self.speed > 24;
+    case "scrap-drop":
+      return self.place < 4;
+    case "item-magnet":
+      return self.items.some((held) => held === null);
+    case "second-wind":
+      return self.spinTimer > 0 || self.squashTimer > 0;
+    case "slip-call":
+      return self.place > 2 && self.boostTimer <= 0;
+    case "turbo-tap":
+      return self.drifting && self.driftTier >= 1;
+    case "mud-tread":
+      return self.offRoad;
     default:
       return false;
   }

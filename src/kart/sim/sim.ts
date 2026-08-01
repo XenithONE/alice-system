@@ -94,6 +94,14 @@ import {
   TRIPLE_MUSHROOM_CHARGES,
   EMP_RADIUS,
 } from "./balance";
+import {
+  abilityById,
+  type AbilityCondition,
+  type AbilityEffect,
+} from "../content/abilities";
+import { characterById } from "../content/characters";
+import { machineById } from "../content/machines";
+import { combineTuning, type KartTuning } from "../content/tuning";
 import { cpuInput, type CpuWorld } from "./ai";
 import { itemCharges, rollItem } from "./items";
 import type { KartRuntime } from "./runtime";
@@ -199,12 +207,39 @@ export function createKartSim(config: RaceConfig): KartSim {
     const slot = gridSlot(track, index);
     const startS = -(6 + Math.floor(index / 2) * 5.5);
     const query = querySurface(track, slot.x, slot.z, -1, SHOULDER_WIDTH);
+    /*
+     * Folded once, here, and held read-only for the race. Multiplying these
+     * every tick would work and would also mean the evaluation order of a
+     * chain of floats is decided by whoever last edited a line in driveKart —
+     * and a last-bit difference is a different race after ninety seconds.
+     */
+    const character = characterById(spec.characterId);
+    const machine = machineById(spec.machineId);
     return {
       id: index,
       name: spec.name,
       cpu: spec.cpu,
       cpuLevel: clamp(Math.round(spec.cpuLevel ?? 2), 1, 3),
       livery: (spec.livery ?? index) % LIVERY_COUNT,
+      characterId: character.id,
+      machineId: machine.id,
+      tuning: combineTuning(tuning, character, machine),
+      skillCooldown: 0,
+      gimmickCooldown: 0,
+      skillHeld: false,
+      gimmickHeld: false,
+      mulSpeedTimer: 0,
+      mulSpeedValue: 1,
+      mulTurnTimer: 0,
+      mulTurnValue: 1,
+      mulAccelTimer: 0,
+      mulAccelValue: 1,
+      mulOffroadTimer: 0,
+      mulOffroadValue: 1,
+      mulAirTimer: 0,
+      mulAirValue: 1,
+      magnetTimer: 0,
+      brakeSlideTimer: 0,
       x: slot.x,
       y: slot.y,
       z: slot.z,
@@ -365,6 +400,153 @@ export function createKartSim(config: RaceConfig): KartSim {
       }
     }
     return best;
+  }
+
+  /**
+   * The kit as this tick sees it. `airControlScale` has no home in the catalog
+   * — only an ability can bend it — so it lives here rather than in KartTuning.
+   */
+  interface EffectiveTuning extends KartTuning {
+    readonly airControlScale: number;
+  }
+
+  function effectiveTuning(kart: KartRuntime): EffectiveTuning {
+    const base = kart.tuning;
+    return {
+      ...base,
+      speedScale:
+        base.speedScale * (kart.mulSpeedTimer > 0 ? kart.mulSpeedValue : 1),
+      turnScale:
+        base.turnScale * (kart.mulTurnTimer > 0 ? kart.mulTurnValue : 1),
+      accelScale:
+        base.accelScale * (kart.mulAccelTimer > 0 ? kart.mulAccelValue : 1),
+      offroadScale:
+        base.offroadScale *
+        (kart.mulOffroadTimer > 0 ? kart.mulOffroadValue : 1),
+      airControlScale: kart.mulAirTimer > 0 ? kart.mulAirValue : 1,
+    };
+  }
+
+  /** Is the kart in the state this ability asks for? */
+  function conditionMet(kart: KartRuntime, condition: AbilityCondition): boolean {
+    switch (condition.kind) {
+      case "always":
+        return true;
+      case "grounded":
+        return !kart.airborne;
+      case "airborne":
+        return kart.airborne;
+      case "drifting":
+        return kart.drifting;
+      case "offroad":
+        return kart.offRoad;
+      case "moving-above":
+        return kart.speed > condition.speed;
+      case "place-behind":
+        return kart.place > condition.place;
+      case "recently-hit":
+        return (
+          kart.spinTimer > 0 ||
+          kart.squashTimer > 0 ||
+          kart.graceTimer > HIT_GRACE_SEC - condition.withinSec
+        );
+    }
+  }
+
+  /**
+   * The interpreter. Abilities are data (see content/abilities.ts) and this is
+   * the only thing that turns them into changes — a closed switch, so a new
+   * effect kind is a compile error here rather than a silent no-op.
+   */
+  function applyEffect(kart: KartRuntime, effect: AbilityEffect): void {
+    switch (effect.kind) {
+      case "boost":
+        boost(kart, effect.seconds, effect.source);
+        break;
+      case "invuln":
+        kart.graceTimer = Math.max(kart.graceTimer, effect.seconds);
+        break;
+      case "star":
+        kart.starTimer = Math.max(kart.starTimer, effect.seconds);
+        emit({ k: "boost", racer: kart.id, source: "star", tier: 0 });
+        break;
+      case "hazard": {
+        const [hfx, hfz] = forwardOf(kart.yaw);
+        const x = kart.x + hfx * effect.offset;
+        const z = kart.z + hfz * effect.offset;
+        const query = querySurface(track, x, z, kart.sampleHint, SHOULDER_WIDTH);
+        hazards.push({
+          id: entityId++,
+          kind: effect.hazard,
+          owner: kart.id,
+          x,
+          y: query.height,
+          z,
+          life: BANANA_LIFETIME_SEC,
+          age: 0,
+        });
+        break;
+      }
+      case "hop":
+        if (!kart.airborne) {
+          kart.airborne = true;
+          kart.airTime = 0;
+          kart.vy = effect.vy;
+        }
+        break;
+      case "cleanse":
+        kart.spinTimer = 0;
+        kart.squashTimer = 0;
+        kart.stallTimer = 0;
+        kart.boltTimer = 0;
+        break;
+      case "tuning-mul":
+        switch (effect.stat) {
+          case "speed":
+            kart.mulSpeedTimer = effect.seconds;
+            kart.mulSpeedValue = effect.multiplier;
+            break;
+          case "turn":
+            kart.mulTurnTimer = effect.seconds;
+            kart.mulTurnValue = effect.multiplier;
+            break;
+          case "accel":
+            kart.mulAccelTimer = effect.seconds;
+            kart.mulAccelValue = effect.multiplier;
+            break;
+          case "offroad":
+            kart.mulOffroadTimer = effect.seconds;
+            kart.mulOffroadValue = effect.multiplier;
+            break;
+        }
+        break;
+      case "air-control":
+        kart.mulAirTimer = effect.seconds;
+        kart.mulAirValue = effect.multiplier;
+        break;
+      case "magnet":
+        kart.magnetTimer = effect.seconds;
+        break;
+      case "brake-slide":
+        kart.brakeSlideTimer = effect.seconds;
+        break;
+    }
+  }
+
+  function tryAbility(kart: KartRuntime, which: "skill" | "gimmick"): void {
+    if (kart.finished || phase !== "race") return;
+    const cooldown = which === "skill" ? kart.skillCooldown : kart.gimmickCooldown;
+    if (cooldown > 0) return;
+    const source =
+      which === "skill"
+        ? characterById(kart.characterId).skillId
+        : machineById(kart.machineId).gimmickId;
+    const ability = abilityById(source);
+    if (!ability || !conditionMet(kart, ability.condition)) return;
+    for (const effect of ability.effects) applyEffect(kart, effect);
+    if (which === "skill") kart.skillCooldown = ability.cooldownSec;
+    else kart.gimmickCooldown = ability.cooldownSec;
+    emit({ k: which, racer: kart.id, ability: ability.id });
   }
 
   function useItem(kart: KartRuntime, slot: number): void {
@@ -595,6 +777,31 @@ export function createKartSim(config: RaceConfig): KartSim {
       }
     }
 
+    // ── Abilities ──────────────────────────────────────────────────────────
+    kart.skillCooldown = Math.max(0, kart.skillCooldown - dt);
+    kart.gimmickCooldown = Math.max(0, kart.gimmickCooldown - dt);
+    kart.mulSpeedTimer = Math.max(0, kart.mulSpeedTimer - dt);
+    kart.mulTurnTimer = Math.max(0, kart.mulTurnTimer - dt);
+    kart.mulAccelTimer = Math.max(0, kart.mulAccelTimer - dt);
+    kart.mulOffroadTimer = Math.max(0, kart.mulOffroadTimer - dt);
+    kart.mulAirTimer = Math.max(0, kart.mulAirTimer - dt);
+    kart.magnetTimer = Math.max(0, kart.magnetTimer - dt);
+    kart.brakeSlideTimer = Math.max(0, kart.brakeSlideTimer - dt);
+    {
+      const skillPressed = input.skill && !kart.skillHeld;
+      kart.skillHeld = input.skill;
+      if (skillPressed) tryAbility(kart, "skill");
+      const gimmickPressed = input.gimmick && !kart.gimmickHeld;
+      kart.gimmickHeld = input.gimmick;
+      if (gimmickPressed) tryAbility(kart, "gimmick");
+    }
+    /*
+     * The coefficients this tick sees: the kit, bent by whatever abilities are
+     * live. Built once here rather than read at each site, so a chain of
+     * multiplications has one evaluation order for the whole frame.
+     */
+    const T = effectiveTuning(kart);
+
     const stunned =
       kart.spinTimer > 0 || kart.squashTimer > 0 || kart.stallTimer > 0;
     if (stunned) {
@@ -710,7 +917,7 @@ export function createKartSim(config: RaceConfig): KartSim {
       // ── Steering ─────────────────────────────────────────────────────────
       const speedFactor = clamp(
         Math.abs(kart.speed) /
-          (BASE_TOP_SPEED * tuning.speedScale * TURN_SPEED_REFERENCE),
+          (BASE_TOP_SPEED * T.speedScale * TURN_SPEED_REFERENCE),
         0,
         1,
       );
@@ -730,8 +937,8 @@ export function createKartSim(config: RaceConfig): KartSim {
       } else {
         turn = BASE_TURN_RATE * kart.steer * speedFactor;
       }
-      turn *= tuning.turnScale * weather.turn;
-      if (kart.airborne) turn *= AIR_CONTROL;
+      turn *= T.turnScale * weather.turn;
+      if (kart.airborne) turn *= AIR_CONTROL * T.airControlScale;
       if (kart.speed < 0) turn = -turn;
       /*
        * Subtracted, not added: `turn` is a rate toward `rightOf`, and yaw
@@ -756,7 +963,7 @@ export function createKartSim(config: RaceConfig): KartSim {
       const catchup =
         1 +
         (CATCHUP_MAX_BONUS * (kart.place - 1)) / Math.max(1, karts.length - 1);
-      let topSpeed = BASE_TOP_SPEED * tuning.speedScale * weather.top * catchup;
+      let topSpeed = BASE_TOP_SPEED * T.speedScale * weather.top * catchup;
       if (kart.drafting && kart.boostSource === "draft") {
         topSpeed *= DRAFT_TOP_SPEED_MULT;
       }
@@ -856,7 +1063,7 @@ export function createKartSim(config: RaceConfig): KartSim {
         kart.vy =
           desiredVy +
           RAMP_LAUNCH_VY *
-            clamp(kart.speed / (BASE_TOP_SPEED * tuning.speedScale), 0.55, 1.15);
+            clamp(kart.speed / (BASE_TOP_SPEED * kart.tuning.speedScale), 0.55, 1.15);
         kart.rampCooldown = 1.2;
         kart.hopTimer = 0;
         break;
@@ -1342,6 +1549,8 @@ export function createKartSim(config: RaceConfig): KartSim {
       starTimer: kart.starTimer,
       boltTimer: kart.boltTimer,
       graceTimer: kart.graceTimer,
+      characterId: kart.characterId,
+      machineId: kart.machineId,
       items: kart.items.map((held) => (held ? { ...held } : null)),
       rouletteTimer: kart.rouletteTimer,
       distance: kart.distance,

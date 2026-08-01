@@ -30,6 +30,8 @@ import {
   type RaceState,
   type RacerSpec,
 } from "../sim/types";
+import { CHARACTERS, REFERENCE_CHARACTER_ID } from "../content/characters";
+import { MACHINES, REFERENCE_MACHINE_ID } from "../content/machines";
 import { SnapshotInterpolator } from "./interpolation";
 import {
   IN_DRIFT,
@@ -43,6 +45,7 @@ import {
   raceStateFromSnapshot,
   validateCup,
   validateInput,
+  validateKit,
   validateLobby,
   validateResult,
   validateSettings,
@@ -76,6 +79,7 @@ export const DEFAULT_ROOM_SETTINGS: RoomSettings = {
   mirror: false,
   weather: 0,
   gp: false,
+  freeKit: false,
 };
 
 const CPU_NAMES = [
@@ -116,6 +120,12 @@ export interface NitroSession {
   /** Grand-prix state, or null outside a cup. */
   cup(): CupView | null;
   setReady(ready: boolean): void;
+  /**
+   * Change kit from the lobby. A guest sends it to the host; a host applies it
+   * to seat 0 and republishes. Solo has no lobby, so it does nothing there —
+   * the pick arrives through `SoloConfig` before the race is built.
+   */
+  setKit(kit: SeatKit, livery: number): void;
   /** Host only. Returns false when the room is not in a startable state. */
   beginRace(): boolean;
   /** Host only. */
@@ -146,6 +156,8 @@ export function normalizeSettings(
     mirror: source.mirror === true,
     weather: clampInt(source.weather, 0, WEATHER_CODES.length - 1, 0),
     gp: source.gp === true,
+    // `=== true`, not `!== false`: a uniform grid is what an absent flag means.
+    freeKit: source.freeKit === true,
   };
 }
 
@@ -224,18 +236,48 @@ function inputFromFrame(frame: {
   };
 }
 
+/** What one seat is driving. `null` in a kit list means "use the default". */
+export interface SeatKit {
+  readonly characterId: string;
+  readonly machineId: string;
+}
+
+export const REFERENCE_KIT: SeatKit = {
+  characterId: REFERENCE_CHARACTER_ID,
+  machineId: REFERENCE_MACHINE_ID,
+};
+
+/**
+ * What a seat drives when nobody has said otherwise. A person gets the
+ * reference kit — nobody should be handed a machine they did not choose — and
+ * a CPU gets one drawn by seat index, so eight characters across eight seats
+ * make a varied field with no modulo bias.
+ */
+export function defaultKitForSeat(seat: number, human: boolean): SeatKit {
+  if (human) return REFERENCE_KIT;
+  return {
+    characterId: CHARACTERS[seat % CHARACTERS.length]!.id,
+    machineId: MACHINES[seat % MACHINES.length]!.id,
+  };
+}
+
 function buildRacerSpecs(
   settings: RoomSettings,
   humans: readonly (string | null)[],
+  kits?: readonly SeatKit[],
 ): RacerSpec[] {
   const specs: RacerSpec[] = [];
   for (let seat = 0; seat < settings.racerCount; seat += 1) {
     const human = seat < settings.playerCount ? (humans[seat] ?? null) : null;
+    const kit =
+      kits?.[seat] ?? defaultKitForSeat(seat, seat < settings.playerCount);
     specs.push({
       name: human ?? CPU_NAMES[seat % CPU_NAMES.length]!,
       cpu: human === null,
       cpuLevel: settings.cpuLevel,
       livery: seat,
+      characterId: kit.characterId,
+      machineId: kit.machineId,
     });
   }
   return specs;
@@ -246,6 +288,8 @@ function rosterOf(settings: RoomSettings, specs: readonly RacerSpec[]): Roster {
     names: specs.map((spec) => spec.name),
     cpu: specs.map((spec) => spec.cpu),
     liveries: specs.map((spec, index) => spec.livery ?? index),
+    characters: specs.map((spec) => spec.characterId ?? REFERENCE_CHARACTER_ID),
+    machines: specs.map((spec) => spec.machineId ?? REFERENCE_MACHINE_ID),
     trackId: settings.trackId,
     laps: settings.laps,
   };
@@ -258,6 +302,9 @@ export interface SoloConfig {
   readonly settings?: Partial<RoomSettings>;
   /** Local player's livery 0..15; the CPU whose default it displaces takes 0. */
   readonly livery?: number;
+  /** v4: what the player picked in the garage. Solo ignores `freeKit`. */
+  readonly characterId?: string;
+  readonly machineId?: string;
 }
 
 export function createSoloSession(config: SoloConfig): NitroSession {
@@ -265,7 +312,14 @@ export function createSoloSession(config: SoloConfig): NitroSession {
     ...config.settings,
     playerCount: 1,
   });
-  const specs = buildRacerSpecs(settings, [config.name]);
+  const soloKit = validateKit(config.characterId, config.machineId);
+  const specs = buildRacerSpecs(
+    settings,
+    [config.name],
+    // Seat 0 only; the CPUs keep their by-seat variety. `freeKit` is a room
+    // rule about players racing each other, and solo has no other player.
+    soloKit ? [soloKit] : undefined,
+  );
   const chosen = config.livery ?? 0;
   if (Number.isInteger(chosen) && chosen > 0 && chosen < 16 && specs[0]) {
     specs[0] = { ...specs[0], livery: chosen };
@@ -333,6 +387,7 @@ export function createSoloSession(config: SoloConfig): NitroSession {
       };
     },
     setReady() {},
+    setKit() {},
     beginRace() {
       // Next cup round. Refused mid-race and outside a cup.
       if (!settings.gp) return false;
@@ -381,6 +436,10 @@ interface GuestRecord {
   helloed: boolean;
   /** v2: preferred livery, validated 0..15; -1 = none sent. */
   livery: number;
+  /** v4: requested kit, validated against the catalog. Honoured only when the
+   * room runs with `freeKit`; otherwise it is displayed and then overruled. */
+  characterId: string;
+  machineId: string;
 }
 
 export interface HostConfig {
@@ -391,6 +450,9 @@ export interface HostConfig {
   readonly callbacks?: SessionCallbacks;
   /** Host's own livery preference, 0..15. */
   readonly livery?: number;
+  /** v4: the host's garage pick. Applied only when the room has `freeKit`. */
+  readonly characterId?: string;
+  readonly machineId?: string;
 }
 
 export async function createHostSession(
@@ -407,6 +469,11 @@ export async function createHostSession(
   let wireEvents: RaceEvent[] = [];
   let snapshotTimer = 0;
   let hostReady = false;
+  // Seat 0's own preferences, mutable because the host keeps browsing the
+  // garage while the room is open.
+  let hostKit: SeatKit =
+    validateKit(config.characterId, config.machineId) ?? REFERENCE_KIT;
+  let hostLivery = config.livery;
   let finalResult: RaceResult | null = null;
   let disposed = false;
   // Grand prix state (host-authoritative).
@@ -427,10 +494,35 @@ export async function createHostSession(
     return owners;
   }
 
+  /**
+   * The kit each seat will actually race, `freeKit` already applied. ONE
+   * function answers this, so the lobby cannot advertise a machine the race
+   * then refuses to build — the disagreement players would notice as "it
+   * showed me a buggy and gave me a standard".
+   */
+  function seatKits(): SeatKit[] {
+    const kits: SeatKit[] = [];
+    for (let seat = 0; seat < settings.racerCount; seat += 1) {
+      kits.push(defaultKitForSeat(seat, seat < settings.playerCount));
+    }
+    if (!settings.freeKit) return kits.map(() => REFERENCE_KIT);
+    kits[0] = hostKit;
+    for (const guest of guests) {
+      if (guest.seat === null || guest.seat >= settings.racerCount) continue;
+      kits[guest.seat] = {
+        characterId: guest.characterId,
+        machineId: guest.machineId,
+      };
+    }
+    return kits;
+  }
+
   function lobby(): NitroLobby {
     const owners = seatOwners();
+    const kits = seatKits();
     const seats: LobbySeat[] = [];
     for (let seat = 0; seat < settings.racerCount; seat += 1) {
+      const kit = kits[seat]!;
       if (seat >= settings.playerCount) {
         seats.push({
           seat,
@@ -438,6 +530,8 @@ export async function createHostSession(
           occupant: "cpu",
           ready: true,
           livery: seat,
+          characterId: kit.characterId,
+          machineId: kit.machineId,
         });
         continue;
       }
@@ -449,6 +543,8 @@ export async function createHostSession(
         occupant: owner === null ? "empty" : seat === 0 ? "host" : "guest",
         ready: seat === 0 ? hostReady : (guest?.ready ?? false),
         livery: resolveLivery(seat),
+        characterId: kit.characterId,
+        machineId: kit.machineId,
       });
     }
     return { roomCode, settings, seats };
@@ -474,7 +570,7 @@ export async function createHostSession(
     const wanted: number[] = [];
     for (let index = 0; index < settings.racerCount; index += 1) {
       let want = index;
-      if (index === 0 && typeof config.livery === "number") want = config.livery;
+      if (index === 0 && typeof hostLivery === "number") want = hostLivery;
       const guest = [...guests].find((entry) => entry.seat === index);
       if (guest && guest.livery >= 0) want = guest.livery;
       while (wanted.includes(want % 16)) want += 1;
@@ -554,6 +650,26 @@ export async function createHostSession(
         publishLobby();
         return;
       }
+      case "pick": {
+        // Changing kit mid-race would swap a car out from under its driver.
+        if (!guest.helloed || sim) return;
+        const kit = validateKit(message.characterId, message.machineId);
+        if (kit) {
+          guest.characterId = kit.characterId;
+          guest.machineId = kit.machineId;
+        }
+        const livery = message.livery;
+        if (
+          typeof livery === "number" &&
+          Number.isInteger(livery) &&
+          livery >= 0 &&
+          livery <= 15
+        ) {
+          guest.livery = livery;
+        }
+        publishLobby();
+        return;
+      }
       case "input": {
         if (!guest.helloed || guest.seat === null || !sim) return;
         const frame = validateInput(message.input);
@@ -580,6 +696,8 @@ export async function createHostSession(
       lastInputSeq: -1,
       helloed: false,
       livery: -1,
+      characterId: REFERENCE_CHARACTER_ID,
+      machineId: REFERENCE_MACHINE_ID,
     };
     guests.add(guest);
     connection.onMessage((payload) => handleClientMessage(guest, payload));
@@ -620,6 +738,15 @@ export async function createHostSession(
       hostReady = ready;
       publishLobby();
     },
+    setKit(kit, livery) {
+      if (sim) return;
+      const checked = validateKit(kit.characterId, kit.machineId);
+      if (checked) hostKit = checked;
+      if (Number.isInteger(livery) && livery >= 0 && livery <= 15) {
+        hostLivery = livery;
+      }
+      publishLobby();
+    },
     beginRace() {
       /*
        * Restartable: `if (sim)` alone made one race the room's lifetime.
@@ -636,10 +763,9 @@ export async function createHostSession(
         cupRound += 1;
       }
       const owners = seatOwners();
-      const specs = buildRacerSpecs(settings, owners).map((spec, index) => ({
-        ...spec,
-        livery: resolveLivery(index),
-      }));
+      const specs = buildRacerSpecs(settings, owners, seatKits()).map(
+        (spec, index) => ({ ...spec, livery: resolveLivery(index) }),
+      );
       const trackId = isCup ? cupOrder[cupRound]! : settings.trackId;
       track = buildTrack(
         maybeMirror(trackSpecById(trackId), settings.mirror),
@@ -671,6 +797,8 @@ export async function createHostSession(
         names: roster.names,
         cpu: roster.cpu,
         liveries: roster.liveries,
+        characters: roster.characters,
+        machines: roster.machines,
         round: isCup ? cupRound : 0,
         rounds: isCup ? CUP_ROUNDS : 1,
       };
@@ -877,6 +1005,8 @@ export async function createGuestSession(
           names: parsed.names,
           cpu: parsed.cpu,
           liveries: parsed.liveries,
+          characters: parsed.characters,
+          machines: parsed.machines,
           trackId: track.spec.id,
           laps: settings.laps,
         };
@@ -1002,6 +1132,14 @@ export async function createGuestSession(
     },
     setReady(ready) {
       connection.send({ t: "ready", ready } satisfies ClientMessage);
+    },
+    setKit(kit, livery) {
+      connection.send({
+        t: "pick",
+        characterId: kit.characterId,
+        machineId: kit.machineId,
+        livery,
+      } satisfies ClientMessage);
     },
     beginRace() {
       return false;

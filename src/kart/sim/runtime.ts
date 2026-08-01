@@ -1,3 +1,4 @@
+import type { KartTuning } from "../content/tuning";
 import type { BoostSource, ItemSlot, KartInput, RacerId } from "./types";
 
 /**
@@ -45,6 +46,35 @@ export interface KartRuntime {
   starTimer: number;
   boltTimer: number;
   graceTimer: number;
+
+  readonly characterId: string;
+  readonly machineId: string;
+  /** Class x character x machine, folded once at build time. */
+  readonly tuning: KartTuning;
+
+  skillCooldown: number;
+  gimmickCooldown: number;
+  skillHeld: boolean;
+  gimmickHeld: boolean;
+
+  /*
+   * Ability side effects, as a fixed set of numbers rather than a list of
+   * active modifiers. `[H6]` compares whole `getState()` snapshots as JSON, and
+   * a growing array is a shape that changes between two runs that agree about
+   * everything that matters.
+   */
+  mulSpeedTimer: number;
+  mulSpeedValue: number;
+  mulTurnTimer: number;
+  mulTurnValue: number;
+  mulAccelTimer: number;
+  mulAccelValue: number;
+  mulOffroadTimer: number;
+  mulOffroadValue: number;
+  mulAirTimer: number;
+  mulAirValue: number;
+  magnetTimer: number;
+  brakeSlideTimer: number;
 
   /** Mutable mirror of RacerState.items; always ITEM_SLOT_COUNT long. */
   items: (ItemSlot | null)[];

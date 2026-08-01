@@ -60,6 +60,10 @@ export const NK_VOICES = {
   // Short, dry and low: the hop is a chirp of tyre, not a jump cue. It fires
   // on every drift press, so anything longer would carpet the whole race.
   hop: { wave: "square", from: 300, to: 210, durationSec: 0.07, gain: 0.16, noise: 0.4, noiseCutoffHz: 2600 },
+  // Two abilities, two silhouettes: the character skill rises (a decision
+  // paying off), the machine gimmick is a flat mechanical clunk.
+  skill: { wave: "triangle", from: 430, to: 880, durationSec: 0.22, gain: 0.34 },
+  gimmick: { wave: "square", from: 260, to: 200, durationSec: 0.18, gain: 0.3, noise: 0.25, noiseCutoffHz: 1800 },
   trick: { wave: "triangle", from: 520, to: 940, durationSec: 0.24, gain: 0.36 },
   "trick-land": { wave: "square", from: 700, to: 1150, durationSec: 0.2, gain: 0.4 },
   draft: { wave: "noise", from: 0, to: 0, durationSec: 0.45, gain: 0.3, noise: 0.85, noiseCutoffHz: 3400 },
