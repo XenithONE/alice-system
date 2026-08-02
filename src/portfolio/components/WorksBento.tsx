@@ -56,6 +56,9 @@ export function WorksBento({ onOpenDetail }: { onOpenDetail: (w: Work) => void }
       </p>
 
       <div className="catalog-filter" role="group" aria-label="ライブラリの絞り込み">
+        <p className="catalog-filter-label" aria-hidden="true">
+          SCAN /
+        </p>
         {FILTERS.map((f) => (
           <button
             key={f.id}

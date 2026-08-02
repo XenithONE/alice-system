@@ -131,8 +131,8 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .cta.is-static { cursor: default; }
 .cta.is-static:hover { background: transparent; }
 .cta.dev.is-static:hover { color: var(--dev-text); }
-.catalog-filter { display: flex; flex-wrap: wrap; margin-bottom: clamp(28px, 4vw, 44px); }
-.filter-tab { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; transition: color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
+.catalog-filter { margin-bottom: clamp(28px, 4vw, 44px); }
+.filter-tab { font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase; transition: color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
 
 /* ── detail dialog ────────────────────────────────────────────────────────── */
 .game-detail { border: 0; padding: 0; background: transparent; max-width: min(960px, 94vw); width: 100%; color: var(--text); }
