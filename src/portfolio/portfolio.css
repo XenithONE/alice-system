@@ -57,7 +57,9 @@ pre { font-family: var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; 
 h1, h2, h3 { font-weight: 700; color: var(--ink); }
 
 /* .visually-hidden / .sr-only live in theme.css — both pages need them. */
-.skip-link { position: fixed; top: -60px; left: 12px; z-index: 200; background: var(--amber); color: var(--bg); padding: 10px 16px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; border-radius: var(--r-2); transition: top var(--dur-2) var(--ease-out); }
+/* Ink on the amber fill is a constant pair (8.57:1), not the theme's --bg —
+   in the light issue --bg goes paper and would ship 1.8:1 on this chip. */
+.skip-link { position: fixed; top: -60px; left: 12px; z-index: 200; background: var(--amber); color: #061c31; padding: 10px 16px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; border-radius: var(--r-2); transition: top var(--dur-2) var(--ease-out); }
 .skip-link:focus { top: 12px; }
 .scroll-progress { position: fixed; top: 0; left: 0; width: 0; z-index: 150; }
 
@@ -74,7 +76,7 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .site-nav { position: sticky; top: 0; z-index: 100; background: var(--panel); backdrop-filter: blur(10px); border-bottom: 1px solid var(--hairline); }
 .site-nav-shell { max-width: var(--page-max); margin-inline: auto; padding: 12px var(--gutter); display: flex; align-items: center; gap: 20px; }
 .site-brand { font-family: var(--display); font-weight: 700; font-size: 1.05rem; letter-spacing: 0.02em; display: flex; flex-direction: column; line-height: 1.05; color: var(--ink); }
-.site-brand-tag { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.28em; color: var(--amber); }
+.site-brand-tag { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.28em; color: var(--accent-ink); }
 .studio-ticker { margin-left: auto; display: flex; gap: 16px; font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.12em; }
 .studio-ticker .tk { display: inline-flex; align-items: center; gap: 7px; color: var(--text-dim); }
 .studio-ticker .dot { width: 8px; height: 8px; border-radius: var(--r-round); }
@@ -83,6 +85,14 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .site-primary-nav { display: flex; gap: clamp(12px, 2vw, 26px); font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; }
 .site-primary-nav a { color: var(--text-dim); transition: color var(--dur-2) var(--ease-out); }
 .site-primary-nav a:hover { color: var(--ink); }
+
+/* ── theme toggle ─────────────────────────────────────────────────────────
+ * The reader picks the stock. A ruled square, not a pill switch — the same
+ * language as the filter tabs. aria-pressed carries the state; the icon is
+ * inline SVG so no font subset has to know about moons. */
+.theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 30px; border: 1px solid var(--hairline-strong); color: var(--text-dim); background: transparent; transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
+.theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
+.theme-toggle svg { width: 15px; height: 15px; display: block; }
 
 /* ── badges + chips ───────────────────────────────────────────────────────── */
 .badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.64rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 9px; border: 1.5px solid currentColor; border-radius: var(--r-1); white-space: nowrap; }
@@ -98,7 +108,7 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .platform-row { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .engine-chip { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.12em; border: 1px solid var(--hairline-strong); padding: 3px 7px; border-radius: var(--r-1); }
 .made-with { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.08em; }
-.made-with b { color: var(--amber); font-weight: 400; }
+.made-with b { color: var(--accent-ink); font-weight: 400; }
 
 /*
  * ── CTA system ────────────────────────────────────────────────────────────
@@ -126,7 +136,7 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .cta.dev { color: var(--dev-text); border-style: dashed; }
 /* The secondary action carries no box at all — a magazine does not put a
    button next to a headline, it sets the second option as a ruled word. */
-.cta.ghost { color: var(--ink); border: 0; border-bottom: 1px solid var(--amber); padding-inline: 0; padding-block: 12px 6px; }
+.cta.ghost { color: var(--ink); border: 0; border-bottom: 1px solid var(--accent-ink); padding-inline: 0; padding-block: 12px 6px; }
 .cta.ghost:hover { border-bottom-width: 3px; padding-bottom: 4px; }
 .cta.is-static { cursor: default; }
 .cta.is-static:hover { background: transparent; }
@@ -139,13 +149,13 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .game-detail::backdrop { backdrop-filter: blur(5px); }
 .detail-shell { position: relative; overflow: hidden; max-height: 92vh; overflow-y: auto; box-shadow: var(--elev-3); }
 .detail-close { position: absolute; top: 12px; right: 12px; z-index: 3; width: 40px; height: 40px; border: 1px solid var(--hairline-strong); border-radius: var(--r-round); font-size: 1rem; transition: color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out), border-color var(--dur-2) var(--ease-out); }
-.detail-close:hover { background: var(--amber); color: var(--bg); border-color: var(--amber); }
+.detail-close:hover { background: var(--amber); color: #061c31; border-color: var(--amber); }
 .detail-media { aspect-ratio: 16/9; }
 .detail-media img, .detail-media video { width: 100%; height: 100%; object-fit: cover; }
 .detail-body { padding: clamp(20px, 3vw, 34px); display: flex; flex-direction: column; gap: 14px; }
 .detail-badges { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .detail-title { font-size: clamp(1.8rem, 4vw, 2.8rem); text-transform: uppercase; line-height: 1.05; }
-.detail-ja { color: var(--amber); margin-top: -6px; }
+.detail-ja { color: var(--accent-ink); margin-top: -6px; }
 .detail-desc { max-width: 34em; }
 .detail-progress { position: relative; padding-top: 8px; }
 .detail-progress .bar { position: absolute; top: 0; left: 0; height: 4px; background: var(--dev); }
@@ -196,8 +206,8 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .lab-result-output img, .lab-result-output video { width: 100%; }
 .lab-output-text { padding: 14px; font-size: 0.78rem; }
 .copy-control { display: inline-flex; }
-.copy-btn { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--amber); border: 1.5px solid currentColor; padding: 8px 14px; border-radius: var(--r-2); transition: color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out); }
-.copy-btn:hover { background: var(--amber); color: var(--bg); }
+.copy-btn { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-ink); border: 1.5px solid currentColor; padding: 8px 14px; border-radius: var(--r-2); transition: color var(--dur-2) var(--ease-out), background var(--dur-2) var(--ease-out); }
+.copy-btn:hover { background: var(--amber); color: #061c31; }
 .copy-btn.is-copied { color: var(--live); }
 .copy-btn.is-error { color: var(--rec); }
 .lab-result-prompt .copy-control { position: absolute; top: 12px; right: 12px; }
@@ -210,10 +220,10 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .prompt-accordion { border-top: 1px solid var(--hairline); }
 .prompt-row { border-bottom: 1px solid var(--hairline); }
 .prompt-disclosure { width: 100%; display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 16px; padding: 18px 4px; text-align: left; }
-.prompt-row-index { font-family: var(--mono); color: var(--amber); font-size: 0.8rem; }
+.prompt-row-index { font-family: var(--mono); color: var(--accent-ink); font-size: 0.8rem; }
 .prompt-row-title { font-family: var(--display); text-transform: uppercase; font-size: clamp(1rem, 2vw, 1.35rem); }
 .prompt-row-meta { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.08em; color: var(--text-faint); }
-.prompt-row-state { font-family: var(--mono); font-size: 0.64rem; color: var(--amber); }
+.prompt-row-state { font-family: var(--mono); font-size: 0.64rem; color: var(--accent-ink); }
 .prompt-panel-inner { position: relative; padding: 4px 4px 24px; }
 .prompt-panel-inner pre { border: 1px solid var(--hairline); padding: 16px; font-size: 0.82rem; }
 .prompt-panel-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
@@ -233,7 +243,7 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .closing-copy { max-width: 26em; }
 .footer-actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0; }
 .reel-end { display: inline-flex; flex-direction: column; gap: 4px; margin-top: clamp(28px, 4vw, 48px); }
-.reel-end-mark { font-family: var(--mono); letter-spacing: 0.28em; color: var(--amber); font-size: 0.8rem; }
+.reel-end-mark { font-family: var(--mono); letter-spacing: 0.28em; color: var(--accent-ink); font-size: 0.8rem; }
 .reel-end-caption { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em; }
 .footer-shell { max-width: var(--page-max); margin: clamp(40px, 6vw, 72px) auto 0; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; padding-top: 24px; border-top: 1px solid var(--hairline); }
 .footer-nav { display: flex; gap: 18px; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; }
@@ -251,7 +261,12 @@ html.cursor-on, html.cursor-on a, html.cursor-on button, html.cursor-on [data-ma
 /* ── responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .studio-ticker { display: none; }
-  .site-primary-nav { gap: 12px; font-size: 0.62rem; }
+  /* The letter-spaced tag forces the brand column wide enough to wrap the
+     whole bar at 390px — and the theme toggle off the edge with it. The tag
+     is decoration; the toggle is a control. */
+  .site-brand-tag { display: none; }
+  .site-nav-shell { gap: 12px; }
+  .site-primary-nav { gap: 12px; font-size: 0.62rem; margin-left: auto; }
   .detail-meta { flex-direction: column; }
 }
 @media (max-width: 420px) {
@@ -294,6 +309,43 @@ html.cursor-on, html.cursor-on a, html.cursor-on button, html.cursor-on [data-ma
       animation-timeline: scroll(root block);
     }
     @keyframes scroll-progress { to { scale: 1 1; } }
+  }
+
+  /*
+   * Kinetic type + plate parallax, on view() timelines. Same double guard as
+   * the progress bar ([C4]): no timeline support = the static page, reduce =
+   * this whole block absent.
+   *
+   * The wordmark slides against the scroll as its own entry progresses —
+   * 14rem of Barlow moving 7% of its width, the one big kinetic gesture the
+   * endpaper can afford. body has overflow-x: hidden, so the overhang never
+   * becomes a scrollbar.
+   *
+   * The featured covers over-scan (scale 1.12) and drift vertically through
+   * their own viewport transit. Both hover scales are restated here because
+   * this scale and theme.css's 1.055 are the same property in different
+   * contexts — the guarded pair wins while the timeline exists.
+   */
+  @supports (animation-timeline: view()) {
+    .footer-wordmark {
+      animation: wordmark-slide var(--ease-scroll) both;
+      animation-timeline: view(block);
+      animation-range: entry 0% cover 60%;
+    }
+    @keyframes wordmark-slide {
+      from { translate: 3.5% 0; }
+      to { translate: -3.5% 0; }
+    }
+    .featured-media img {
+      scale: 1.12;
+      animation: plate-parallax var(--ease-scroll) both;
+      animation-timeline: view(block);
+    }
+    .featured-card:hover .featured-media img { scale: 1.16; }
+    @keyframes plate-parallax {
+      from { translate: 0 -3.4%; }
+      to { translate: 0 3.4%; }
+    }
   }
 
   /*

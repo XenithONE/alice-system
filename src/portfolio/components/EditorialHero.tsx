@@ -51,6 +51,23 @@ export function EditorialHero() {
           </a>
         </p>
       </div>
+
+      {/*
+        * The wire ticker: the catalogue's headline numbers on a slow loop at
+        * the masthead's foot. aria-hidden — .hero-signal above already
+        * announces the same facts — and the track is two identical runs so
+        * the -50% loop is seamless. Numbers come from CATALOG like everything
+        * else, so appending a Work updates the wire too.
+        */}
+      <div className="wire-ticker" aria-hidden="true">
+        <p className="wire-ticker-track">
+          {[0, 1].map((n) => (
+            <span key={n} className="wire-ticker-run">
+              ▶ {playable} PLAYABLE NOW · ◆ AI-BUILT CATALOG · ✦ 全{CATALOG.length}作品 · SIGNAL ISSUE · EST. 2026 ·
+            </span>
+          ))}
+        </p>
+      </div>
     </section>
   );
 }

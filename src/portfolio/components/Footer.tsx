@@ -45,6 +45,16 @@ export function Footer() {
             <dt>WORKS</dt>
             <dd>{CATALOG.length}</dd>
           </div>
+          {/*
+            * Sustainable web design as a colophon fact: the page's weight is
+            * part of how it was made. The figures are the measured budgets the
+            * gates hold (measure_closure.mjs / scripts/fonts.ts), not live
+            * telemetry — update them when the budgets move.
+            */}
+          <div>
+            <dt>PAGE WEIGHT</dt>
+            <dd>≈110KB first load · fonts 5.4KB gzip · three.js 0B</dd>
+          </div>
           <div>
             <dt>VERSION</dt>
             <dd>v{__APP_VERSION__}</dd>

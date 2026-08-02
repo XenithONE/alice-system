@@ -9,6 +9,17 @@
       content="インディーゲームスタジオ AlicE sYsTeM。AI と作る、いま遊べるゲームカタログ。全17作品のうち15本はブラウザで今すぐ遊べます。AI Lab のモデル比較とプロンプト全文も公開。"
     />
     <meta name="theme-color" content="#061c31" />
+    <!-- The reader's stored theme, applied before first paint so the light
+         issue never flashes dark. The toggle in SiteNav is the only writer of
+         alice_theme; this is the only boot-time reader. -->
+    <script>
+      try {
+        if (localStorage.getItem("alice_theme") === "light") {
+          document.documentElement.dataset.theme = "light";
+          document.querySelector('meta[name="theme-color"]').setAttribute("content", "#f6efe2");
+        }
+      } catch (e) {}
+    </script>
     <link rel="canonical" href="https://xenithone.github.io/alice-system/" />
     <link rel="icon" type="image/png" sizes="32x32" href="%BASE_URL%assets/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="64x64" href="%BASE_URL%assets/favicon-64.png" />

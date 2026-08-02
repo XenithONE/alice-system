@@ -233,7 +233,100 @@
 
   --plate-caption: rgba(4, 18, 32, 0.92);
   --chip-bg: rgba(6, 28, 49, 0.78);
+
+  /* ── 2026 accents ─────────────────────────────────────────────────────
+   * --spectrum is the one loud thing: a three-stop gradient reserved for
+   * decoration a reader never has to READ — the scroll bar, the masthead's
+   * em, the selection highlight, the endpaper wordmark. Body ink never
+   * touches it, which is what keeps the dopamine from costing AA.
+   *
+   * --accent-ink is amber's INK role. Amber survives as ink on every dark
+   * ground (8.57:1 on --bg) and fails on the light issue's paper (1.60:1),
+   * so rules that use amber AS INK reference the role and the light block
+   * swaps the role for --gold-ink. Amber as FILL stays --amber everywhere.
+   */
+  --magenta: #e0517c;
+  --spectrum: linear-gradient(100deg, #e6ad46 0%, #e0517c 52%, #08a9c5 100%);
+  --accent-ink: var(--amber);
+  --focus-ring: #ffc45b;
   color-scheme: dark;
+}
+
+/*
+ * ── the light issue ───────────────────────────────────────────────────────
+ * 2026's "dark mode" trend is really the toggle: the reader picks the stock.
+ * This is not a mirrored palette — grounds come from the existing paper
+ * family, ink from the existing dark family, and every status -text swaps to
+ * the saturated value that was tuned for light grounds all along (the token
+ * block above records that relationship). The lab and the stack strip were
+ * already paper and do not change.
+ *
+ * Deliberately NOT a second `:root` — [C5] counts that selector verbatim,
+ * and this is an override of the one token layer, not a rival to it.
+ */
+:root[data-theme="light"] {
+  --bg: #f6efe2;
+  --surface: #efe6d3;
+  --raised: #e9dcc3;
+  --panel: rgba(246, 239, 226, 0.92);
+  --hairline: rgba(6, 28, 49, 0.16);
+  --hairline-strong: rgba(6, 28, 49, 0.34);
+  --ink: #061c31;
+  --text: #223649;
+  --text-dim: #3d4b57;
+  --text-faint: #4e5f6d;
+  /* On the dark side this is var(--bg) — "the ink on paper IS the dark
+     ground". When --bg itself goes light the relationship must be pinned,
+     not inherited, or the lab's ink would turn paper-on-paper. */
+  --ink-paper: #061c31;
+  --accent-ink: var(--gold-ink);
+  --focus-ring: #8a5c12;
+  --live-text: #256a30;
+  --wishlist-text: #7d5008;
+  --download-text: var(--download);
+  --dev-text: var(--dev);
+  --plate-caption: rgba(246, 241, 231, 0.94);
+  --chip-bg: rgba(246, 241, 231, 0.85);
+  --elev-1: 0 1px 2px rgba(43, 34, 16, 0.18);
+  --elev-2: 0 8px 24px rgba(43, 34, 16, 0.16);
+  --elev-3: 0 30px 80px rgba(43, 34, 16, 0.22);
+  color-scheme: light;
+}
+
+/*
+ * The dark islands. The masthead and the closing spread keep their dark
+ * grounds in the light issue — a magazine's black spreads — so the tokens
+ * they actually read are re-pinned to the dark side's values. Their literal
+ * colours (footer text, veils, scanlines) never flipped in the first place.
+ */
+:root[data-theme="light"] .hero,
+:root[data-theme="light"] .site-footer {
+  --ink: #f6f1e7;
+  --text: #e4dfd6;
+  --text-dim: #b9c5ce;
+  --text-faint: #9fb0bc;
+  --hairline: rgba(246, 241, 231, 0.14);
+  --hairline-strong: rgba(246, 241, 231, 0.3);
+  --accent-ink: var(--amber);
+  --focus-ring: #ffc45b;
+  /* The full -text status set, not just live: the footer's WISHLIST CTA
+     shipped the light issue's #7d5008 on the dark endpaper (2.64:1) until
+     the audit caught it. An island re-pins every token it can read. */
+  --live-text: #57c274;
+  --wishlist-text: #d29a38;
+  --download-text: #57b3e6;
+  --dev-text: #b09bf0;
+}
+/* The masthead's ground was the page's own dark --bg; in the light issue it
+   has to bring its own. */
+:root[data-theme="light"] .hero {
+  background: #061c31;
+}
+
+/* The one dopamine hit a reader performs themselves. */
+::selection {
+  background: var(--magenta);
+  color: #ffffff;
 }
 
 html,
@@ -272,14 +365,16 @@ body {
    and style — a focus ring assembled from two files, which is one keystroke
    away from no focus ring at all. */
 :focus-visible {
-  outline: 2px solid #ffc45b;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 4px;
   border-radius: var(--r-1);
 }
 
+/* The spectrum's first job: the reading progress is the one honest scroll
+   timeline, so it carries the whole gradient. */
 .scroll-progress {
   height: 2px;
-  background: var(--amber);
+  background: var(--spectrum);
   box-shadow: none;
 }
 /* ══ editorial composition ═══════════════════════════════════════════════
@@ -320,7 +415,7 @@ body {
  * #stack gets 04 and the masthead gets 00.
  */
 .section-index {
-  color: var(--amber);
+  color: var(--accent-ink);
   font-size: var(--t--1);
   font-weight: 700;
   letter-spacing: 0.2em;
@@ -349,7 +444,7 @@ body {
   color: var(--ink);
   margin: clamp(28px, 4vw, 52px) 0 clamp(20px, 3vw, 36px);
   padding-left: clamp(16px, 2vw, 28px);
-  border-left: 2px solid var(--amber);
+  border-left: 2px solid var(--accent-ink);
   max-width: 18em;
 }
 @media (min-width: 900px) {
@@ -369,7 +464,7 @@ body {
 .colophon dt {
   font-size: var(--t--2);
   letter-spacing: 0.2em;
-  color: var(--amber);
+  color: var(--accent-ink);
 }
 .colophon dd {
   margin: 6px 0 0;
@@ -488,7 +583,7 @@ body {
   flex-wrap: wrap;
   align-items: stretch;
   gap: 0;
-  border-block: 1px solid rgba(246, 241, 231, 0.18);
+  border-block: 1px solid var(--hairline);
   background: linear-gradient(180deg, rgba(230, 173, 70, 0.04), transparent);
 }
 .catalog-filter-label {
@@ -499,16 +594,16 @@ body {
   font-family: var(--mono);
   font-size: 0.62rem;
   letter-spacing: 0.22em;
-  color: var(--amber);
-  border-right: 1px solid rgba(246, 241, 231, 0.15);
+  color: var(--accent-ink);
+  border-right: 1px solid var(--hairline);
 }
 
 .filter-tab {
   position: relative;
   padding: 13px 18px;
-  color: #b9c5ce;
+  color: var(--text-dim);
   border: 0;
-  border-right: 1px solid rgba(246, 241, 231, 0.15);
+  border-right: 1px solid var(--hairline);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -516,8 +611,8 @@ body {
 }
 
 .filter-tab:hover {
-  color: #f6f1e7;
-  border-color: rgba(246, 241, 231, 0.3);
+  color: var(--ink);
+  border-color: var(--hairline-strong);
   background: rgba(246, 241, 231, 0.03);
 }
 
@@ -540,18 +635,18 @@ body {
 }
 
 .detail-title {
-  color: #f6f1e7;
+  color: var(--ink);
 }
 
 .made-with,.detail-desc,.detail-tags {
-  color: #b9c5ce;
+  color: var(--text-dim);
 }
 
 .engine-chip,
 .badge.platform {
-  color: #b9c5ce;
-  border-color: rgba(246, 241, 231, 0.22);
-  background: #0d3454;
+  color: var(--text-dim);
+  border-color: var(--hairline-strong);
+  background: var(--raised);
 }
 
 .game-detail::backdrop {
@@ -561,18 +656,18 @@ body {
 .detail-shell {
   border: 1px solid rgba(230, 173, 70, 0.5);
   border-radius: 0;
-  background: #061c31;
+  background: var(--bg);
 }
 
 .detail-close {
-  color: #f6f1e7;
-  border-color: rgba(246, 241, 231, 0.3);
-  background: #0a2944;
+  color: var(--ink);
+  border-color: var(--hairline-strong);
+  background: var(--surface);
 }
 
 .detail-body,
 .detail-media {
-  background: #061c31;
+  background: var(--bg);
 }
 
 /* ── the fold: everything below sits on paper ─────────────────────────────
@@ -687,20 +782,20 @@ body {
 }
 
 .prompt-archive {
-  color: #e4dfd6;
-  border-color: rgba(246, 241, 231, 0.14);
-  background: #061c31;
+  color: var(--text);
+  border-color: var(--hairline);
+  background: var(--bg);
 }
 
 .prompt-row-title {
-  color: #f6f1e7;
+  color: var(--ink);
 }
 
 .prompt-panel-inner pre {
-  color: #d5dde2;
-  border-color: rgba(246, 241, 231, 0.2);
+  color: var(--text);
+  border-color: var(--hairline-strong);
   border-radius: 0;
-  background: #0a2944;
+  background: var(--surface);
 }
 
 /* The endpaper at the back of the book: one step down from the lab's leaf,
@@ -752,6 +847,17 @@ body {
 .footer-wordmark-accent {
   color: rgba(230, 173, 70, 0.18);
 }
+/* The endpaper wordmark's accent letters wear the spectrum at low opacity —
+   ghost ink, not signage. Fallback above keeps the amber ghost. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .footer-wordmark-accent {
+    background: var(--spectrum);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    opacity: 0.34;
+  }
+}
 
 .cursor-dot {
   background: #e6ad46;
@@ -791,7 +897,41 @@ body {
   width: 100%;
   max-width: var(--page-max);
   margin-inline: auto;
-  padding: clamp(72px, 12vh, 120px) var(--gutter) clamp(48px, 8vh, 88px);
+  /* Bottom padding clears the wire ticker pinned to the masthead's foot. */
+  padding: clamp(72px, 12vh, 120px) var(--gutter) clamp(86px, 12vh, 126px);
+}
+
+/* ── the wire ticker ──────────────────────────────────────────────────────
+ * A newsroom wire pinned to the masthead's foot: the catalogue's headline
+ * numbers on a slow loop. Decorative and aria-hidden — the same facts are
+ * already announced by .hero-signal above it. The track holds two identical
+ * runs so a -50% translate loops seamlessly; without motion it is simply a
+ * clipped static caption strip. Lives on the hero's pinned dark ground, so
+ * its colours are constants.
+ */
+.wire-ticker {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 1;
+  overflow: hidden;
+  border-top: 1px solid rgba(246, 241, 231, 0.14);
+  background: rgba(4, 22, 36, 0.62);
+}
+.wire-ticker-track {
+  display: flex;
+  width: max-content;
+  margin: 0;
+  padding: 9px 0;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+.wire-ticker-run {
+  padding-left: 2.6em;
 }
 .hero-title {
   font-family: var(--display);
@@ -810,6 +950,17 @@ body {
 .hero-title em {
   font-style: normal;
   color: var(--amber);
+}
+/* The masthead's em takes the spectrum as INK — clipped, not painted, so a
+   browser without background-clip falls back to plain amber above. Display
+   size only; body ink never wears the gradient. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .hero-title em {
+    background: var(--spectrum);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
 }
 .hero-signal {
   display: flex;
@@ -869,6 +1020,14 @@ section[id],
   }
   @keyframes hero-rise {
     from { opacity: 0; transform: translateY(14px); }
+  }
+  /* 52s per full loop — wire-slow, legible, and cheap: one composited
+     translate on a fixed-content track. */
+  .wire-ticker-track {
+    animation: wire-scroll 52s linear infinite;
+  }
+  @keyframes wire-scroll {
+    to { translate: -50% 0; }
   }
 }
 
@@ -1084,7 +1243,7 @@ section[id],
 .bt-detail {
   position: relative; z-index: 3;
   font-family: var(--mono); font-size: var(--t--2); letter-spacing: 0.08em;
-  color: var(--amber); background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--accent-ink); background: none; border: 0; padding: 0; cursor: pointer;
   text-decoration: underline; text-underline-offset: 3px;
   transition: color var(--dur-2) var(--ease-out);
 }
@@ -1210,13 +1369,32 @@ section[id],
   background: var(--surface);
   outline: 1px solid transparent;
   outline-offset: -1px;
-  transition: outline-color var(--dur-2) var(--ease-out);
+  transition: outline-color var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-out);
 }
-.featured-card:hover { outline-color: rgba(230, 173, 70, 0.45); }
+/* The plate tilts toward the reader — a degree of perspective, not a card
+   levitation. Reduced motion pins it flat below. */
+.featured-card:hover {
+  outline-color: rgba(230, 173, 70, 0.45);
+  transform: perspective(1100px) rotateX(1.05deg) translateY(-3px);
+}
 .featured-media {
   position: relative;
   aspect-ratio: 16 / 10;
   overflow: hidden;
+}
+/* A light sweep across the glass on hover. Sits under the caption (which is
+   absolutely placed after it) and takes no clicks. */
+.featured-media::after {
+  content: "";
+  position: absolute;
+  inset: -30% -20%;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 42%, rgba(246, 241, 231, 0.13) 50%, transparent 58%);
+  translate: -130% 0;
+  transition: translate 0.72s var(--ease-out);
+}
+.featured-card:hover .featured-media::after {
+  translate: 130% 0;
 }
 .featured-media img {
   width: 100%;
@@ -1280,8 +1458,11 @@ section[id],
   .featured-shade,
   .hero-canvas,
   .hero-fallback { transition: none; }
+  .featured-card { transition: outline-color 0s; }
+  .featured-card:hover { transform: none; }
   .featured-card:hover .featured-media img { scale: 1; }
   .featured-card:hover .featured-shade { opacity: 1; }
+  .featured-media::after { display: none; }
 }
 
 }
