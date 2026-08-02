@@ -9,18 +9,18 @@ share preview and every search result was advertising a page the link does
 not lead to — 367,700 bytes of a picture of somewhere else.
 
 The safest thing an OG card can be is a picture of the page it links to. This
-one is: the same ground, the same amber, the same folio, and the same three
-lines of headline the masthead sets. Nothing here is invented, which is the
-property that stops it going stale in a different way.
+one is: the same ground, the same amber, the same folio, and the same brand
+lockup and signal line the masthead sets. Nothing here is invented, which is
+the property that stops it going stale in a different way.
 
-## Where the numbers come from
+## Where the number comes from
 
-`--count`/`--live` are passed in by the caller, which reads them from
-bento.ts. They are not typed here — the description in index.html already
-drifted from 14 to 16 once by being written by hand, and cssSelftest [C9]
-now fails if index.html and CATALOG.length disagree.
+`--live` is passed in by the caller, which reads it from bento.ts. It is not
+typed here — the description in index.html already drifted from 14 to 16 once
+by being written by hand, and cssSelftest [C9] now fails if index.html and
+CATALOG.length disagree. The masthead itself only renders the playable count.
 
-Run: python scripts/make_og.py --count 16 --live 12
+Run: python scripts/make_og.py --live 15
 """
 import argparse
 import os
@@ -33,6 +33,8 @@ BG = (6, 28, 49)
 INK = (246, 241, 231)
 AMBER = (230, 173, 70)
 DIM = (185, 197, 206)
+FAINT = (159, 176, 188)
+LIVE = (87, 194, 116)
 HAIRLINE = (44, 62, 80)
 
 W, H = 1200, 630
@@ -50,7 +52,6 @@ def font(name: str, size: int, index: int = 0) -> ImageFont.FreeTypeFont:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--count", type=int, required=True)
     ap.add_argument("--live", type=int, required=True)
     ap.add_argument("--out", default="public/assets/og-catalog.jpg")
     args = ap.parse_args()
@@ -68,27 +69,40 @@ def main() -> None:
     d = ImageDraw.Draw(img)
 
     mono = font("consolab.ttf", 21)
-    display = font("arialbd.ttf", 104)
+    signal_font = font("consolab.ttf", 24)
+    display = font("arialbd.ttf", 116)
     jp = font("YuGothB.ttc", 27)
 
     # Folio, on a rule the number breaks — the page's own device.
-    folio = "00 / MASTHEAD"
+    folio = "00 / SIGNAL ISSUE"
     d.line([(MARGIN, MARGIN + 11), (W - MARGIN, MARGIN + 11)], fill=HAIRLINE, width=1)
     fw = d.textlength(folio, font=mono)
     d.rectangle([MARGIN - 2, MARGIN - 6, MARGIN + fw + 22, MARGIN + 28], fill=BG)
     d.text((MARGIN, MARGIN - 3), folio, font=mono, fill=AMBER)
 
-    # The masthead, set as three lines exactly as EditorialHero renders them.
-    lines = [(f"{args.count} works.", INK), (f"{args.live} playable", AMBER), ("right now.", INK)]
-    STEP = 108
+    # The masthead, set as EditorialHero renders it: the brand over two lines,
+    # the "Te" broken out in amber, then the signal line, then the JP lede.
+    STEP = 122
     JP_BASELINE = H - 118
-    # Grow upward from the caption so a fourth line could never land on it.
-    y = JP_BASELINE - 34 - STEP * len(lines)
-    for text, colour in lines:
-        d.text((MARGIN, y), text, font=display, fill=colour)
-        y += STEP
+    SIGNAL_Y = JP_BASELINE - 52
+    # Grow upward from the lede so the lockup can never land on it.
+    y = SIGNAL_Y - 34 - STEP * 2
 
-    d.text((MARGIN, JP_BASELINE), "AI と共に作る、遊べる作品のカタログ。", font=jp, fill=DIM)
+    d.text((MARGIN, y), "AlicE", font=display, fill=INK)
+    y += STEP
+    x = MARGIN
+    for segment, colour in (("sYs", INK), ("Te", AMBER), ("M", INK)):
+        d.text((x, y), segment, font=display, fill=colour)
+        x += d.textlength(segment, font=display)
+
+    live_text = f"{args.live} PLAYABLE"
+    d.text((MARGIN, SIGNAL_Y), live_text, font=signal_font, fill=LIVE)
+    x = MARGIN + d.textlength(live_text, font=signal_font)
+    d.text((x, SIGNAL_Y), " · ", font=signal_font, fill=AMBER)
+    x += d.textlength(" · ", font=signal_font)
+    d.text((x, SIGNAL_Y), "AI-BUILT CATALOG", font=signal_font, fill=FAINT)
+
+    d.text((MARGIN, JP_BASELINE), "AI と作る、いま遊べるゲームカタログ。", font=jp, fill=DIM)
 
     d.line([(MARGIN, H - 74), (W - MARGIN, H - 74)], fill=HAIRLINE, width=1)
     d.text((MARGIN, H - 58), "ALICE SYSTEM", font=mono, fill=INK)

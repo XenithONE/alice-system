@@ -18,7 +18,7 @@ export function FeaturedStrip() {
           いま注目のタイトル
         </h2>
         <p className="section-lede">
-          カタログの中で特に手をかけた作品。紹介文はそのまま、見せ方だけを大きく。
+          特に手をかけた作品を、大きく。
         </p>
       </header>
 
@@ -31,7 +31,7 @@ export function FeaturedStrip() {
               <div className="featured-media">
                 <img
                   src={BASE + img}
-                  alt=""
+                  alt={work.titleJa ? `${work.title} — ${work.titleJa}` : work.title}
                   width={1280}
                   height={800}
                   loading="lazy"
