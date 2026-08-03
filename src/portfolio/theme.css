@@ -261,6 +261,13 @@
 
   /* Translucent films, written against the theme's own ink and ground so
      they invert with it instead of being re-authored per theme. */
+  /* Glass is an edge and a light, not a transparency. --glass-sheen is the
+     side the light lands on, --glass-edge the side it does not. They are
+     tokens rather than literals because "the lit side" is white on a white
+     wall and warm bone on a navy one — the same fact, two issues. */
+  --glass-sheen: rgb(255 255 255 / 0.92);
+  --glass-edge: rgb(var(--ink-rgb) / 0.1);
+
   --hover-film: rgb(var(--ink-rgb) / 0.04);
   --scan-film: rgb(var(--ink-rgb) / 0.035);
   --wordmark-ghost: rgb(var(--ink-rgb) / 0.07);
@@ -340,6 +347,8 @@
   /* Glow, not ink: on navy the saturated spectrum is the whole point. */
   --spectrum: linear-gradient(100deg, #e6ad46 0%, #e0517c 52%, #08a9c5 100%);
   --shine: rgb(var(--ink-rgb) / 0.13);
+  --glass-sheen: rgb(246 241 231 / 0.16);
+  --glass-edge: rgb(246 241 231 / 0.22);
   --ticker-bg: rgba(4, 22, 36, 0.62);
   --elev-1: 0 1px 2px rgba(1, 14, 25, 0.4);
   --elev-2: 0 8px 24px rgba(1, 14, 25, 0.45);
@@ -1291,6 +1300,11 @@ html.motion-on .hero-cue-dash {
   overflow: hidden;
   border-radius: var(--r-0);
   background: var(--surface);
+  /* On white the shadow is the only thing that says "this sits ON the wall".
+     Two parts, because one blur cannot be both: a tight contact shadow that
+     seats the plate and a wide ambient one that lifts it. A hairline carries
+     the edge where the shadow is too faint to. */
+  box-shadow: var(--elev-1);
   transition: outline-color var(--dur-2) var(--ease-out);
   outline: 1px solid transparent;
   outline-offset: -1px;
@@ -1318,6 +1332,10 @@ html.motion-on .hero-cue-dash {
 @media (hover: hover) and (pointer: fine) {
   html.motion-on .bt-media img { transition: scale var(--dur-3) var(--ease-out); }
   html.motion-on .bento-tile:hover .bt-media img { scale: 1.03; }
+  /* The plate rises off the wall as it tilts — the shadow has to grow with
+     it or the tilt reads as a texture rather than a movement. */
+  html.motion-on .bento-tile { transition: outline-color var(--dur-2) var(--ease-out), box-shadow var(--dur-3) var(--ease-out); }
+  html.motion-on .bento-tile:hover { box-shadow: var(--elev-2); }
 }
 
 .bt-body {
@@ -1599,9 +1617,13 @@ html.fluid-on .hero-fallback { display: none; }
   --d: 0;
   --dabs: 0;
   --dx: 0%;
-  background:
-    linear-gradient(135deg, rgb(var(--ink-rgb) / 0.02), transparent 42%),
-    var(--surface);
+  /* A SOLID ground, deliberately. The first version painted the glass as a
+     background gradient, and the contrast audit skips any element sitting
+     over a background-image — so the plate's own type became the one text
+     on the page nobody was checking, and it shipped near-illegible on the
+     dark issue without a single failure. The glass is built from the border
+     and the inset lights below, which the audit can see straight through. */
+  background: var(--surface);
   border: 1px solid var(--hairline);
   box-shadow: var(--elev-2);
 }
@@ -1705,14 +1727,12 @@ html.fluid-on .hero-fallback { display: none; }
 .glass-stage.is-3d .glass-panel[data-centre] {
   filter: none;
   opacity: 1;
-  background:
-    linear-gradient(135deg, rgb(255 255 255 / 0.7), rgb(244 248 252 / 0.35)),
-    var(--raised);
-  border-color: rgb(255 255 255 / 0.9);
+  background: var(--raised);
+  border-color: var(--glass-edge);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.95),
-    inset 0 -1px 0 rgb(var(--ink-rgb) / 0.06),
-    0 0 0 1px rgb(var(--ink-rgb) / 0.08),
+    inset 0 1px 0 var(--glass-sheen),
+    inset 0 -1px 0 var(--glass-edge),
+    0 0 0 1px var(--glass-edge),
     var(--elev-3);
   /* Exactly one pane refracts. The filter re-reads the ground beneath it
      every frame, and the fluid is moving down there — four of these would
