@@ -9,6 +9,7 @@ import { Prompts } from "./components/Prompts";
 import { StackStrip } from "./components/StackStrip";
 import { Footer } from "./components/Footer";
 import { CursorFX } from "./components/CursorFX";
+import { FluidRoot } from "./components/FluidRoot";
 import { useReveal } from "./useReveal";
 import { watchOsPreference } from "./motion";
 import type { Work } from "../data/works";
@@ -53,6 +54,7 @@ export default function PortfolioApp() {
       <a className="skip-link" href="#main-content">
         本文へ移動
       </a>
+      <FluidRoot />
       <CursorFX />
       {/*
        * Driven entirely by CSS: animation-timeline: scroll(root block). What

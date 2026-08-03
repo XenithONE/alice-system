@@ -338,6 +338,32 @@ body {
   color: var(--text);
 }
 
+/* ── the fluid ground ─────────────────────────────────────────────────────
+ * A fixed z:-1 canvas under the whole document. CSS paint order puts the
+ * body's own background OVER negative z-index children, so while the fluid
+ * is live the body goes transparent and <html> keeps var(--bg) as the
+ * final fallback — kill the GL at any moment and the page is exactly the
+ * static site again. The paper leaves, the prompt archive and the closing
+ * spread keep their opaque grounds and simply cover the fluid: the quiet
+ * sections are quiet by construction, not by script.
+ *
+ * `fluid-on` and `is-live` are written only by FluidRoot. The opacity
+ * transition is state feedback, not motion — it stays unguarded.
+ */
+.fluid-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-5) var(--ease-out);
+}
+.fluid-canvas.is-live { opacity: 1; }
+html.fluid-on body { background: transparent; }
+/* The light issue reads on paper; the weather stays but is dimmed to a
+   suggestion. The hero keeps its own dark plate either way. */
+:root[data-theme="light"] .fluid-canvas.is-live { opacity: 0.5; }
+
 /*
  * Both names, in the file both pages load.
  *

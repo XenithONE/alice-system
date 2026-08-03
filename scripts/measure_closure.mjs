@@ -29,7 +29,7 @@ const BANNED = {
 };
 
 /** Budget in gzip bytes for the first-load JS closure. */
-const BUDGET = { "index.html": 85_000 }; // v3.2: featured strip + canvas hero (still no three.js)
+const BUDGET = { "index.html": 95_000 }; // v13: raw-WebGL2 fluid layer + MOTION toggle (still no three.js)
 
 const gz = (p) => gzipSync(readFileSync(p)).length;
 
@@ -105,6 +105,7 @@ for (const page of pages.sort()) {
 // The heavy chunks must still be reachable from the pages that need them —
 // a "win" that deleted the physics engine would otherwise look like a pass.
 const REQUIRED = {
+  "index.html": /^fluidLayer-/,
   "scrap-crown.html": /^rapier-/,
   "vortex-crown.html": /^rapier-/,
   "hollow-ward.html": /^spark\.module-/,
