@@ -15,9 +15,17 @@
  *   noticed for two versions because there is nothing to notice: the page
  *   renders, it just renders the loser's values.
  *
- *   Reduced motion — a rule that escapes the contract is invisible on every
- *   machine except one belonging to someone who turned the setting on.
- *   portfolio.css's own comment says that machine is the owner's.
+ *   Motion — v13 moved the contract from "inside the no-preference media
+ *   query" to "inside an html.motion-on scope". The class is planted before
+ *   first paint by the boot scripts (index.html / harbor.html): stored "on"
+ *   outranks the OS reduce preference, stored "off" outranks it the other
+ *   way, nothing follows the OS. The structural guarantee is inverted but
+ *   equivalent: the DEFAULT is that the class is absent and the page is
+ *   still. A rule that escapes the scope moves for someone who asked for
+ *   stillness; a @keyframes left inside a reduced-motion media query dies
+ *   in the one configuration the toggle exists for (OS=reduce + toggle=ON)
+ *   — the animation-name resolves to nothing, silently, on the owner's own
+ *   machine. [C2] and [C2b] exist for that exact failure.
  *
  * Run: npx tsx scripts/cssSelftest.ts
  */
@@ -190,51 +198,116 @@ const files = SCANNED.map((name) => {
   );
 }
 
-/* ── [C2] every keyframes is inside the opt-in wrapper ────────────────────
- * Declared inside the media query, a @keyframes does not exist when the query
- * fails, so an animation-name referencing it resolves to nothing. That makes
- * the guard structural rather than a second rule someone has to remember.
+/* ── the motion contract ──────────────────────────────────────────────────
+ * The single source of truth for "may this page move" is the html.motion-on
+ * class (see src/portfolio/motion.ts). CSS must key off that class and only
+ * that class:
+ *
+ *   - a media-query guard cannot express the toggle. `@media (no-preference)`
+ *     is FALSE for a reduce-OS reader who explicitly turned motion ON — a
+ *     keyframes or player left inside it dies precisely for them, silently.
+ *   - therefore [C2] inverts: keyframes must sit OUTSIDE any
+ *     prefers-reduced-motion context (an unplayed keyframes is inert; [C3]
+ *     polices the players), and [C2b] bans the query from these two files
+ *     outright so a second guard channel cannot quietly return. Two guards
+ *     for one fact is the cascade-duplication defect in a different coat.
  */
-const NO_PREF = /prefers-reduced-motion\s*:\s*no-preference/;
+const PRM = /prefers-reduced-motion/;
+/* Scope test: EVERY comma-alternative must start with html.motion-on — a rule
+ * that is half-scoped is unscoped. html. prefix keeps specificity uniform. */
+const MOTION_SCOPE = /^html\.motion-on(?![\w-])/;
+const motionScoped = (rule: Rule): boolean =>
+  rule.selector.split(",").every((s) => MOTION_SCOPE.test(s.trim()));
+
+/* ── [C2] no keyframes inside a reduced-motion media context ──────────────
+ * Inside the query, the keyframes ceases to exist when the query fails — and
+ * with the toggle, "query fails" includes the one configuration the toggle
+ * exists for (OS=reduce + stored "on"). The name resolves to nothing and
+ * every player of it goes still with no error anywhere.
+ */
 {
-  const escaped = files.flatMap((f) =>
-    f.keyframes.filter((k) => !k.atRules.some((a) => NO_PREF.test(a))).map((k) => `${f.name}:${k.line} @keyframes ${k.name}`)
+  const trapped = files.flatMap((f) =>
+    f.keyframes.filter((k) => k.atRules.some((a) => PRM.test(a))).map((k) => `${f.name}:${k.line} @keyframes ${k.name}`)
   );
   check(
-    "[C2] 全ての @keyframes が no-preference ラッパの内側にある",
-    escaped.length === 0,
-    escaped.length === 0 ? `${files.reduce((n, f) => n + f.keyframes.length, 0)} 件すべて内側` : escaped.join(" / ")
+    "[C2] @keyframes が prefers-reduced-motion 文脈の外側にある（トグルONで名前が空解決しないため）",
+    trapped.length === 0,
+    trapped.length === 0 ? `${files.reduce((n, f) => n + f.keyframes.length, 0)} 件すべて外側` : trapped.join(" / ")
   );
 }
 
-/* ── [C3] every animation-name referring to one is guarded too ────────────
- * [C2] alone is not enough: the keyframes can be inside the wrapper while the
- * rule that plays it sits outside, which is exactly how `pulse` shipped — the
- * animation ran and a separate `reduce` rule was expected to remember to stop
- * it.
+/* ── [C2b] the media query itself is gone from these two files ────────────
+ * Full-migration guarantee. If both the class scope and a media guard exist,
+ * [C1] cannot see the pair (different context, different selector) and the
+ * shipped value is decided by specificity accident — the same defect class
+ * [C1] exists to kill. One channel, structurally.
+ */
+{
+  const mentions = files.flatMap((f) => {
+    const lines: string[] = [];
+    f.text.split("\n").forEach((line, i) => {
+      if (PRM.test(line)) lines.push(`${f.name}:${i + 1}`);
+    });
+    return lines;
+  });
+  check(
+    "[C2b] prefers-reduced-motion が走査CSSに一切現れない（ガードは html.motion-on の一本）",
+    mentions.length === 0,
+    mentions.length === 0 ? "0 件" : mentions.join(" / ")
+  );
+}
+
+/* ── [C3] everything that plays or moves is inside the motion scope ───────
+ * Three shapes of "moves":
+ *   1. plays a keyframes declared in these files
+ *   2. transitions a movement property (transform / translate / scale /
+ *      rotate) — colour and opacity feedback is not motion and stays free
+ *   3. declares a movement property on :hover / :focus
+ * Each must have every comma-alternative of its selector begin with
+ * html.motion-on. This is the old [C3] plus the job the deleted
+ * `@media (reduce)` neutraliser blocks used to do — the neutralisers are
+ * gone because a rule that does not exist needs no neutralising.
  */
 {
   const names = new Set(files.flatMap((f) => f.keyframes.map((k) => k.name)));
+  const MOVE_PROP = /(^|[\s,])(transform|translate|scale|rotate)\b/;
   const escaped: string[] = [];
   for (const file of files) {
     for (const rule of file.rules) {
-      const value = rule.decls.get("animation") ?? rule.decls.get("animation-name");
-      if (!value) continue;
-      if (![...names].some((n) => new RegExp(`(^|\\s)${n}(\\s|$)`).test(value))) continue;
-      if (!rule.atRules.some((a) => NO_PREF.test(a))) {
-        escaped.push(`${file.name}:${rule.line} ${rule.selector} { ${value} }`);
+      if (motionScoped(rule)) continue;
+
+      const anim = rule.decls.get("animation") ?? rule.decls.get("animation-name");
+      if (anim && [...names].some((n) => new RegExp(`(^|\\s)${n}(\\s|$)`).test(anim))) {
+        escaped.push(`${file.name}:${rule.line} ${rule.selector} { animation: ${anim} }`);
+        continue;
+      }
+
+      const transition = rule.decls.get("transition") ?? rule.decls.get("transition-property");
+      if (transition && MOVE_PROP.test(transition)) {
+        escaped.push(`${file.name}:${rule.line} ${rule.selector} { transition: ${transition} }`);
+        continue;
+      }
+
+      if (/:(hover|focus)/.test(rule.selector)) {
+        for (const prop of ["transform", "translate", "scale", "rotate"]) {
+          const v = rule.decls.get(prop);
+          if (v && v !== "none") {
+            escaped.push(`${file.name}:${rule.line} ${rule.selector} { ${prop}: ${v} }`);
+            break;
+          }
+        }
       }
     }
   }
   check(
-    "[C3] キーフレームを再生する規則も no-preference の内側にある",
+    "[C3] 動くもの（keyframes再生・移動プロパティのtransition・hover/focusの移動宣言）は html.motion-on 配下",
     escaped.length === 0,
-    escaped.length === 0 ? "全て内側" : escaped.join(" / ")
+    escaped.length === 0 ? "全て配下" : escaped.join(" / ")
   );
 }
 
 /* ── [C4] scroll-driven motion is guarded twice ───────────────────────────
- * @supports because ~16% of browsers have no timeline, and no-preference
+ * @supports because ~16% of browsers have no timeline, and html.motion-on
  * because a scrubbed animation is still animation.
  */
 {
@@ -243,15 +316,15 @@ const NO_PREF = /prefers-reduced-motion\s*:\s*no-preference/;
     for (const rule of file.rules) {
       if (!rule.decls.has("animation-timeline")) continue;
       const supports = rule.atRules.some((a) => a.startsWith("@supports"));
-      const pref = rule.atRules.some((a) => NO_PREF.test(a));
-      if (!supports || !pref) {
-        bad.push(`${file.name}:${rule.line} ${rule.selector} (supports=${supports} no-preference=${pref})`);
+      const scoped = motionScoped(rule);
+      if (!supports || !scoped) {
+        bad.push(`${file.name}:${rule.line} ${rule.selector} (supports=${supports} motion-on=${scoped})`);
       }
     }
   }
   const total = files.reduce((n, f) => n + f.rules.filter((r) => r.decls.has("animation-timeline")).length, 0);
   check(
-    "[C4] スクロール駆動は @supports と no-preference の二重ガードの内側",
+    "[C4] スクロール駆動は @supports と html.motion-on の二重ガードの内側",
     bad.length === 0,
     bad.length === 0 ? `${total} 件すべて二重ガード` : bad.join(" / ")
   );

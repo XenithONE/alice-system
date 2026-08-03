@@ -1,17 +1,21 @@
 import { useEffect, useRef } from "react";
+import { useMotion } from "../motion";
 
 // Custom cursor (dot + trailing ring, difference blend) with a magnetic pull on
-// [data-magnetic] elements. Desktop fine-pointer only; disabled for reduced motion.
+// [data-magnetic] elements. Desktop fine-pointer only; motion-gated — reads the
+// html.motion-on truth via useMotion, never the media query directly, so the
+// MOTION toggle switches it live in both directions.
 export function CursorFX() {
+  const motion = useMotion();
   const dotRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!motion) return;
     const dot = dotRef.current;
     const ring = ringRef.current;
     if (!dot || !ring) return;
     if (window.matchMedia("(pointer: coarse)").matches) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     document.documentElement.classList.add("cursor-on");
     let x = -100;
@@ -69,7 +73,11 @@ export function CursorFX() {
       document.documentElement.classList.remove("cursor-on");
       if (magnetic) magnetic.style.transform = "";
     };
-  }, []);
+  }, [motion]);
+
+  // Without motion the elements do not render at all — the old CSS hid them
+  // from a reduce block that no longer exists.
+  if (!motion) return null;
 
   return (
     <>

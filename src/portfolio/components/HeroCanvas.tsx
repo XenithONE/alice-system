@@ -1,21 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { hasWebGL } from "../../lib/webgl";
+import { useMotion } from "../motion";
 import type { HeroSignalHandle } from "../gl/heroSignal";
 
 const BASE = import.meta.env.BASE_URL;
 
 /**
- * Lazy WebGL signal behind the masthead. Falls back to a static cover collage
- * when WebGL is missing, reduced-motion is on, or the viewport is narrow.
+ * Lazy canvas signal behind the masthead. Falls back to a static cover collage
+ * when WebGL is missing, motion is off, or the viewport is narrow. Motion
+ * truth comes from html.motion-on (useMotion), never the media query.
  */
 export function HeroCanvas() {
+  const motion = useMotion();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [mode, setMode] = useState<"pending" | "webgl" | "fallback">("pending");
 
   useEffect(() => {
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const narrow = window.matchMedia("(max-width: 720px)").matches;
-    if (reduced || narrow || !hasWebGL()) {
+    if (!motion || narrow || !hasWebGL()) {
       setMode("fallback");
       return;
     }
@@ -49,7 +51,7 @@ export function HeroCanvas() {
       if (timeoutId) window.clearTimeout(timeoutId);
       handle?.dispose();
     };
-  }, []);
+  }, [motion]);
 
   const fallbackStyle = {
     backgroundImage: [

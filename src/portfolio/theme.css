@@ -1004,31 +1004,32 @@ section[id],
   scroll-margin-top: 76px;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .hero-line {
-    animation: hero-rise 0.48s var(--ease) backwards;
-  }
-  .hero-line:nth-child(2) { animation-delay: 0.07s; }
-  .hero-signal {
-    animation: hero-rise 0.48s var(--ease) 0.12s backwards;
-  }
-  .hero-lede {
-    animation: hero-rise 0.48s var(--ease) 0.16s backwards;
-  }
-  .hero-actions {
-    animation: hero-rise 0.48s var(--ease) 0.2s backwards;
-  }
-  @keyframes hero-rise {
-    from { opacity: 0; transform: translateY(14px); }
-  }
-  /* 52s per full loop — wire-slow, legible, and cheap: one composited
-     translate on a fixed-content track. */
-  .wire-ticker-track {
-    animation: wire-scroll 52s linear infinite;
-  }
-  @keyframes wire-scroll {
-    to { translate: -50% 0; }
-  }
+/* Keyframes live at the top level — an unplayed keyframes is inert, and
+   keeping them out of any media context is what lets the MOTION toggle work
+   on a reduce-OS machine ([C2]). The players carry the scope. */
+@keyframes hero-rise {
+  from { opacity: 0; transform: translateY(14px); }
+}
+@keyframes wire-scroll {
+  to { translate: -50% 0; }
+}
+html.motion-on .hero-line {
+  animation: hero-rise 0.48s var(--ease) backwards;
+}
+html.motion-on .hero-line:nth-child(2) { animation-delay: 0.07s; }
+html.motion-on .hero-signal {
+  animation: hero-rise 0.48s var(--ease) 0.12s backwards;
+}
+html.motion-on .hero-lede {
+  animation: hero-rise 0.48s var(--ease) 0.16s backwards;
+}
+html.motion-on .hero-actions {
+  animation: hero-rise 0.48s var(--ease) 0.2s backwards;
+}
+/* 52s per full loop — wire-slow, legible, and cheap: one composited
+   translate on a fixed-content track. */
+html.motion-on .wire-ticker-track {
+  animation: wire-scroll 52s linear infinite;
 }
 
 /* ── works bento ──────────────────────────────────────────────────────────
@@ -1118,9 +1119,13 @@ section[id],
 .bt-media { min-width: 0; min-height: 0; }
 .bt-media img {
   width: 100%; height: 100%; object-fit: cover; display: block;
-  transition: scale var(--dur-3) var(--ease-out);
 }
-.bento-tile:hover .bt-media img { scale: 1.03; }
+/* The breathing of the picture is pointer choreography: motion scope plus a
+   real hover device. Without either, the base above is the whole story. */
+@media (hover: hover) and (pointer: fine) {
+  html.motion-on .bt-media img { transition: scale var(--dur-3) var(--ease-out); }
+  html.motion-on .bento-tile:hover .bt-media img { scale: 1.03; }
+}
 
 .bt-body {
   display: flex; flex-direction: column; justify-content: flex-end;
@@ -1288,13 +1293,9 @@ section[id],
   .bt-s .bt-ja, .bt-s .bt-desc, .bt-p .bt-desc { display: block; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .bento-tile, .bt-media img, .bt-detail { transition: none; }
-  /* scale and translate, not transform: the tile moved to the independent
-     properties so the hover, the reveal and CursorFX's magnetic pull can each
-     own one. A neutraliser naming the old property stops neutralising. */
-  .bento-tile:hover .bt-media img { scale: 1; }
-}
+/* The reduce neutraliser block that used to sit here is gone by design:
+   the hover/reveal motion above now exists only inside the motion scope,
+   and a rule that does not exist needs no neutralising ([C2b]). */
 
 
 /* ── cinematic hero stage (3D signal + collage fallback) ────────────────── */
@@ -1369,40 +1370,47 @@ section[id],
   background: var(--surface);
   outline: 1px solid transparent;
   outline-offset: -1px;
-  transition: outline-color var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-out);
+  transition: outline-color var(--dur-2) var(--ease-out);
 }
-/* The plate tilts toward the reader — a degree of perspective, not a card
-   levitation. Reduced motion pins it flat below. */
-.featured-card:hover {
-  outline-color: rgba(230, 173, 70, 0.45);
-  transform: perspective(1100px) rotateX(1.05deg) translateY(-3px);
-}
+.featured-card:hover { outline-color: rgba(230, 173, 70, 0.45); }
 .featured-media {
   position: relative;
   aspect-ratio: 16 / 10;
   overflow: hidden;
 }
-/* A light sweep across the glass on hover. Sits under the caption (which is
-   absolutely placed after it) and takes no clicks. */
-.featured-media::after {
-  content: "";
-  position: absolute;
-  inset: -30% -20%;
-  pointer-events: none;
-  background: linear-gradient(115deg, transparent 42%, rgba(246, 241, 231, 0.13) 50%, transparent 58%);
-  translate: -130% 0;
-  transition: translate 0.72s var(--ease-out);
-}
-.featured-card:hover .featured-media::after {
-  translate: 130% 0;
+/* Tilt and shine are pointer choreography — motion scope plus a real hover
+   device, or they do not exist at all. The plate tilts toward the reader by
+   a degree of perspective, not a card levitation; the sweep sits under the
+   caption (absolutely placed after it) and takes no clicks. */
+@media (hover: hover) and (pointer: fine) {
+  html.motion-on .featured-card {
+    transition: outline-color var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-out);
+  }
+  html.motion-on .featured-card:hover {
+    transform: perspective(1100px) rotateX(1.05deg) translateY(-3px);
+  }
+  html.motion-on .featured-media::after {
+    content: "";
+    position: absolute;
+    inset: -30% -20%;
+    pointer-events: none;
+    background: linear-gradient(115deg, transparent 42%, rgba(246, 241, 231, 0.13) 50%, transparent 58%);
+    translate: -130% 0;
+    transition: translate 0.72s var(--ease-out);
+  }
+  html.motion-on .featured-card:hover .featured-media::after {
+    translate: 130% 0;
+  }
 }
 .featured-media img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: scale var(--dur-4) var(--ease-out);
 }
-.featured-card:hover .featured-media img { scale: 1.055; }
+@media (hover: hover) and (pointer: fine) {
+  html.motion-on .featured-media img { transition: scale var(--dur-4) var(--ease-out); }
+  html.motion-on .featured-card:hover .featured-media img { scale: 1.055; }
+}
 .featured-shade {
   position: absolute;
   inset: 0;
@@ -1453,17 +1461,9 @@ section[id],
   margin-top: 10px;
 }
 .featured-kicker { margin: 0; }
-@media (prefers-reduced-motion: reduce) {
-  .featured-media img,
-  .featured-shade,
-  .hero-canvas,
-  .hero-fallback { transition: none; }
-  .featured-card { transition: outline-color 0s; }
-  .featured-card:hover { transform: none; }
-  .featured-card:hover .featured-media img { scale: 1; }
-  .featured-card:hover .featured-shade { opacity: 1; }
-  .featured-media::after { display: none; }
-}
+/* No reduce neutraliser here either — tilt, shine and zoom exist only under
+   html.motion-on now, so the still page is the base sheet, not a correction
+   applied on top of a moving one. */
 
 }
 /* ── end @layer theme ─────────────────────────────────────────────────── */

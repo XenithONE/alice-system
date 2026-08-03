@@ -33,7 +33,11 @@
 *, *::before, *::after { box-sizing: border-box; }
 * { margin: 0; padding: 0; }
 
-html { min-width: 320px; scroll-behavior: smooth; }
+html { min-width: 320px; }
+/* Smooth scrolling is motion. The old form set it globally and had a reduce
+   block un-set it; now the rule simply does not exist unless the reader's
+   motion state says so. */
+html.motion-on { scroll-behavior: smooth; }
 body {
   min-width: 320px; overflow-x: hidden;
   font-family: var(--sans); font-size: 16px; line-height: 1.8; letter-spacing: 0.01em;
@@ -69,8 +73,14 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .section-head { margin-bottom: clamp(30px, 5vw, 52px); }
 .section-head h2 { margin: 12px 0 14px; }
 .section-lede { max-width: 30em; }
-[data-reveal] { opacity: 0; translate: 0 var(--rise-3); transition: opacity var(--dur-5) var(--ease-out), translate var(--dur-5) var(--ease-out); }
-[data-reveal].is-in { opacity: 1; translate: none; }
+/* The reveal exists only inside the motion scope. The BASE state of
+   [data-reveal] is fully visible — that is what a still page means. Scoping
+   the hidden state (not neutralising it later) is what makes "reduce + no
+   stored choice" readable: forget this prefix and the body of the page ships
+   at opacity 0 for exactly those readers. [C3] catches the transition;
+   verify_v13 checks the computed opacity. */
+html.motion-on [data-reveal] { opacity: 0; translate: 0 var(--rise-3); transition: opacity var(--dur-5) var(--ease-out), translate var(--dur-5) var(--ease-out); }
+html.motion-on [data-reveal].is-in { opacity: 1; translate: none; }
 
 /* ── site nav ─────────────────────────────────────────────────────────────── */
 .site-nav { position: sticky; top: 0; z-index: 100; background: var(--panel); backdrop-filter: blur(10px); border-bottom: 1px solid var(--hairline); }
@@ -277,148 +287,130 @@ html.cursor-on, html.cursor-on a, html.cursor-on button, html.cursor-on [data-ma
 
 /*
  * ── motion, opt-in ────────────────────────────────────────────────────────
- * Everything that moves on its own lives inside a no-preference wrapper,
- * never behind a `reduce` counterpart, because the two fail in opposite
- * directions: an unknown media feature makes THIS block not apply, so a
- * browser that has never heard of the query gets a still page. The reduce
- * form fails the other way — forget one rule and motion ships to someone who
- * asked for none, with no symptom on any machine but theirs.
- *
- * A @keyframes declared inside the query does not exist when the query
- * fails, so an animation-name referencing it resolves to nothing. The guard
- * is structural rather than a second rule someone has to remember to write.
- * cssSelftest [C2] asserts every @keyframes in this file is inside one.
+ * Everything that moves lives under the html.motion-on scope — the class the
+ * boot script plants before first paint and the MOTION toggle rewrites. A
+ * media query cannot express this contract: `no-preference` is false for the
+ * reduce-OS reader who explicitly turned motion ON, which is the one
+ * configuration the toggle exists for. So the guard moved from the query to
+ * the class, keyframes moved to the top level (an unplayed keyframes is
+ * inert; players are the guarded thing), and the old `reduce` neutraliser
+ * block is gone — a rule that does not exist needs no neutralising.
+ * cssSelftest [C2][C2b][C3][C4] hold the shape.
  */
-@media (prefers-reduced-motion: no-preference) {
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-  .badge.status.st-dev .dot { animation: pulse var(--dur-loop) infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+html.motion-on .badge.status.st-dev .dot { animation: pulse var(--dur-loop) infinite; }
 
-  /*
-   * The progress bar, on the only timeline that is honestly a function of
-   * scroll. Scale rather than width so it runs on the compositor.
-   *
-   * animation-timeline MUST come after the `animation` shorthand: the
-   * shorthand resets animation-timeline and animation-range-* to their
-   * initial values, so writing them first silently produces an ordinary
-   * time-based animation that plays once on load and then sits at 100%.
-   */
-  @supports (animation-timeline: scroll()) {
-    .scroll-progress {
-      width: 100%;
-      transform-origin: 0 50%;
-      scale: 0 1;
-      animation: scroll-progress var(--ease-scroll) both;
-      animation-timeline: scroll(root block);
-    }
-    @keyframes scroll-progress { to { scale: 1 1; } }
-  }
-
-  /*
-   * Kinetic type + plate parallax, on view() timelines. Same double guard as
-   * the progress bar ([C4]): no timeline support = the static page, reduce =
-   * this whole block absent.
-   *
-   * The wordmark slides against the scroll as its own entry progresses —
-   * 14rem of Barlow moving 7% of its width, the one big kinetic gesture the
-   * endpaper can afford. body has overflow-x: hidden, so the overhang never
-   * becomes a scrollbar.
-   *
-   * The featured covers over-scan (scale 1.12) and drift vertically through
-   * their own viewport transit. Both hover scales are restated here because
-   * this scale and theme.css's 1.055 are the same property in different
-   * contexts — the guarded pair wins while the timeline exists.
-   */
-  @supports (animation-timeline: view()) {
-    .footer-wordmark {
-      animation: wordmark-slide var(--ease-scroll) both;
-      animation-timeline: view(block);
-      animation-range: entry 0% cover 60%;
-    }
-    @keyframes wordmark-slide {
-      from { translate: 3.5% 0; }
-      to { translate: -3.5% 0; }
-    }
-    .featured-media img {
-      scale: 1.12;
-      animation: plate-parallax var(--ease-scroll) both;
-      animation-timeline: view(block);
-    }
-    .featured-card:hover .featured-media img { scale: 1.16; }
-    @keyframes plate-parallax {
-      from { translate: 0 -3.4%; }
-      to { translate: 0 3.4%; }
-    }
-  }
-
-  /*
-   * Works-grid stagger — the within-row half. The vertical half is free:
-   * each tile is its own IntersectionObserver target, so a band animates when
-   * that band arrives.
-   *
-   * A view() range offset cannot do this. Tiles in one band share a scroll
-   * position, so their view timelines are identical, and an offset expressed
-   * in entry-% only makes the later ones finish later relative to their own,
-   * differently-sized entry range — an xl tile's entry range is twice an s
-   * tile's because the range is the element's own height. transition-delay is
-   * the honest tool: the tiles arrive together and are dealt out.
-   *
-   * Phases come from nth-child rather than a JS index because the column
-   * count changes at 1180 / 880 / 560 and a JS-supplied index cannot follow
-   * that without a resize listener.
-   *
-   * Honest cost: DOM order is band order but a band is not always three
-   * tiles — band 3 is [p p s s], so its phases run 2,0,1,2 and the second
-   * tile leads the first by 64ms. Over 32ms steps that reads as texture. It
-   * is not a left-to-right sweep and is not sold as one.
-   */
-  .bento-grid > .bento-tile { --i: 0; }
-  .bento-grid > .bento-tile:nth-child(3n + 2) { --i: 1; }
-  .bento-grid > .bento-tile:nth-child(3n)     { --i: 2; }
-  .bento-tile[data-reveal] { transition-delay: calc(var(--i) * var(--stagger)); }
-
-  /* Four and two columns: a three-phase rotation against a two-wide row puts
-     the same phase in the same visual column on alternate rows. */
-  @media (max-width: 879px) {
-    .bento-grid > .bento-tile:nth-child(3n + 2),
-    .bento-grid > .bento-tile:nth-child(3n) { --i: 0; }
-    .bento-grid > .bento-tile:nth-child(2n) { --i: 1; }
-  }
-  /* One column: the vertical stagger is the whole stagger. */
-  @media (max-width: 559px) {
-    .bento-grid > .bento-tile { --i: 0; }
+/*
+ * The progress bar, on the only timeline that is honestly a function of
+ * scroll. Scale rather than width so it runs on the compositor.
+ *
+ * animation-timeline MUST come after the `animation` shorthand: the
+ * shorthand resets animation-timeline and animation-range-* to their
+ * initial values, so writing them first silently produces an ordinary
+ * time-based animation that plays once on load and then sits at 100%.
+ */
+@keyframes scroll-progress { to { scale: 1 1; } }
+@supports (animation-timeline: scroll()) {
+  html.motion-on .scroll-progress {
+    width: 100%;
+    transform-origin: 0 50%;
+    scale: 0 1;
+    animation: scroll-progress var(--ease-scroll) both;
+    animation-timeline: scroll(root block);
   }
 }
 
 /*
- * The tile has to restate the whole transition list, not inherit it.
- * [data-reveal] is (0,1,0) and .bento-tile is (0,1,0) — a tie this file wins
- * either way — so the generic reveal rule would replace the tile's own
- * transition wholesale and kill the outline gesture on all sixteen.
- * .bento-tile[data-reveal] is (0,2,0) and states both.
+ * Kinetic type + plate parallax, on view() timelines. Same double guard as
+ * the progress bar ([C4]): no timeline support = the static page, no
+ * motion-on = this whole block inert.
+ *
+ * The wordmark slides against the scroll as its own entry progresses —
+ * 14rem of Barlow moving 7% of its width, the one big kinetic gesture the
+ * endpaper can afford. body has overflow-x: hidden, so the overhang never
+ * becomes a scrollbar.
+ *
+ * The featured covers over-scan (scale 1.12) and drift vertically through
+ * their own viewport transit. Both hover scales are restated here because
+ * this scale and theme.css's 1.055 are the same property in different
+ * contexts — the guarded pair wins while the timeline exists.
  */
-.bento-tile[data-reveal] {
-  translate: 0 var(--rise-2);
+@keyframes wordmark-slide {
+  from { translate: 3.5% 0; }
+  to { translate: -3.5% 0; }
+}
+@keyframes plate-parallax {
+  from { translate: 0 -3.4%; }
+  to { translate: 0 3.4%; }
+}
+@supports (animation-timeline: view()) {
+  html.motion-on .footer-wordmark {
+    animation: wordmark-slide var(--ease-scroll) both;
+    animation-timeline: view(block);
+    animation-range: entry 0% cover 60%;
+  }
+  html.motion-on .featured-media img {
+    scale: 1.12;
+    animation: plate-parallax var(--ease-scroll) both;
+    animation-timeline: view(block);
+  }
+  html.motion-on .featured-card:hover .featured-media img { scale: 1.16; }
+}
+
+/*
+ * Works-grid stagger — the within-row half. The vertical half is free:
+ * each tile is its own IntersectionObserver target, so a band animates when
+ * that band arrives.
+ *
+ * A view() range offset cannot do this. Tiles in one band share a scroll
+ * position, so their view timelines are identical, and an offset expressed
+ * in entry-% only makes the later ones finish later relative to their own,
+ * differently-sized entry range — an xl tile's entry range is twice an s
+ * tile's because the range is the element's own height. transition-delay is
+ * the honest tool: the tiles arrive together and are dealt out.
+ *
+ * Phases come from nth-child rather than a JS index because the column
+ * count changes at 1180 / 880 / 560 and a JS-supplied index cannot follow
+ * that without a resize listener.
+ *
+ * Honest cost: DOM order is band order but a band is not always three
+ * tiles — band 3 is [p p s s], so its phases run 2,0,1,2 and the second
+ * tile leads the first by 64ms. Over 32ms steps that reads as texture. It
+ * is not a left-to-right sweep and is not sold as one.
+ *
+ * The --i assignments are inert data and stay unscoped; the only rule that
+ * MOVES here is the delay/transition pair on the tile, and that one carries
+ * the scope. It also restates the whole transition list: [data-reveal] is
+ * (0,1,1) under the scope and so is this — restating opacity/translate AND
+ * outline-color keeps the tile's outline gesture alive during the reveal.
+ */
+.bento-grid > .bento-tile { --i: 0; }
+.bento-grid > .bento-tile:nth-child(3n + 2) { --i: 1; }
+.bento-grid > .bento-tile:nth-child(3n)     { --i: 2; }
+html.motion-on .bento-tile[data-reveal] {
   transition:
     opacity var(--dur-5) var(--ease-out),
     translate var(--dur-5) var(--ease-out),
     outline-color var(--dur-2) var(--ease-out);
+  transition-delay: calc(var(--i) * var(--stagger));
 }
+/* The offset lives only on the not-yet-revealed state. Stating it on the
+   bare [data-reveal] tile ties with `.is-in { translate: none }` at equal
+   specificity and later source order — the tile would sit 14px low forever
+   (it did, invisibly, because every tile shifted equally). :not(.is-in)
+   makes the resting state the winner by construction. */
+html.motion-on .bento-tile[data-reveal]:not(.is-in) { translate: 0 var(--rise-2); }
 
-/* ── reduced motion (owner's machine = the real first impression) ─────────── */
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  /*
-   * `translate`, not `transform`. The reveal moved to the independent
-   * property so the hover lift and CursorFX's magnetic pull can keep
-   * `transform` to themselves — and this line has to follow it, or the
-   * neutraliser silently stops neutralising anything.
-   */
-  [data-reveal] { opacity: 1 !important; translate: none !important; transition: none !important; }
-  .studio-ticker .dev .dot { animation: none; }
-  .cursor-dot, .cursor-ring { display: none; }
-  .cta,.filter-tab { transition: none; }
-  .cta:hover,.cta:active { transform: none; box-shadow: none; }
-  * { scroll-behavior: auto !important; }
+/* Four and two columns: a three-phase rotation against a two-wide row puts
+   the same phase in the same visual column on alternate rows. */
+@media (max-width: 879px) {
+  .bento-grid > .bento-tile:nth-child(3n + 2),
+  .bento-grid > .bento-tile:nth-child(3n) { --i: 0; }
+  .bento-grid > .bento-tile:nth-child(2n) { --i: 1; }
+}
+/* One column: the vertical stagger is the whole stagger. */
+@media (max-width: 559px) {
+  .bento-grid > .bento-tile { --i: 0; }
 }
 
 }
