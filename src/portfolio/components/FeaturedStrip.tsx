@@ -1,92 +1,117 @@
-import { useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import { CATALOG } from "../bento";
+import { useCoverflow } from "../useCoverflow";
 import { primaryCta, StatusBadge } from "./badges";
 
 const BASE = import.meta.env.BASE_URL;
 
 /*
- * Large cinematic plates for featured titles. Content is 100% from works data —
- * titles, Japanese subtitles, and descriptions are never rewritten here.
+ * FEATURED — glass plates in a shallow 3D space.
  *
- * Three shapes, decided by CSS alone (theme.css):
- *   ≥1000px + motion-on + view() timelines — the sticky scrolly: vertical
- *     scroll pans the plates horizontally through a pinned viewport. --fcount
- *     sizes the runway, so appending a featured Work lengthens the ride.
- *   ≥900px otherwise — the two-column grid (the base sheet).
- *   <900px — a native snap carousel; a horizontal flick is touch's mother
- *     tongue, and the browser drives it, not a timeline.
+ * Two shapes from one DOM, and the flat one is the base sheet:
  *
- * DOM order always equals reading order; nothing here is aria-hidden, so a
- * screen reader hears the same catalogue in every shape.
+ *   coverflow  motion on + a fine pointer + preserve-3d + ≥900px.
+ *              Four plates on a weak perspective; the centre one faces you
+ *              and the others recede. Nothing turns on its own — wheel,
+ *              drag, arrow keys and clicking a side plate all move the same
+ *              index (useCoverflow). That is the whole difference between
+ *              this and the carousel it resembles.
+ *   grid       everything else. The two-column layout, unchanged.
+ *
+ * ⭐ The plate FRAMES its artwork rather than being covered by it, and that
+ * is a contrast device as much as a compositional one: type never sits on
+ * a work's cover, so the ground under every character is the plate's own
+ * glass over a known white. The old full-bleed body could not be audited —
+ * its background was whichever artwork happened to be behind it.
+ *
+ * Accessibility follows the shape: the list stays a list (a carousel is not
+ * a listbox and these are not tabs), only the centre plate is reachable,
+ * and the position is announced as text rather than implied by depth.
  */
 export function FeaturedStrip() {
   const featured = CATALOG.filter((w) => w.featured);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-
-  /*
-   * The one job CSS cannot do: when Tab reaches a card the browser scrolls
-   * the CARD into view, but in scrolly mode the card's position is a
-   * function of scrollY — the browser does not know the mapping, so focus
-   * could land on a plate panned half out of the pin (WCAG 2.4.11). This
-   * maps focus → the scrollY that centres that card. Instant, no easing:
-   * the reader asked for a place, not a ride.
-   */
-  useEffect(() => {
-    const wrap = wrapRef.current;
-    if (!wrap) return;
-    const onFocusIn = (e: FocusEvent): void => {
-      const scrolly =
-        window.matchMedia("(min-width: 1000px)").matches &&
-        document.documentElement.classList.contains("motion-on") &&
-        typeof CSS !== "undefined" &&
-        CSS.supports("animation-timeline: view()");
-      if (!scrolly) return;
-      const card = (e.target as HTMLElement | null)?.closest(".featured-card");
-      if (!card) return;
-      const cards = [...wrap.querySelectorAll(".featured-card")];
-      const i = cards.indexOf(card);
-      if (i < 0) return;
-      const top = wrap.getBoundingClientRect().top + window.scrollY;
-      const span = Math.max(0, wrap.offsetHeight - window.innerHeight);
-      window.scrollTo({
-        top: top + (span * i) / Math.max(1, cards.length - 1),
-        behavior: "instant" as ScrollBehavior,
-      });
-    };
-    wrap.addEventListener("focusin", onFocusIn);
-    return () => wrap.removeEventListener("focusin", onFocusIn);
-  }, []);
+  const flow = useCoverflow(featured.length);
+  const current = featured[flow.active];
 
   return (
     <section id="featured" className="section featured-section" aria-labelledby="featured-title">
+      <header className="section-head" data-reveal>
+        <p className="section-index">01a / FEATURED</p>
+        <h2 id="featured-title">いま注目のタイトル</h2>
+        <p className="section-lede">特に手をかけた作品を、大きく。</p>
+      </header>
+
       <div
-        className="featured-scrolly"
-        ref={wrapRef}
-        style={{ "--fcount": featured.length } as CSSProperties}
+        className={`glass-stage ${flow.enabled ? "is-3d" : ""}`}
+        style={{ "--count": featured.length, "--active": flow.active } as CSSProperties}
       >
-        <div className="featured-sticky">
-          <header className="section-head" data-reveal>
-            <p className="section-index">01a / FEATURED</p>
-            <h2 id="featured-title">
-              いま注目のタイトル
-            </h2>
-            <p className="section-lede">
-              特に手をかけた作品を、大きく。
-            </p>
-          </header>
-
-          <p className="featured-progress" aria-hidden="true">
-            <span />
-          </p>
-
-          <ul className="featured-track">
-            {featured.map((work) => {
-              const cta = primaryCta(work);
-              const img = work.poster ?? work.cover;
-              return (
-                <li key={work.id} className="featured-card" data-reveal id={`featured-${work.id}`}>
-                  <div className="featured-media">
+        <ul
+          className="glass-rail"
+          role="group"
+          aria-label="注目のタイトル"
+          tabIndex={flow.enabled ? 0 : -1}
+          {...(flow.enabled ? flow.bind : {})}
+        >
+          {featured.map((work, i) => {
+            const cta = primaryCta(work);
+            const img = work.poster ?? work.cover;
+            const d = i - flow.active;
+            const dabs = Math.abs(d);
+            /*
+             * Offsets compress with distance, the way a real cover flow
+             * stacks. A linear step put the far plate 168% out — past the
+             * right edge of a 1440 viewport, where it was neither visible
+             * nor clickable, which the hit-test gate caught. The first
+             * neighbour steps 50%, every plate after it only 16% more, so
+             * the far ones pile up near the edge instead of leaving.
+             */
+            const dx = d === 0 ? 0 : Math.sign(d) * (50 + (dabs - 1) * 16);
+            const isCentre = !flow.enabled || d === 0;
+            return (
+              <li
+                key={work.id}
+                className="glass-panel"
+                id={`featured-${work.id}`}
+                style={{ "--d": d, "--dabs": dabs, "--dx": `${dx}%` } as CSSProperties}
+                data-centre={isCentre ? "" : undefined}
+              >
+                {/*
+                  * Bringing a plate forward is a real button, not a click
+                  * handler on the <li>. A rotated element inside a
+                  * preserve-3d context is not reliably hit-testable at the
+                  * centre of its own bounding box — measured: the point
+                  * returned the rail, so the plate was simply unclickable —
+                  * and an element that exists to be pressed should be the
+                  * thing the browser hit-tests.
+                  *
+                  * Pointer affordance only: aria-hidden and out of the tab
+                  * order, because the arrows and the position readout are
+                  * already the complete keyboard and screen-reader model.
+                  */}
+                {!isCentre && (
+                  <button
+                    type="button"
+                    className="glass-select"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    onClick={() => flow.setActive(i)}
+                  />
+                )}
+                {/*
+                  * The inert wrapper, not the plate itself.
+                  *
+                  * inert removes focus AND hides from assistive tech in one
+                  * attribute, which is exactly what a plate turned away from
+                  * the reader needs — aria-hidden alone would leave its link
+                  * tabbable, a focus stop on something facing away. But inert
+                  * also makes a subtree untouchable, so putting it on the <li>
+                  * silently killed "click a side plate to bring it forward".
+                  * Wrapping the content instead keeps the plate clickable and
+                  * pointer-events: none (in the stylesheet) lets the click fall
+                  * through to it.
+                  */}
+                <div className="glass-inner" inert={!isCentre}>
+                  <div className="glass-media">
                     <img
                       src={BASE + img}
                       alt={work.titleJa ? `${work.title} — ${work.titleJa}` : work.title}
@@ -96,9 +121,8 @@ export function FeaturedStrip() {
                       decoding="async"
                       draggable={false}
                     />
-                    <div className="featured-shade" />
                   </div>
-                  <div className="featured-body">
+                  <div className="glass-body">
                     <p className="featured-kicker">
                       <StatusBadge status={work.status} />
                     </p>
@@ -124,11 +148,44 @@ export function FeaturedStrip() {
                       <span className="engine-chip">{work.engine.toUpperCase()}</span>
                     </div>
                   </div>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/*
+          * The controls are only meaningful while the plates are stacked in
+          * depth; the grid needs no navigation. Position is spoken as text
+          * because depth and opacity are not information a reader can be
+          * assumed to perceive.
+          */}
+        {flow.enabled && (
+          <div className="glass-controls">
+            <button
+              type="button"
+              className="glass-arrow"
+              onClick={() => flow.step(-1)}
+              disabled={flow.active === 0}
+              aria-label="前のタイトル"
+            >
+              ←
+            </button>
+            <p className="glass-position" aria-live="polite">
+              {featured.length}件中{flow.active + 1}件目
+              <span className="visually-hidden"> — {current?.title}</span>
+            </p>
+            <button
+              type="button"
+              className="glass-arrow"
+              onClick={() => flow.step(1)}
+              disabled={flow.active === featured.length - 1}
+              aria-label="次のタイトル"
+            >
+              →
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );
