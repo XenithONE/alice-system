@@ -18,18 +18,22 @@ const BASE = import.meta.env.BASE_URL;
  * screen reader hears "AlicE sYsTeM", never "A l i c E".
  */
 
+/*
+ * The still page's masthead ground.
+ *
+ * It used to be a collage of two dark posters under a navy wash — correct
+ * for the night issue, wrong for a white one, where photographs of a horror
+ * ward are a stain rather than a stage. What replaces them is light itself:
+ * three soft SPECTRUM washes on the theme's own ground, so the same element
+ * reads as dawn on white and as glow on navy without branching.
+ */
 const fallbackStyle: CSSProperties = {
   backgroundImage: [
-    /* a static breath of the SPECTRUM so even the still page carries it */
-    "radial-gradient(ellipse at 74% 38%, rgba(224, 81, 124, 0.12), transparent 52%)",
-    "radial-gradient(ellipse at 70% 40%, rgba(230, 173, 70, 0.16), transparent 55%)",
-    "radial-gradient(ellipse at 20% 80%, rgba(8, 169, 197, 0.12), transparent 50%)",
-    "linear-gradient(105deg, rgba(6, 28, 49, 0.92) 0%, rgba(6, 28, 49, 0.55) 42%, rgba(6, 28, 49, 0.25) 100%)",
-    `url(${BASE}assets/hollow-ward-poster.webp)`,
-    `url(${BASE}assets/relic-road-brick.webp)`,
+    "radial-gradient(ellipse 70% 55% at 74% 34%, rgba(224, 81, 124, 0.16), transparent 60%)",
+    "radial-gradient(ellipse 80% 60% at 62% 46%, rgba(230, 173, 70, 0.2), transparent 62%)",
+    "radial-gradient(ellipse 65% 70% at 22% 78%, rgba(8, 169, 197, 0.14), transparent 58%)",
+    "linear-gradient(105deg, rgb(var(--ground-rgb) / 0.92) 0%, rgb(var(--ground-rgb) / 0.4) 46%, rgb(var(--ground-rgb) / 0.1) 100%)",
   ].join(", "),
-  backgroundSize: "auto, auto, auto, auto, cover, 48%",
-  backgroundPosition: "center, center, center, center, center, right bottom",
   backgroundRepeat: "no-repeat",
 };
 

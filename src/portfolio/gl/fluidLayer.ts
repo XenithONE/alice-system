@@ -110,11 +110,34 @@ uniform float u_time;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main() {
   vec3 d = texture(u_dye, v_uv).rgb * 0.78;
-  /* screen blend: glows on the dark issue, stays paper-plausible on the
-     light one (the canvas is further dimmed by CSS there). The 0.78 cap
-     keeps the hottest bloom below "white page" — body ink crosses this
-     ground in the works band, and the veil only guards the hero. */
-  vec3 c = 1.0 - (1.0 - u_ground) * (1.0 - d);
+
+  /*
+   * The blend has to follow the issue, because screen is an operation that
+   * LIGHTENS: its visible amount is exactly (1 - ground) * dye, which goes
+   * to zero as the ground approaches white. On v14's #f2f3f5 wall that is
+   * about 3/255 — the fluid would still be running and simply invisible.
+   *
+   * So: glow on the night issue, ink on the white one. Multiply is what a
+   * pigment does to paper, which is also the right metaphor — on white the
+   * weather is not light, it is a stain spreading through the stock.
+   * The 0.34 cap keeps the darkest bloom off body-text contrast.
+   */
+  float lum = dot(u_ground, vec3(0.2126, 0.7152, 0.0722));
+  vec3 glow = 1.0 - (1.0 - u_ground) * (1.0 - d);
+
+  /*
+   * Multiply ABSORBS the colour you hand it, so feeding the dye straight in
+   * paints its complement: the amber splat came out blue. Density and hue
+   * have to be separated — the amount of pigment, and what that pigment
+   * lets through — and then the ground is filtered by the hue rather than
+   * darkened by it.
+   */
+  float density = clamp(max(max(d.r, d.g), d.b), 0.0, 1.0);
+  vec3 hue = density > 0.002 ? d / density : vec3(1.0);
+  vec3 ink = u_ground * mix(vec3(1.0), hue, density * 0.85);
+
+  vec3 c = mix(glow, ink, step(0.5, lum));
+
   c += (hash(v_uv * 1913.0 + fract(u_time)) - 0.5) / 255.0;
   o = vec4(c, 1.0);
 }`;

@@ -39,43 +39,66 @@
 @layer theme {
 
 :root {
-  /* ── grounds ──────────────────────────────────────────────────────────
-   * Dark is the gallery wall; paper is where you stop looking and start
-   * reading. Two papers, because a magazine changes stock between the body
-   * and the colophon: --paper is the lab's notebook leaf, --paper-deep the
-   * endpaper the stack strip is printed on. One step apart, not a contrast.
+  /* ── grounds — three whites, ascending toward the reader ──────────────
+   * v14 turns the issue over: the default stock is white. The wall is not
+   * pure #fff — a large field of it flattens, glares, and burns on OLED —
+   * so the three whites are a depth cue instead: the further forward a
+   * surface sits, the whiter it is, and only the nearest plate is pure.
    *
-   * There was a third, #f6f1e7, on .lab-notebook. That is --ink — the TEXT
-   * colour reused as a ground — which is why the two creams disagreed by
-   * more than a step rather than by design. It never rendered (see above),
-   * so giving the lab a real paper costs the live site nothing.
+   *   --bg       the white-cube wall, faintly cool
+   *   --surface  a card resting on it
+   *   --raised   the plate closest to you; the light lands here
+   *
+   * The paper leaves stay warm and are now distinguished by TEMPERATURE
+   * rather than by lightness: a cool wall, a warm page. That is what keeps
+   * "the dark movements dance, the paper reads" legible after the flip —
+   * the reader still feels the stock change, just not as a light switch.
+   *
+   * --ink-deep is the closing ground. A magazine closes on a different
+   * stock; here it is the deepest of the whites rather than near-black.
    */
-  --bg: #061c31;
-  --surface: #0a2944;
-  --raised: #0d3454;
-  --panel: rgba(6, 28, 49, 0.92);
-  --ink-deep: #041624;
-  --paper: #efe3d0;
-  --paper-deep: #e7d9c2;
+  /* One literal, one name. --raised (the nearest plate) and --live-ink (the
+     type on the green chip) are two different facts that are both pure
+     white; [C6] refuses two primitives holding one value, and it is right —
+     naming the white once is what keeps a later edit from moving one and
+     not the other by accident. */
+  --white: #ffffff;
+  --bg: #f2f3f5;
+  --surface: #fafbfc;
+  --raised: var(--white);
+  --panel: rgba(242, 243, 245, 0.92);
+  --ink-deep: #e9ebee;
+  --paper: #f0e8db;
+  --paper-deep: #e8ddc9;
 
-  --hairline: rgba(246, 241, 231, 0.14);
-  --hairline-strong: rgba(246, 241, 231, 0.3);
-  --rule-paper: rgba(6, 28, 49, 0.18);
-  --rule-paper-soft: rgba(6, 28, 49, 0.09);
+  --hairline: rgba(13, 23, 33, 0.14);
+  --hairline-strong: rgba(13, 23, 33, 0.32);
+  --rule-paper: rgba(13, 23, 33, 0.18);
+  --rule-paper-soft: rgba(13, 23, 33, 0.09);
+
+  /* Ground and ink as bare triples, so translucent washes (veils, scan
+     lines, hover films, the wordmark ghost) can be written once and follow
+     the theme. A bare triple is not a colour to [C6], which is correct —
+     these are the same fact as --bg / --ink, not rivals to them. */
+  --ground-rgb: 242 243 245;
+  --ink-rgb: 13 23 33;
 
   /* ── ink ──────────────────────────────────────────────────────────────
+   * Never pure black: --ink keeps a trace of the old navy so Mincho's thin
+   * strokes carry weight and the two issues read as one publication.
+   *
    * The -paper set exists because contrast is a pair, not a colour: --amber
-   * is 8.57:1 on --bg and 1.60:1 on --paper. Anything that crosses the fold
-   * needs its own value on the other side, and --gold-ink is it.
+   * is 8.57:1 on the dark issue's ground and 1.60:1 on paper. Anything that
+   * crosses the fold needs its own value on the other side — --gold-ink.
    */
-  --ink: #f6f1e7;
-  --text: #e4dfd6;
-  --text-dim: #b9c5ce;
-  --text-faint: #9fb0bc;
-  /* The ink on paper IS the dark side's ground — that is the relationship,
-     so it is written as one rather than as a coincidence of two hex strings
-     that a later edit could silently break apart. 13.69:1 on --paper. */
-  --ink-paper: var(--bg);
+  --ink: #0d1721;
+  --text: #23303d;
+  --text-dim: #46545f;
+  --text-faint: #5b6874;
+  /* On the dark issue this was var(--bg) — "the ink on paper IS the dark
+     ground". With a white ground that coincidence is gone, so the paper's
+     ink is simply the page's ink. An alias, not a second literal. */
+  --ink-paper: var(--ink);
   --ink-paper-soft: #3d4b57;
   --gold-ink: #7a5316;
 
@@ -107,15 +130,15 @@
    * ink. The ground decides which one is readable, not the name.
    */
   --live: #2b7a37;
-  --live-text: #57c274;
+  --live-text: #256a30;
   --live-shadow: #1f5a28;
-  --live-ink: #ffffff;
+  --live-ink: var(--white);
   --wishlist: #9a6410;
-  --wishlist-text: #d29a38;
+  --wishlist-text: #7d5008;
   --download: #0c6ba0;
-  --download-text: #57b3e6;
+  --download-text: var(--download);
   --dev: #6849bf;
-  --dev-text: #b09bf0;
+  --dev-text: var(--dev);
   --rec: #c91a09;
 
   /* ── type ─────────────────────────────────────────────────────────────
@@ -183,17 +206,19 @@
    * photographic cover is the strongest "web-app card" signal on the page,
    * and a plate on a wall is a rectangle.
    *
-   * --elev-* is depth, tuned against #061c31 rather than the near-black
-   * rgba(23, 27, 33, ...) left over from the light theme.
+   * --elev-* is depth. On white it is the ONLY depth cue there is, so the
+   * shadows are cool (a warm shadow on a cool wall reads as dirt) and come
+   * in two parts: a tight contact shadow that seats the object, and a wide
+   * ambient one that lifts it. The dark issue re-pins them to near-black.
    */
   --r-0: 0;
   --r-1: 4px;
   --r-2: 8px;
   --r-pill: 999px;
   --r-round: 50%;
-  --elev-1: 0 1px 2px rgba(1, 14, 25, 0.4);
-  --elev-2: 0 8px 24px rgba(1, 14, 25, 0.45);
-  --elev-3: 0 30px 80px rgba(1, 14, 25, 0.55);
+  --elev-1: 0 1px 2px rgb(var(--ink-rgb) / 0.1);
+  --elev-2: 0 1px 2px rgb(var(--ink-rgb) / 0.08), 0 10px 26px rgb(var(--ink-rgb) / 0.1);
+  --elev-3: 0 2px 6px rgb(var(--ink-rgb) / 0.1), 0 30px 70px rgb(var(--ink-rgb) / 0.16);
 
   /* ── measure ──────────────────────────────────────────────────────────
    * Block rhythm is part of the composition, not a constant: a ground change
@@ -231,8 +256,17 @@
   --t-5: 3.556rem;
   --t-h2: clamp(2rem, 1.32rem + 2.8vw, 3.556rem);
 
-  --plate-caption: rgba(4, 18, 32, 0.92);
-  --chip-bg: rgba(6, 28, 49, 0.78);
+  --plate-caption: rgba(255, 255, 255, 0.94);
+  --chip-bg: rgba(255, 255, 255, 0.86);
+
+  /* Translucent films, written against the theme's own ink and ground so
+     they invert with it instead of being re-authored per theme. */
+  --hover-film: rgb(var(--ink-rgb) / 0.04);
+  --scan-film: rgb(var(--ink-rgb) / 0.035);
+  --wordmark-ghost: rgb(var(--ink-rgb) / 0.07);
+  --shine: rgb(var(--ink-rgb) / 0.07);
+  --ticker-bg: rgb(var(--ground-rgb) / 0.72);
+  --cue-track: rgb(var(--ink-rgb) / 0.2);
 
   /* ── 2026 accents ─────────────────────────────────────────────────────
    * --spectrum is the one loud thing: a three-stop gradient reserved for
@@ -240,87 +274,77 @@
    * em, the selection highlight, the endpaper wordmark. Body ink never
    * touches it, which is what keeps the dopamine from costing AA.
    *
+   * On white the saturated version reads as a SaaS landing page, so the
+   * default issue carries a deeper, less electric mix — the same three
+   * hues pushed toward ink. The dark issue restores the glowing one.
+   *
    * --accent-ink is amber's INK role. Amber survives as ink on every dark
-   * ground (8.57:1 on --bg) and fails on the light issue's paper (1.60:1),
-   * so rules that use amber AS INK reference the role and the light block
-   * swaps the role for --gold-ink. Amber as FILL stays --amber everywhere.
+   * ground (8.57:1) and fails on white (1.60:1), so rules that use amber AS
+   * INK reference the role. Amber as FILL stays --amber everywhere.
    */
   --magenta: #e0517c;
-  --spectrum: linear-gradient(100deg, #e6ad46 0%, #e0517c 52%, #08a9c5 100%);
-  --accent-ink: var(--amber);
-  --focus-ring: #ffc45b;
-  color-scheme: dark;
-}
-
-/*
- * ── the light issue ───────────────────────────────────────────────────────
- * 2026's "dark mode" trend is really the toggle: the reader picks the stock.
- * This is not a mirrored palette — grounds come from the existing paper
- * family, ink from the existing dark family, and every status -text swaps to
- * the saturated value that was tuned for light grounds all along (the token
- * block above records that relationship). The lab and the stack strip were
- * already paper and do not change.
- *
- * Deliberately NOT a second `:root` — [C5] counts that selector verbatim,
- * and this is an override of the one token layer, not a rival to it.
- */
-:root[data-theme="light"] {
-  --bg: #f6efe2;
-  --surface: #efe6d3;
-  --raised: #e9dcc3;
-  --panel: rgba(246, 239, 226, 0.92);
-  --hairline: rgba(6, 28, 49, 0.16);
-  --hairline-strong: rgba(6, 28, 49, 0.34);
-  --ink: #061c31;
-  --text: #223649;
-  --text-dim: #3d4b57;
-  --text-faint: #4e5f6d;
-  /* On the dark side this is var(--bg) — "the ink on paper IS the dark
-     ground". When --bg itself goes light the relationship must be pinned,
-     not inherited, or the lab's ink would turn paper-on-paper. */
-  --ink-paper: #061c31;
+  --spectrum: linear-gradient(100deg, #a8761f 0%, #a83a5c 52%, #0b7286 100%);
   --accent-ink: var(--gold-ink);
+  /* Two rings, because one colour cannot survive white, artwork and navy.
+     The halo sits outside the ring and is always the ground's own value. */
   --focus-ring: #8a5c12;
-  --live-text: #256a30;
-  --wishlist-text: #7d5008;
-  --download-text: var(--download);
-  --dev-text: var(--dev);
-  --plate-caption: rgba(246, 241, 231, 0.94);
-  --chip-bg: rgba(246, 241, 231, 0.85);
-  --elev-1: 0 1px 2px rgba(43, 34, 16, 0.18);
-  --elev-2: 0 8px 24px rgba(43, 34, 16, 0.16);
-  --elev-3: 0 30px 80px rgba(43, 34, 16, 0.22);
+  --focus-halo: rgba(255, 255, 255, 0.92);
   color-scheme: light;
 }
 
 /*
- * The dark islands. The masthead and the closing spread keep their dark
- * grounds in the light issue — a magazine's black spreads — so the tokens
- * they actually read are re-pinned to the dark side's values. Their literal
- * colours (footer text, veils, scanlines) never flipped in the first place.
+ * ── the dark issue ────────────────────────────────────────────────────────
+ * The toggle is the point: the reader picks the stock. v14 turned the default
+ * over to white, and this block is the navy world of v9–v13 kept whole — the
+ * gallery-at-night version of the same publication, one press away.
+ *
+ * It is a pure token swap. Every rule in this file reads roles, not values,
+ * so nothing below has to know which issue it is printing.
+ *
+ * Deliberately NOT a second `:root` — [C5] counts that selector verbatim,
+ * and this is an override of the one token layer, not a rival to it.
  */
-:root[data-theme="light"] .hero,
-:root[data-theme="light"] .site-footer {
+:root[data-theme="dark"] {
+  --bg: #061c31;
+  --surface: #0a2944;
+  --raised: #0d3454;
+  --panel: rgba(6, 28, 49, 0.92);
+  --ink-deep: #041624;
+  --ground-rgb: 6 28 49;
+  --ink-rgb: 246 241 231;
+
+  --hairline: rgba(246, 241, 231, 0.14);
+  --hairline-strong: rgba(246, 241, 231, 0.3);
+  --rule-paper: rgba(6, 28, 49, 0.18);
+  --rule-paper-soft: rgba(6, 28, 49, 0.09);
+
   --ink: #f6f1e7;
   --text: #e4dfd6;
   --text-dim: #b9c5ce;
   --text-faint: #9fb0bc;
-  --hairline: rgba(246, 241, 231, 0.14);
-  --hairline-strong: rgba(246, 241, 231, 0.3);
+  /* Here the coincidence is real again: the ink on paper IS this issue's
+     ground. 13.69:1 on --paper. */
+  --ink-paper: var(--bg);
+
   --accent-ink: var(--amber);
   --focus-ring: #ffc45b;
-  /* The full -text status set, not just live: the footer's WISHLIST CTA
-     shipped the light issue's #7d5008 on the dark endpaper (2.64:1) until
-     the audit caught it. An island re-pins every token it can read. */
+  --focus-halo: rgba(4, 18, 32, 0.92);
+  /* The -text set is ink on dark grounds; the fills stay shared. */
   --live-text: #57c274;
   --wishlist-text: #d29a38;
   --download-text: #57b3e6;
   --dev-text: #b09bf0;
-}
-/* The masthead's ground was the page's own dark --bg; in the light issue it
-   has to bring its own. */
-:root[data-theme="light"] .hero {
-  background: #061c31;
+
+  --plate-caption: rgba(4, 18, 32, 0.92);
+  --chip-bg: rgba(6, 28, 49, 0.78);
+  /* Glow, not ink: on navy the saturated spectrum is the whole point. */
+  --spectrum: linear-gradient(100deg, #e6ad46 0%, #e0517c 52%, #08a9c5 100%);
+  --shine: rgb(var(--ink-rgb) / 0.13);
+  --ticker-bg: rgba(4, 22, 36, 0.62);
+  --elev-1: 0 1px 2px rgba(1, 14, 25, 0.4);
+  --elev-2: 0 8px 24px rgba(1, 14, 25, 0.45);
+  --elev-3: 0 30px 80px rgba(1, 14, 25, 0.55);
+  color-scheme: dark;
 }
 
 /* The one dopamine hit a reader performs themselves. */
@@ -358,11 +382,14 @@ body {
   opacity: 0;
   transition: opacity var(--dur-5) var(--ease-out);
 }
-.fluid-canvas.is-live { opacity: 1; }
+/* On white the shader switches from screen to multiply (fluidLayer.ts), so
+   the dye is subtractive and reads far more strongly than it did as a glow.
+   0.62 is where the weather stays weather and does not become a coloured
+   page — judged against the works band, where body ink crosses the ground
+   with no veil above it. The night issue keeps the full glow. */
+.fluid-canvas.is-live { opacity: 0.62; }
+:root[data-theme="dark"] .fluid-canvas.is-live { opacity: 1; }
 html.fluid-on body { background: transparent; }
-/* The light issue reads on paper; the weather stays but is dimmed to a
-   suggestion. The hero keeps its own dark plate either way. */
-:root[data-theme="light"] .fluid-canvas.is-live { opacity: 0.5; }
 
 /*
  * Both names, in the file both pages load.
@@ -390,9 +417,13 @@ html.fluid-on body { background: transparent; }
    outline-color and outline-offset and rely on portfolio.css for the width
    and style — a focus ring assembled from two files, which is one keystroke
    away from no focus ring at all. */
+/* Two rings. A single colour cannot clear 3:1 against white, artwork and
+   navy at once, so the ground's own value rides just outside the ring and
+   guarantees the pair wherever the focus lands. */
 :focus-visible {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 4px;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px var(--focus-halo);
   border-radius: var(--r-1);
 }
 
@@ -691,7 +722,7 @@ html.fluid-on body { background: transparent; }
 .filter-tab:hover {
   color: var(--ink);
   border-color: var(--hairline-strong);
-  background: rgba(246, 241, 231, 0.03);
+  background: var(--hover-film);
 }
 
 .filter-tab.is-active {
@@ -899,27 +930,28 @@ html.fluid-on body { background: transparent; }
   box-shadow: none;
 }
 
-/* Deeper than the masthead, so the document closes rather than trailing off.
-   It had been shipping --surface, which is LIGHTER than --bg. */
+/* A change of stock, so the document closes rather than trailing off. On
+   white that is the deepest of the three whites; on navy it is near-black.
+   Either way it is one step past the wall, not a different colour. */
 .site-footer {
-  color: #dbe3e8;
+  color: var(--text);
   border-color: var(--hairline);
   background: var(--ink-deep);
 }
 
 .site-footer h2,
 .site-footer .footer-nav a {
-  color: #f6f1e7;
+  color: var(--ink);
 }
 
 .site-footer .closing-copy,
 .site-footer .footer-meta,
 .site-footer .reel-end-caption {
-  color: #9fb0bc;
+  color: var(--text-faint);
 }
 
 .footer-wordmark {
-  color: rgba(246, 241, 231, 0.055);
+  color: var(--wordmark-ghost);
 }
 
 .footer-wordmark-accent {
@@ -994,8 +1026,9 @@ html.fluid-on body { background: transparent; }
   inset: auto 0 0 0;
   z-index: 1;
   overflow: hidden;
-  border-top: 1px solid rgba(246, 241, 231, 0.14);
-  background: rgba(4, 22, 36, 0.62);
+  border-top: 1px solid var(--hairline);
+  background: var(--ticker-bg);
+  backdrop-filter: blur(6px);
 }
 .wire-ticker-track {
   display: flex;
@@ -1008,7 +1041,7 @@ html.fluid-on body { background: transparent; }
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--amber);
+  color: var(--accent-ink);
 }
 .wire-ticker-run {
   padding-left: 2.6em;
@@ -1154,13 +1187,13 @@ html.motion-on .wire-ticker-track {
   overflow: hidden;
   width: 1px;
   height: 30px;
-  background: rgba(246, 241, 231, 0.22);
+  background: var(--cue-track);
 }
 .hero-cue-dash {
   position: absolute;
   inset: 0 0 auto 0;
   height: 12px;
-  background: var(--amber);
+  background: var(--accent-ink);
 }
 .hero-cue-label {
   font-family: var(--mono);
@@ -1473,18 +1506,18 @@ html.motion-on .hero-cue-dash {
   filter: saturate(0.92) brightness(0.62);
 }
 .hero-fallback.is-visible { opacity: 1; }
-/* While the fluid paints the dark issue, the collage yields the stage to it.
-   The light issue keeps the collage — its hero pins an opaque plate that
-   occludes the document-level fluid, and a bare plate reads as a hole. */
-html.fluid-on:not([data-theme="light"]) .hero-fallback { display: none; }
+/* Whenever the fluid is painting, the collage yields the stage to it — in
+   either issue now, since v14's masthead has no opaque plate of its own. */
+html.fluid-on .hero-fallback { display: none; }
 .hero-veil {
   position: absolute;
   inset: 0;
-  /* Lighter than the constellation era so the fluid reads — but the left
-     band under the lockup stays ≥0.9: the type's ground is not negotiable. */
+  /* The veil is the ground, half-drawn — so it follows the issue instead of
+     being re-authored per theme. The left band under the lockup stays ≥0.9:
+     the type's ground is not negotiable, whichever stock it is printed on. */
   background:
-    linear-gradient(105deg, rgba(6, 28, 49, 0.9) 0%, rgba(6, 28, 49, 0.5) 42%, rgba(6, 28, 49, 0.14) 72%, rgba(6, 28, 49, 0.55) 100%),
-    linear-gradient(180deg, rgba(6, 28, 49, 0.18) 0%, transparent 28%, rgba(6, 28, 49, 0.78) 100%);
+    linear-gradient(105deg, rgb(var(--ground-rgb) / 0.9) 0%, rgb(var(--ground-rgb) / 0.5) 42%, rgb(var(--ground-rgb) / 0.14) 72%, rgb(var(--ground-rgb) / 0.55) 100%),
+    linear-gradient(180deg, rgb(var(--ground-rgb) / 0.18) 0%, transparent 28%, rgb(var(--ground-rgb) / 0.78) 100%);
 }
 /* Retrofuturist scan veil — decorative only, opacity kept very low. */
 .hero-scan {
@@ -1495,7 +1528,7 @@ html.fluid-on:not([data-theme="light"]) .hero-fallback { display: none; }
   background:
     repeating-linear-gradient(
       180deg,
-      rgba(246, 241, 231, 0.03) 0 1px,
+      var(--scan-film) 0 1px,
       transparent 1px 4px
     );
   mix-blend-mode: soft-light;
@@ -1637,7 +1670,7 @@ html.fluid-on:not([data-theme="light"]) .hero-fallback { display: none; }
     position: absolute;
     inset: -30% -20%;
     pointer-events: none;
-    background: linear-gradient(115deg, transparent 42%, rgba(246, 241, 231, 0.13) 50%, transparent 58%);
+    background: linear-gradient(115deg, transparent 42%, var(--shine) 50%, transparent 58%);
     translate: -130% 0;
     transition: translate 0.72s var(--ease-out);
   }
@@ -1657,7 +1690,7 @@ html.fluid-on:not([data-theme="light"]) .hero-fallback { display: none; }
 .featured-shade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, transparent 18%, rgba(4, 18, 32, 0.72) 62%, rgba(4, 18, 32, 0.92) 100%);
+  background: linear-gradient(180deg, transparent 18%, rgb(var(--ground-rgb) / 0.74) 62%, rgb(var(--ground-rgb) / 0.94) 100%);
   transition: opacity var(--dur-3) var(--ease-out);
 }
 .featured-card:hover .featured-shade { opacity: 0.88; }

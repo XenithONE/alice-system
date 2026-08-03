@@ -52,7 +52,7 @@ function useScrollSpy(): string | null {
 const THEME_KEY = "alice_theme";
 const THEME_COLOR: Record<"dark" | "light", string> = {
   dark: "#061c31",
-  light: "#f6efe2",
+  light: "#f2f3f5",
 };
 
 /*
@@ -60,19 +60,22 @@ const THEME_COLOR: Record<"dark" | "light", string> = {
  * a stored choice before first paint, so initial state is read off the
  * document rather than re-deciding it here — one writer at boot, one at the
  * button, never two.
+ *
+ * v14 turned the default over: white is the page, so the ABSENCE of the
+ * attribute now means white and "dark" is the stored exception.
  */
-function applyTheme(light: boolean): void {
+function applyTheme(dark: boolean): void {
   const root = document.documentElement;
-  if (light) root.dataset.theme = "light";
+  if (dark) root.dataset.theme = "dark";
   else delete root.dataset.theme;
   try {
-    window.localStorage.setItem(THEME_KEY, light ? "light" : "dark");
+    window.localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
   } catch {
     /* private mode — the toggle still works for the session */
   }
   document
     .querySelector('meta[name="theme-color"]')
-    ?.setAttribute("content", light ? THEME_COLOR.light : THEME_COLOR.dark);
+    ?.setAttribute("content", dark ? THEME_COLOR.dark : THEME_COLOR.light);
 }
 
 /*
@@ -113,25 +116,25 @@ function MotionToggle() {
 }
 
 function ThemeToggle() {
-  const [light, setLight] = useState(
-    () => document.documentElement.dataset.theme === "light"
+  const [dark, setDark] = useState(
+    () => document.documentElement.dataset.theme === "dark"
   );
   const toggle = (): void => {
-    const next = !light;
+    const next = !dark;
     applyTheme(next);
-    setLight(next);
+    setDark(next);
   };
   return (
     <button
       type="button"
       className="nav-toggle"
-      aria-pressed={light}
-      aria-label="ライト配色"
+      aria-pressed={dark}
+      aria-label="ダーク配色"
       title="配色を切り替え"
       onClick={toggle}
       data-magnetic
     >
-      {light ? (
+      {!dark ? (
         /* sun */
         <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
           <circle cx="7.5" cy="7.5" r="3" />
