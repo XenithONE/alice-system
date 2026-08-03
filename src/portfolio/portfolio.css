@@ -86,13 +86,15 @@ h1, h2, h3 { font-weight: 700; color: var(--ink); }
 .site-primary-nav a { color: var(--text-dim); transition: color var(--dur-2) var(--ease-out); }
 .site-primary-nav a:hover { color: var(--ink); }
 
-/* ── theme toggle ─────────────────────────────────────────────────────────
- * The reader picks the stock. A ruled square, not a pill switch — the same
- * language as the filter tabs. aria-pressed carries the state; the icon is
- * inline SVG so no font subset has to know about moons. */
-.theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 30px; border: 1px solid var(--hairline-strong); color: var(--text-dim); background: transparent; transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
-.theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
-.theme-toggle svg { width: 15px; height: 15px; display: block; }
+/* ── nav toggles (MOTION / THEME) ─────────────────────────────────────────
+ * The reader picks the stock and decides whether the page moves. Ruled
+ * squares, not pill switches — the same language as the filter tabs.
+ * aria-pressed carries the state; the icons are inline SVG so no font
+ * subset has to know about moons or waves. */
+.nav-toggles { display: flex; gap: 8px; }
+.nav-toggle { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 30px; border: 1px solid var(--hairline-strong); color: var(--text-dim); background: transparent; transition: color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out); }
+.nav-toggle:hover { color: var(--ink); border-color: var(--ink); }
+.nav-toggle svg { width: 15px; height: 15px; display: block; }
 
 /* ── badges + chips ───────────────────────────────────────────────────────── */
 .badge { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 0.64rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 9px; border: 1.5px solid currentColor; border-radius: var(--r-1); white-space: nowrap; }

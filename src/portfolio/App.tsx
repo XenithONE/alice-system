@@ -10,11 +10,16 @@ import { StackStrip } from "./components/StackStrip";
 import { Footer } from "./components/Footer";
 import { CursorFX } from "./components/CursorFX";
 import { useReveal } from "./useReveal";
+import { watchOsPreference } from "./motion";
 import type { Work } from "../data/works";
 
 export default function PortfolioApp() {
   useReveal();
   const [detail, setDetail] = useState<Work | null>(null);
+
+  // Follow the OS motion preference live — but only while the reader has not
+  // chosen explicitly. The boot script resolved the initial state pre-paint.
+  useEffect(() => watchOsPreference(), []);
 
   useEffect(() => {
     const targetId = window.location.hash.slice(1);

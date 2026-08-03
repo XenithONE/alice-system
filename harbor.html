@@ -10,6 +10,16 @@
     />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#061c31" />
+    <!-- Same motion boot as index.html — theme.css is a chunk shared by both
+         documents, so the motion-on class must mean the same thing here. -->
+    <script>
+      try {
+        var m = localStorage.getItem("alice_motion");
+        if (m === "on" || (m !== "off" && matchMedia("(prefers-reduced-motion: no-preference)").matches)) {
+          document.documentElement.classList.add("motion-on");
+        }
+      } catch (e) {}
+    </script>
     <link rel="canonical" href="https://xenithone.github.io/alice-system/harbor.html" />
     <link rel="icon" type="image/png" sizes="32x32" href="%BASE_URL%assets/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="64x64" href="%BASE_URL%assets/favicon-64.png" />

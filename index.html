@@ -20,6 +20,19 @@
         }
       } catch (e) {}
     </script>
+    <!-- Motion, resolved before first paint. "on" outranks the OS (an explicit
+         reader override), "off" outranks it the other way, nothing follows it.
+         If this script dies the class is absent and the page is still — the
+         same failure direction the old media-query guards had. Writers:
+         this line at boot, src/portfolio/motion.ts at the toggle. -->
+    <script>
+      try {
+        var m = localStorage.getItem("alice_motion");
+        if (m === "on" || (m !== "off" && matchMedia("(prefers-reduced-motion: no-preference)").matches)) {
+          document.documentElement.classList.add("motion-on");
+        }
+      } catch (e) {}
+    </script>
     <link rel="canonical" href="https://xenithone.github.io/alice-system/" />
     <link rel="icon" type="image/png" sizes="32x32" href="%BASE_URL%assets/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="64x64" href="%BASE_URL%assets/favicon-64.png" />

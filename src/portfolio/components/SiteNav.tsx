@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CATALOG } from "../bento";
 import { STUDIO_TALLY } from "../../data/works";
+import { applyMotion, useMotion } from "../motion";
 
 /*
  * The ticker counts the catalogue, not WORKS.
@@ -38,6 +39,43 @@ function applyTheme(light: boolean): void {
     ?.setAttribute("content", light ? THEME_COLOR.light : THEME_COLOR.dark);
 }
 
+/*
+ * The reader decides whether the page moves. html.motion-on is the single
+ * source of truth (see motion.ts); this button is its only runtime writer.
+ * aria-pressed carries the effective state — ON means moving even where the
+ * OS asks for reduced motion, which is the whole point of the control on the
+ * owner's own machine.
+ */
+function MotionToggle() {
+  const on = useMotion();
+  const toggle = (): void => applyMotion(on ? "off" : "on");
+  return (
+    <button
+      type="button"
+      className="nav-toggle"
+      aria-pressed={on}
+      aria-label="モーション"
+      title="動きを切り替え"
+      onClick={toggle}
+      data-magnetic
+    >
+      {on ? (
+        /* waves — the page is moving */
+        <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+          <path d="M1 4.2c2.2-2.2 4.3 2.2 6.5 0s4.3 2.2 6.5 0" />
+          <path d="M1 7.7c2.2-2.2 4.3 2.2 6.5 0s4.3 2.2 6.5 0" />
+          <path d="M1 11.2c2.2-2.2 4.3 2.2 6.5 0s4.3 2.2 6.5 0" />
+        </svg>
+      ) : (
+        /* a flat line — the page is still */
+        <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+          <path d="M1 7.5h13" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 function ThemeToggle() {
   const [light, setLight] = useState(
     () => document.documentElement.dataset.theme === "light"
@@ -50,7 +88,7 @@ function ThemeToggle() {
   return (
     <button
       type="button"
-      className="theme-toggle"
+      className="nav-toggle"
       aria-pressed={light}
       aria-label="ライト配色"
       title="配色を切り替え"
@@ -101,7 +139,11 @@ export function SiteNav() {
           <a href="#stack" data-magnetic>STACK</a>
         </nav>
 
-        <ThemeToggle />
+        {/* MOTION before THEME — the control with the larger effect sits first. */}
+        <div className="nav-toggles">
+          <MotionToggle />
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );
