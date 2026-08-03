@@ -455,6 +455,58 @@ html.fluid-on body { background: transparent; }
 .lab-notebook .section-index { background: var(--paper); }
 .stack-rail .section-index { background: var(--paper-deep); }
 .site-footer .section-index { background: var(--ink-deep); }
+/* The folio's own rule — one editorial gesture that repeats wherever a
+   folio sits. Complete on the still page; the motion scope below draws it. */
+.section-index::after {
+  content: "";
+  display: block;
+  height: 1px;
+  margin-top: 5px;
+  background: var(--accent-ink);
+  opacity: 0.55;
+  transform-origin: 0 50%;
+}
+
+/* ── scroll-scrubbed unveilings ──────────────────────────────────────────
+ * One hand, three places: the heading curtain, the folio rule, the lab's
+ * waveform trace. All on view() timelines (self-paced, reversible), all
+ * finished before the element reaches reading position.
+ */
+@keyframes head-unveil {
+  from { clip-path: inset(0 0 100% 0); translate: 0 0.4em; }
+  to { clip-path: inset(0 -0.1em 0 0); translate: 0 0; }
+}
+@keyframes folio-draw {
+  from { scale: 0 1; }
+}
+@keyframes wave-draw {
+  to { stroke-dashoffset: 0; }
+}
+@supports (animation-timeline: view()) {
+  /* Mincho unveils as a block behind a rising curtain — never letter by
+     letter, and never blurred: the serif keeps its dignity. The -0.1em
+     right inset leaves room for the face's terminal strokes. */
+  html.motion-on .section-head h2,
+  html.motion-on .prompts-editorial h2,
+  html.motion-on .closing-cta h2 {
+    animation: head-unveil var(--ease-scroll) both;
+    animation-timeline: view(block);
+    animation-range: entry 15% entry 65%;
+  }
+  html.motion-on .section-index::after {
+    animation: folio-draw var(--ease-scroll) both;
+    animation-timeline: view(block);
+    animation-range: entry 0% entry 45%;
+  }
+  /* "Data being recorded" — the AI Lab's whole subject, as its one motion. */
+  html.motion-on .lab-waveform-lines path {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: wave-draw var(--ease-scroll) both;
+    animation-timeline: view(block);
+    animation-range: entry 0% entry 85%;
+  }
+}
 
 /*
  * The pull quote. Shippori at --t-3, hung on a rule, offset into the second
@@ -905,7 +957,9 @@ html.fluid-on body { background: transparent; }
   overflow: hidden;
   display: flex;
   align-items: flex-end;
-  min-height: clamp(520px, 82svh, 880px);
+  /* Full viewport: the fluid ground is the opening spread and gets the whole
+     stage. The scroll cue took over "Featured peeks under the fold". */
+  min-height: max(560px, 100svh);
   padding: 0;
   max-width: none;
   margin: 0;
@@ -1036,26 +1090,101 @@ section[id],
 @keyframes hero-rise {
   from { opacity: 0; transform: translateY(14px); }
 }
+@keyframes char-rise {
+  from { opacity: 0; translate: 0 0.35em; filter: blur(6px); }
+  60% { filter: blur(0); }
+}
 @keyframes wire-scroll {
   to { translate: -50% 0; }
 }
-html.motion-on .hero-line {
-  animation: hero-rise 0.48s var(--ease) backwards;
+@keyframes cue-slide {
+  0% { translate: 0 -9px; opacity: 0; }
+  35%, 70% { opacity: 1; }
+  100% { translate: 0 9px; opacity: 0; }
 }
-html.motion-on .hero-line:nth-child(2) { animation-delay: 0.07s; }
+@keyframes hero-exit {
+  to { opacity: 0; translate: 0 -6svh; }
+}
+@keyframes cue-out {
+  to { opacity: 0; }
+}
+
+/* --ci is set inline per letter by EditorialHero; 0 here is the fallback
+   that keeps the calc() resolvable if a span ever arrives without one. */
+.hero-char { display: inline-block; --ci: 0; }
+/* The masthead sets letter by letter — but only once the display face has
+   resolved (.fonts-in, stamped by App from document.fonts.ready with a
+   300ms floor). Starting on the fallback face and swapping mid-stagger
+   makes the glyphs jump widths while they rise. */
+html.motion-on.fonts-in .hero-char {
+  animation: char-rise var(--dur-4) var(--ease) backwards;
+  animation-delay: calc(var(--ci) * var(--stagger));
+}
+/* The rest of the lockup follows the last letter (--ci 10 ≈ 320ms + 420ms). */
 html.motion-on .hero-signal {
-  animation: hero-rise 0.48s var(--ease) 0.12s backwards;
+  animation: hero-rise 0.48s var(--ease) 0.5s backwards;
 }
 html.motion-on .hero-lede {
-  animation: hero-rise 0.48s var(--ease) 0.16s backwards;
+  animation: hero-rise 0.48s var(--ease) 0.56s backwards;
 }
 html.motion-on .hero-actions {
-  animation: hero-rise 0.48s var(--ease) 0.2s backwards;
+  animation: hero-rise 0.48s var(--ease) 0.62s backwards;
 }
 /* 52s per full loop — wire-slow, legible, and cheap: one composited
    translate on a fixed-content track. */
 html.motion-on .wire-ticker-track {
   animation: wire-scroll 52s linear infinite;
+}
+
+/* ── scroll cue ───────────────────────────────────────────────────────────
+ * A mono whisper above the wire. The dash slides its little track on a loop;
+ * without motion it is a static mark, which is still an invitation. */
+.hero-cue {
+  position: absolute;
+  z-index: 1;
+  left: var(--gutter);
+  bottom: 64px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+.hero-cue-track {
+  position: relative;
+  overflow: hidden;
+  width: 1px;
+  height: 30px;
+  background: rgba(246, 241, 231, 0.22);
+}
+.hero-cue-dash {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 12px;
+  background: var(--amber);
+}
+.hero-cue-label {
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  letter-spacing: 0.26em;
+  color: var(--text-faint);
+}
+html.motion-on .hero-cue-dash {
+  animation: cue-slide 2.4s var(--ease-in-out) infinite;
+}
+
+/* The lockup scrubs away as the reader leaves the opening spread — opacity
+   led, a breath of lift, driven by the root scroll itself. */
+@supports (animation-timeline: scroll()) {
+  html.motion-on .hero-lockup {
+    animation: hero-exit var(--ease-scroll) both;
+    animation-timeline: scroll(root block);
+    animation-range: 0 90svh;
+  }
+  html.motion-on .hero-cue {
+    animation: cue-out var(--ease-scroll) both;
+    animation-timeline: scroll(root block);
+    animation-range: 0 12svh;
+  }
 }
 
 /* ── works bento ──────────────────────────────────────────────────────────
@@ -1132,6 +1261,11 @@ html.motion-on .wire-ticker-track {
   transition: outline-color var(--dur-2) var(--ease-out);
   outline: 1px solid transparent;
   outline-offset: -1px;
+  /* Paint isolation for seventeen tilting plates — overflow is already
+     hidden, contain makes the isolation explicit to the engine. The tilt
+     itself is a JS-written transform (WorksBento): transform belongs to the
+     pointer, translate to the reveal, scale to the hover. */
+  contain: paint;
 }
 /* The hover gesture is disclosure, not levitation — a plate that lifts 4px
    is a card again. The frame stays put; the caption opens and the picture
@@ -1331,15 +1465,6 @@ html.motion-on .wire-ticker-track {
   z-index: 0;
   pointer-events: none;
 }
-.hero-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
-  transition: opacity var(--dur-5) var(--ease-out);
-}
-.hero-canvas.is-live { opacity: 1; }
 .hero-fallback {
   position: absolute;
   inset: 0;
@@ -1348,12 +1473,18 @@ html.motion-on .wire-ticker-track {
   filter: saturate(0.92) brightness(0.62);
 }
 .hero-fallback.is-visible { opacity: 1; }
+/* While the fluid paints the dark issue, the collage yields the stage to it.
+   The light issue keeps the collage — its hero pins an opaque plate that
+   occludes the document-level fluid, and a bare plate reads as a hole. */
+html.fluid-on:not([data-theme="light"]) .hero-fallback { display: none; }
 .hero-veil {
   position: absolute;
   inset: 0;
+  /* Lighter than the constellation era so the fluid reads — but the left
+     band under the lockup stays ≥0.9: the type's ground is not negotiable. */
   background:
-    linear-gradient(105deg, rgba(6, 28, 49, 0.94) 0%, rgba(6, 28, 49, 0.62) 42%, rgba(6, 28, 49, 0.22) 72%, rgba(6, 28, 49, 0.7) 100%),
-    linear-gradient(180deg, rgba(6, 28, 49, 0.18) 0%, transparent 28%, rgba(6, 28, 49, 0.82) 100%);
+    linear-gradient(105deg, rgba(6, 28, 49, 0.9) 0%, rgba(6, 28, 49, 0.5) 42%, rgba(6, 28, 49, 0.14) 72%, rgba(6, 28, 49, 0.55) 100%),
+    linear-gradient(180deg, rgba(6, 28, 49, 0.18) 0%, transparent 28%, rgba(6, 28, 49, 0.78) 100%);
 }
 /* Retrofuturist scan veil — decorative only, opacity kept very low. */
 .hero-scan {
@@ -1378,17 +1509,103 @@ html.motion-on .wire-ticker-track {
   background: linear-gradient(90deg, transparent, rgba(230, 173, 70, 0.55), transparent);
 }
 
-/* ── featured cinematic plates ──────────────────────────────────────────── */
+/* ── featured cinematic plates ────────────────────────────────────────────
+ * Three shapes from one DOM (see FeaturedStrip.tsx). The BASE sheet is the
+ * two-column grid; the snap carousel takes over under 900px; the sticky
+ * scrolly exists only inside the @supports × motion-on × ≥1000px triple
+ * below, so every fallback is "the block is absent", never a second
+ * implementation.
+ */
 .featured-section {
   border-top: 1px solid var(--hairline);
 }
-.featured-grid {
+.featured-track {
+  list-style: none;
+  margin: clamp(24px, 3vw, 40px) 0 0;
+  padding: 0;
   display: grid;
   gap: clamp(14px, 1.6vw, 22px);
-  margin-top: clamp(24px, 3vw, 40px);
 }
 @media (min-width: 900px) {
-  .featured-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .featured-track { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* Touch's mother tongue: a native snap carousel. The browser is the driver,
+   so it is not motion and needs no scope. */
+@media (max-width: 899px) {
+  .featured-track {
+    display: flex;
+    overflow-x: auto;
+    gap: 14px;
+    padding-bottom: 8px;
+    scroll-snap-type: x mandatory;
+  }
+  .featured-card {
+    flex: 0 0 86vw;
+    scroll-snap-align: center;
+  }
+}
+/* The scrolly's runway progress — exists only while the scrolly does. */
+.featured-progress { display: none; }
+/* --fcount is set inline from CATALOG by FeaturedStrip; 4 is the resolvable
+   fallback, not a second source of truth. */
+.featured-scrolly { --fcount: 4; }
+
+@keyframes featured-pan {
+  to { translate: calc(100cqw - 100%) 0; }
+}
+@keyframes featured-progress-fill {
+  to { scale: 1 1; }
+}
+@supports (animation-timeline: view()) {
+  @media (min-width: 1000px) {
+    /* The runway: one viewport of pin plus 42vw of travel per plate beyond
+       the first. --fcount comes from CATALOG via an inline custom property,
+       so the data still drives the page. */
+    html.motion-on .featured-scrolly {
+      height: calc(100svh + (var(--fcount, 4) - 1) * 42vw);
+      view-timeline: --featured block;
+    }
+    html.motion-on .featured-sticky {
+      position: sticky;
+      top: 0;
+      height: 100svh;
+      overflow: clip;
+      display: grid;
+      align-content: center;
+      container-type: inline-size;
+    }
+    /* translate: 100cqw − 100% = container width minus track width — the
+       exact travel, solved by CSS with no measuring script. contain 0..100%
+       is precisely the pinned stretch of the runway. */
+    html.motion-on .featured-track {
+      display: flex;
+      gap: clamp(20px, 2.5vw, 40px);
+      width: max-content;
+      margin-top: clamp(18px, 2.6vh, 32px);
+      animation: featured-pan var(--ease-scroll) both;
+      animation-timeline: --featured;
+      animation-range: contain 0% contain 100%;
+    }
+    html.motion-on .featured-card {
+      flex: 0 0 min(58vw, 880px);
+    }
+    html.motion-on .featured-progress {
+      display: block;
+      margin: 14px 0 0;
+      height: 2px;
+      background: var(--hairline);
+    }
+    html.motion-on .featured-progress span {
+      display: block;
+      height: 100%;
+      background: var(--spectrum);
+      scale: 0 1;
+      transform-origin: 0 50%;
+      animation: featured-progress-fill var(--ease-scroll) both;
+      animation-timeline: --featured;
+      animation-range: contain 0% contain 100%;
+    }
+  }
 }
 .featured-card {
   position: relative;

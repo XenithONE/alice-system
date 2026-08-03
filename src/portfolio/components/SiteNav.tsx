@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CATALOG } from "../bento";
 import { STUDIO_TALLY } from "../../data/works";
 import { applyMotion, useMotion } from "../motion";
@@ -12,6 +12,42 @@ import { applyMotion, useMotion } from "../motion";
  * from every number the nav showed.
  */
 const LIVE = CATALOG.filter((w) => w.status === "playable").length;
+
+const SPY_SECTIONS = ["featured", "games", "ai-lab", "prompts", "stack"] as const;
+
+/*
+ * Which section owns the reading line. One observer, a 40–45% viewport band
+ * (rootMargin trims the rest away), and the largest visible ratio wins.
+ * aria-current carries the answer — state and styling hook in one attribute.
+ */
+function useScrollSpy(): string | null {
+  const [active, setActive] = useState<string | null>(null);
+  useEffect(() => {
+    const els = SPY_SECTIONS
+      .map((id) => document.getElementById(id))
+      .filter((el): el is HTMLElement => el !== null);
+    if (els.length === 0) return;
+    const ratios = new Map<string, number>();
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) ratios.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0);
+        let best: string | null = null;
+        let bestRatio = 0;
+        for (const [id, r] of ratios) {
+          if (r > bestRatio) {
+            best = id;
+            bestRatio = r;
+          }
+        }
+        setActive(best);
+      },
+      { rootMargin: "-40% 0px -55% 0px", threshold: [0, 0.01, 0.25, 0.5, 1] }
+    );
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+  return active;
+}
 
 const THEME_KEY = "alice_theme";
 const THEME_COLOR: Record<"dark" | "light", string> = {
@@ -112,6 +148,12 @@ function ThemeToggle() {
 }
 
 export function SiteNav() {
+  const active = useScrollSpy();
+  const spyLink = (id: (typeof SPY_SECTIONS)[number], label: string) => (
+    <a href={`#${id}`} data-magnetic {...(active === id ? { "aria-current": "true" } : {})}>
+      {label}
+    </a>
+  );
   return (
     <header className="site-nav">
       <div className="site-nav-shell">
@@ -132,11 +174,11 @@ export function SiteNav() {
         </p>
 
         <nav className="site-primary-nav" aria-label="主要セクション">
-          <a href="#featured" data-magnetic>FEATURED</a>
-          <a href="#games" data-magnetic>WORKS</a>
-          <a href="#ai-lab" data-magnetic>LAB</a>
-          <a href="#prompts" data-magnetic>PROMPTS</a>
-          <a href="#stack" data-magnetic>STACK</a>
+          {spyLink("featured", "FEATURED")}
+          {spyLink("games", "WORKS")}
+          {spyLink("ai-lab", "LAB")}
+          {spyLink("prompts", "PROMPTS")}
+          {spyLink("stack", "STACK")}
         </nav>
 
         {/* MOTION before THEME — the control with the larger effect sits first. */}

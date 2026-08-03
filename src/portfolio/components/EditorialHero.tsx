@@ -1,29 +1,75 @@
+import type { CSSProperties } from "react";
 import { CATALOG } from "../bento";
-import { HeroCanvas } from "./HeroCanvas";
+
+const BASE = import.meta.env.BASE_URL;
 
 /*
- * Signal Issue masthead — brand-first, full-bleed WebGL signal behind type.
+ * Signal Issue masthead, full-viewport and kinetic.
  *
- * Numbers still come from CATALOG so the page never contradicts the nav
- * ticker. Contents list and tallies used to live here; they duplicated the
- * sticky nav and crowded the brand off the first viewport.
+ * The fluid ground (FluidRoot, document-level z:-1) is the hero's backdrop;
+ * the constellation canvas that used to live here is retired — two render
+ * loops behind one composition was paying the frame budget twice for two
+ * competing protagonists. The static collage below remains as the ground
+ * for no-WebGL / motion-off readers, and for the light issue (whose hero
+ * pins an opaque dark plate that occludes the document fluid).
+ *
+ * The masthead sets letter by letter. Accessibility shape: the h1 carries
+ * aria-label with the plain name and every visual span is aria-hidden — a
+ * screen reader hears "AlicE sYsTeM", never "A l i c E".
  */
+
+const fallbackStyle: CSSProperties = {
+  backgroundImage: [
+    /* a static breath of the SPECTRUM so even the still page carries it */
+    "radial-gradient(ellipse at 74% 38%, rgba(224, 81, 124, 0.12), transparent 52%)",
+    "radial-gradient(ellipse at 70% 40%, rgba(230, 173, 70, 0.16), transparent 55%)",
+    "radial-gradient(ellipse at 20% 80%, rgba(8, 169, 197, 0.12), transparent 50%)",
+    "linear-gradient(105deg, rgba(6, 28, 49, 0.92) 0%, rgba(6, 28, 49, 0.55) 42%, rgba(6, 28, 49, 0.25) 100%)",
+    `url(${BASE}assets/hollow-ward-poster.webp)`,
+    `url(${BASE}assets/relic-road-brick.webp)`,
+  ].join(", "),
+  backgroundSize: "auto, auto, auto, auto, cover, 48%",
+  backgroundPosition: "center, center, center, center, center, right bottom",
+  backgroundRepeat: "no-repeat",
+};
+
+/* Visual letters. --ci drives the stagger; the wrapper hides them from AT. */
+function Chars({ text, from }: { text: string; from: number }) {
+  return (
+    <>
+      {text.split("").map((c, i) => (
+        <span key={i} className="hero-char" style={{ "--ci": from + i } as CSSProperties}>
+          {c}
+        </span>
+      ))}
+    </>
+  );
+}
 
 export function EditorialHero() {
   const playable = CATALOG.filter((w) => w.status === "playable").length;
 
   return (
     <section className="hero" id="hero">
-      <HeroCanvas />
+      <div className="hero-stage" aria-hidden="true">
+        <div className="hero-fallback is-visible" style={fallbackStyle} />
+        <div className="hero-veil" />
+      </div>
       <div className="hero-scan" aria-hidden="true" />
 
       <div className="hero-lockup">
         <p className="section-index hero-folio">00 / SIGNAL ISSUE</p>
 
-        <h1 className="hero-title">
-          <span className="hero-line">AlicE</span>
-          <span className="hero-line">
-            sYs<em>Te</em>M
+        <h1 className="hero-title" aria-label="AlicE sYsTeM">
+          <span className="hero-line" aria-hidden="true">
+            <Chars text="AlicE" from={0} />
+          </span>
+          <span className="hero-line" aria-hidden="true">
+            <Chars text="sYs" from={5} />
+            <em>
+              <Chars text="Te" from={8} />
+            </em>
+            <Chars text="M" from={10} />
           </span>
         </h1>
 
@@ -50,6 +96,15 @@ export function EditorialHero() {
             制作を見る
           </a>
         </p>
+      </div>
+
+      {/* The reader's invitation down — decorative, and scrubbed away within
+          the first 12svh of scroll where timelines exist. */}
+      <div className="hero-cue" aria-hidden="true">
+        <span className="hero-cue-track">
+          <span className="hero-cue-dash" />
+        </span>
+        <span className="hero-cue-label">SCROLL</span>
       </div>
 
       {/*

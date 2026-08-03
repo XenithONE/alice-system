@@ -109,9 +109,11 @@ uniform vec3 u_ground;
 uniform float u_time;
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main() {
-  vec3 d = texture(u_dye, v_uv).rgb;
+  vec3 d = texture(u_dye, v_uv).rgb * 0.78;
   /* screen blend: glows on the dark issue, stays paper-plausible on the
-     light one (the canvas is further dimmed by CSS there). */
+     light one (the canvas is further dimmed by CSS there). The 0.78 cap
+     keeps the hottest bloom below "white page" — body ink crosses this
+     ground in the works band, and the veil only guards the hero. */
   vec3 c = 1.0 - (1.0 - u_ground) * (1.0 - d);
   c += (hash(v_uv * 1913.0 + fract(u_time)) - 0.5) / 255.0;
   o = vec4(c, 1.0);
@@ -369,7 +371,7 @@ export function createFluidLayer(
     const a = SPECTRUM[Math.floor(seg) % 3]!;
     const b = SPECTRUM[(Math.floor(seg) + 1) % 3]!;
     const mix = seg - Math.floor(seg);
-    const dyeAmount = pointerFresh ? Math.min(0.5, speed * 1.6) : 0.05 + 0.03 * Math.sin(t * 0.7);
+    const dyeAmount = pointerFresh ? Math.min(0.38, speed * 1.5) : 0.045 + 0.025 * Math.sin(t * 0.7);
     const color: [number, number, number] = [
       (a[0] + (b[0] - a[0]) * mix) * dyeAmount,
       (a[1] + (b[1] - a[1]) * mix) * dyeAmount,

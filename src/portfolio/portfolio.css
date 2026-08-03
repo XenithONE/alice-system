@@ -93,8 +93,30 @@ html.motion-on [data-reveal].is-in { opacity: 1; translate: none; }
 .studio-ticker .live .dot { background: var(--live-text); box-shadow: 0 0 7px rgba(63, 163, 74, 0.5); }
 .studio-ticker .dev .dot { background: var(--dev-text); box-shadow: 0 0 7px rgba(122, 95, 208, 0.5); }
 .site-primary-nav { display: flex; gap: clamp(12px, 2vw, 26px); font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; }
-.site-primary-nav a { color: var(--text-dim); transition: color var(--dur-2) var(--ease-out); }
+.site-primary-nav a { position: relative; color: var(--text-dim); transition: color var(--dur-2) var(--ease-out); }
 .site-primary-nav a:hover { color: var(--ink); }
+/* The reading line's owner (scroll-spy sets aria-current). The rule is a
+   1px underline that draws in; without motion it simply appears. */
+.site-primary-nav a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 1px; background: var(--accent-ink); scale: 0 1; transform-origin: 0 50%; }
+.site-primary-nav a[aria-current] { color: var(--ink); }
+.site-primary-nav a[aria-current]::after { scale: 1 1; }
+html.motion-on .site-primary-nav a::after { transition: scale var(--dur-2) var(--ease-out); }
+
+/* The bar starts as pure air over the masthead and materialises into its
+   panel across the first 160px of scroll. Only where timelines exist — the
+   base sticky panel above is the whole story everywhere else. */
+@keyframes nav-materialize {
+  to { background: var(--panel); border-bottom-color: var(--hairline); }
+}
+@supports (animation-timeline: scroll()) {
+  html.motion-on .site-nav {
+    background: transparent;
+    border-bottom-color: transparent;
+    animation: nav-materialize var(--ease-scroll) both;
+    animation-timeline: scroll(root block);
+    animation-range: 0 160px;
+  }
+}
 
 /* ── nav toggles (MOTION / THEME) ─────────────────────────────────────────
  * The reader picks the stock and decides whether the page moves. Ruled
@@ -270,6 +292,13 @@ html.cursor-on, html.cursor-on a, html.cursor-on button, html.cursor-on [data-ma
 .cursor-dot { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; }
 .cursor-ring { width: 30px; height: 30px; border-width: 1.5px; border-style: solid; margin: -15px 0 0 -15px; transition: width var(--dur-2) var(--ease-out), height var(--dur-2) var(--ease-out); }
 
+/* Fold the reading half of the document out of first-render layout. The IO
+   reveal fires near the viewport, so the two features compose. */
+#ai-lab, #prompts, #stack, #closing {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 900px;
+}
+
 /* ── responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .studio-ticker { display: none; }
@@ -280,6 +309,13 @@ html.cursor-on, html.cursor-on a, html.cursor-on button, html.cursor-on [data-ma
   .site-nav-shell { gap: 12px; }
   .site-primary-nav { gap: 12px; font-size: 0.62rem; margin-left: auto; }
   .detail-meta { flex-direction: column; }
+}
+/* Under ~540px the links and both toggles cannot share one row. The bar
+   wraps and the toggles take the second row's right edge — controls are
+   never the thing that gets clipped. */
+@media (max-width: 540px) {
+  .site-nav-shell { flex-wrap: wrap; row-gap: 4px; padding-block: 8px; }
+  .nav-toggles { margin-left: auto; }
 }
 @media (max-width: 420px) {
   .cta { font-size: 0.68rem; padding: 10px 13px; }

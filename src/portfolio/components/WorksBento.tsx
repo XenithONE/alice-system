@@ -1,7 +1,79 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CATALOG, packedOrder } from "../bento";
 import { BentoTile } from "./BentoTile";
+import { useMotion } from "../motion";
 import type { Work } from "../../data/works";
+
+/*
+ * Pointer tilt for the plate wall. One delegated listener set on the grid,
+ * one rAF, and only the tile under the pointer is ever touched: its rect is
+ * read once on enter, will-change is granted for the hover's duration only,
+ * and the transform is written directly (no transition — the follow IS the
+ * animation; the release snaps, which at 2.2° reads as a plate settling).
+ *
+ * Property ownership holds: transform = pointer (this), translate = reveal,
+ * scale = hover zoom. Max 2.2° — a plate on a wall, not a card trick.
+ */
+const TILT_DEG = 2.2;
+
+function usePlateTilt(gridRef: React.RefObject<HTMLOListElement | null>, motion: boolean): void {
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!motion || !grid) return;
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+
+    let tile: HTMLElement | null = null;
+    let rect: DOMRect | null = null;
+    let raf = 0;
+    let px = 0;
+    let py = 0;
+
+    const apply = (): void => {
+      raf = 0;
+      if (!tile || !rect) return;
+      const rx = ((py - (rect.top + rect.height / 2)) / rect.height) * -TILT_DEG;
+      const ry = ((px - (rect.left + rect.width / 2)) / rect.width) * TILT_DEG;
+      tile.style.transform = `perspective(900px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+    };
+    const release = (): void => {
+      if (tile) {
+        tile.style.transform = "";
+        tile.style.willChange = "";
+      }
+      tile = null;
+      rect = null;
+    };
+    const onOver = (e: PointerEvent): void => {
+      const next = (e.target as HTMLElement | null)?.closest<HTMLElement>(".bento-tile") ?? null;
+      if (next === tile) return;
+      release();
+      if (!next) return;
+      tile = next;
+      rect = next.getBoundingClientRect();
+      next.style.willChange = "transform";
+    };
+    const onMove = (e: PointerEvent): void => {
+      px = e.clientX;
+      py = e.clientY;
+      if (!raf) raf = window.requestAnimationFrame(apply);
+    };
+    const onOut = (e: PointerEvent): void => {
+      const to = e.relatedTarget as HTMLElement | null;
+      if (tile && (!to || !tile.contains(to))) release();
+    };
+
+    grid.addEventListener("pointerover", onOver);
+    grid.addEventListener("pointermove", onMove, { passive: true });
+    grid.addEventListener("pointerout", onOut);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      release();
+      grid.removeEventListener("pointerover", onOver);
+      grid.removeEventListener("pointermove", onMove);
+      grid.removeEventListener("pointerout", onOut);
+    };
+  }, [gridRef, motion]);
+}
 
 type Filter = "all" | "play" | "store" | "experiments";
 
@@ -21,6 +93,8 @@ const MATCH: Record<Filter, (w: Work) => boolean> = {
 
 export function WorksBento({ onOpenDetail }: { onOpenDetail: (w: Work) => void }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const gridRef = useRef<HTMLOListElement | null>(null);
+  usePlateTilt(gridRef, useMotion());
 
   // Packed once for the full catalogue; a filtered view is a subset of that
   // order, which keeps a work in the same relative position however you slice it.
@@ -84,6 +158,7 @@ export function WorksBento({ onOpenDetail }: { onOpenDetail: (w: Work) => void }
        * uniform grid also cannot develop holes, which a re-packed subset could.
        */}
       <ol
+        ref={gridRef}
         className="bento-grid"
         data-mode={filter === "all" ? "packed" : "filtered"}
         aria-labelledby="games-title"

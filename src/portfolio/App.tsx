@@ -22,6 +22,16 @@ export default function PortfolioApp() {
   // chosen explicitly. The boot script resolved the initial state pre-paint.
   useEffect(() => watchOsPreference(), []);
 
+  // .fonts-in gates the masthead's per-letter entrance: Barlow arriving
+  // mid-stagger would make the glyphs jump widths while they rise. 300ms is
+  // the floor — past that the entrance runs on whatever face is present.
+  useEffect(() => {
+    const apply = (): void => document.documentElement.classList.add("fonts-in");
+    const timer = window.setTimeout(apply, 300);
+    document.fonts?.ready.then(apply).catch(apply);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     const targetId = window.location.hash.slice(1);
     if (!targetId) return;

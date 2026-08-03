@@ -100,8 +100,10 @@ function ResearchWaveform() {
           <line x1="684" y1="30" x2="684" y2="250" />
         </g>
         <g className="lab-waveform-lines">
+          {/* pathLength=1 normalises every trace so the CSS draw-on scrub can
+              use a 0..1 dash without knowing real path lengths. */}
           {WAVE_PATHS.map((path) => (
-            <path key={path} d={path} vectorEffect="non-scaling-stroke" />
+            <path key={path} d={path} vectorEffect="non-scaling-stroke" pathLength={1} />
           ))}
         </g>
         <g className="lab-waveform-points">
