@@ -460,6 +460,26 @@ for (const { r } of roots) for (const [k, v] of r.decls) if (k.startsWith("--"))
       ? "index.html に作品数の記述が無い（メタが作品数を語らなくなったら消してよい検査）"
       : `記述 ${claimed.join(", ")} / 実際 ${CATALOG.length}`
   );
+  /*
+   * The other number in the same sentence, which had no check at all.
+   *
+   * "全17作品のうち15本はブラウザで今すぐ遊べます" is two claims, and [C9] only
+   * ever policed the first. The second drifts for a different reason and at a
+   * different time — appending an in-dev title moves one, flipping a status to
+   * playable moves the other — so half a check let the description tell a
+   * search result a number nothing in the repo agreed with.
+   */
+  const playable = CATALOG.filter((w) => w.status === "playable").length;
+  const claimedPlayable = [...html.matchAll(/(\d+)本/g)].map((m) => Number(m[1]));
+  const wrongPlayable = claimedPlayable.filter((n) => n !== playable);
+  check(
+    "[C9c] index.html の「N本は今すぐ遊べる」が playable の件数と一致する",
+    claimedPlayable.length > 0 && wrongPlayable.length === 0,
+    claimedPlayable.length === 0
+      ? "index.html に本数の記述が無い"
+      : `記述 ${claimedPlayable.join(", ")} / 実際 ${playable}`
+  );
+
   const stale = ["og-harbor", "港を旅", "3Dポートフォリオ", "小舟"].filter((s) => html.includes(s));
   check(
     "[C9b] 退避済みの港サイトの文言・画像が meta に残っていない",

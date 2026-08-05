@@ -22,7 +22,8 @@ export default defineConfig({
         "vortex-crown": fileURLToPath(new URL("./vortex-crown.html", import.meta.url)),
         "nitro-crown": fileURLToPath(new URL("./nitro-crown.html", import.meta.url)),
         atelier: fileURLToPath(new URL("./atelier.html", import.meta.url)),
-        harbor: fileURLToPath(new URL("./harbor.html", import.meta.url))
+        harbor: fileURLToPath(new URL("./harbor.html", import.meta.url)),
+        gallery: fileURLToPath(new URL("./gallery.html", import.meta.url))
       },
       // NOTE: no manualChunks here on purpose. rolldown-vite's manualChunks compat
       // folded three's core into the spark group even when the function returned

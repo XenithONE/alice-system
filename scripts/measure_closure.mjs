@@ -21,15 +21,49 @@ import { join, dirname, basename } from "node:path";
 
 const DIST = "dist";
 
-/** A page must not be able to reach these, however indirectly. */
+/**
+ * A page must not be able to reach these, however indirectly.
+ *
+ * ⚠ three.core is the one that matters, and it did not exist as a chunk until
+ * gallery.html started importing three/webgpu. Both entry points — the WebGL
+ * `three` build and the WebGPU one — are thin shells over `three.core.js`, so
+ * once two graphs share it rolldown splits it out and `three.module-*` shrinks
+ * from 150 KB to 83 KB. At that moment a rule that only banned
+ * /^three\.module-/ stopped being able to see three.js at all: the top page
+ * could have pulled in the whole core and reported a clean run.
+ *
+ * Banning the core is the load-bearing line. You cannot use any part of three
+ * without it, whichever entry point you came in through — so this one pattern
+ * covers builds that do not exist yet. The other two are named anyway, because
+ * a failure message that says which door was opened is worth three characters.
+ */
 const BANNED = {
-  "index.html": [/^three\.module-/, /^spark\.module-/, /^rapier-/],
+  "index.html": [
+    /^three\.core-/,
+    /^three\.module-/,
+    /^three\.webgpu-/,
+    /^three\.tsl-/,
+    /^spark\.module-/,
+    /^rapier-/
+  ],
   "harbor.html": [/^spark\.module-/, /^rapier-/],
-  "atelier.html": [/^spark\.module-/, /^rapier-/]
+  "atelier.html": [/^spark\.module-/, /^rapier-/],
+  "gallery.html": [/^spark\.module-/, /^rapier-/]
 };
 
-/** Budget in gzip bytes for the first-load JS closure. */
-const BUDGET = { "index.html": 95_000 }; // v13: raw-WebGL2 fluid layer + MOTION toggle (still no three.js)
+/**
+ * Budget in gzip bytes for the first-load JS closure.
+ *
+ * v13: raw-WebGL2 fluid layer + MOTION toggle (still no three.js).
+ *
+ * Adding gallery.html moved the measured figure from 83,774 to ~84,500 without
+ * adding a line of code to the top page: sharing bento.ts, badges.tsx and
+ * motion.ts across two entries makes rolldown split them into their own chunks,
+ * and the same bytes compress worse in eight pieces than in five. Raw grew 384
+ * bytes; gzip grew about 900. The ceiling stays where it was — the point of a
+ * budget is that it does not move to accommodate what happened.
+ */
+const BUDGET = { "index.html": 95_000 };
 
 const gz = (p) => gzipSync(readFileSync(p)).length;
 
@@ -110,7 +144,11 @@ const REQUIRED = {
   "vortex-crown.html": /^rapier-/,
   "hollow-ward.html": /^spark\.module-/,
   "harbor.html": /^three\.module-/,
-  "atelier.html": /^three\.module-/
+  "atelier.html": /^three\.module-/,
+  /* The corridor. three/webgpu currently gets inlined into the page's own
+     world chunk rather than emitted as three.webgpu-*, so the core is what
+     proves the renderer is still reachable. */
+  "gallery.html": /^three\.core-/
 };
 for (const [page, re] of Object.entries(REQUIRED)) {
   const row = report.find((r) => r.page === page);

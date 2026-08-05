@@ -1,0 +1,471 @@
+/*
+ * LONG GALLERY. Everything here is scoped to .cg-* and renders on
+ * gallery.html alone; the tokens, the chrome (.cta, .badge, .engine-chip,
+ * .nav-toggle, .skip-link) and the dark issue come from theme.css.
+ *
+ * Unlayered on purpose, like harbor.css and atelier.css: theme.css is
+ * @layer theme, so an unlayered page sheet wins every tie without needing a
+ * specificity fight. Nothing in here restates a theme.css fact — where the
+ * corridor needs a different value it sets a custom property that theme.css
+ * already reads, or it styles a .cg-* element theme.css has never heard of.
+ *
+ * TWO SHAPES, ONE DOM
+ *
+ *   default        a catalogue. Seventeen rows, alternating sides, each a
+ *                  link. This is the whole page and it is finished.
+ *   html.cg-live   the corridor. The same seventeen rows become slabs of
+ *                  scroll height with their contents made transparent —
+ *                  present in the tree, focusable, spoken. The canvas draws
+ *                  underneath. Focus brings a row back at full size.
+ *
+ * cg-live is only ever added when motion is on (see GpuRoot), so nothing in
+ * the live block needs a motion guard — and nothing in it moves anyway. The
+ * movement is in the corridor, which is not CSS.
+ */
+
+.cg {
+  --cg-measure: 1120px;
+  /* One slab of scroll per work. A px constant, not vh: on mobile the URL bar
+     changes the viewport height mid-scroll, which would change scrollHeight
+     and make the camera jump backwards while the reader's finger is still
+     moving forwards. */
+  --cg-slab: 620px;
+  min-height: 100svh;
+  background: var(--cg-page, var(--bg));
+  color: var(--text);
+  font-family: var(--jp);
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+}
+
+/* ── the wall ────────────────────────────────────────────────────────────
+ * Behind everything, fixed, and never in the tab order. It holds no
+ * focusable object at all, which is how "focus jumped to something behind
+ * the wall" is prevented structurally rather than carefully.
+ */
+.cg-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cg-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity var(--dur-5) var(--ease-out);
+}
+
+/*
+ * One class decides whether the corridor exists, and it is the one on <html>.
+ * The first draft keyed this off an is-live class on the canvas itself, which
+ * GpuRoot never sets — so the world booted, drew 45 calls a frame and stayed
+ * at opacity 0. Nothing errored; the page just looked exactly like the
+ * catalogue it falls back to.
+ */
+html.cg-live .cg-canvas {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── masthead ───────────────────────────────────────────────────────────── */
+.cg-masthead {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px var(--gutter);
+  background: var(--cg-chrome, rgb(var(--ground-rgb) / 0.86));
+  border-bottom: 1px solid var(--hairline);
+  backdrop-filter: blur(14px);
+}
+
+.cg-back {
+  font-family: var(--mono);
+  font-size: var(--t--1);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.cg-back:hover,
+.cg-back:focus-visible {
+  color: var(--ink);
+}
+
+/* ── entrance ───────────────────────────────────────────────────────────── */
+.cg-intro {
+  max-width: var(--cg-measure);
+  margin: 0 auto;
+  padding: clamp(48px, 9vw, 120px) var(--gutter) clamp(32px, 5vw, 64px);
+  background: var(--cg-page, transparent);
+}
+
+.cg-eyebrow {
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.cg-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(3rem, 1.6rem + 6vw, 7rem);
+  line-height: 0.92;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.cg-sub {
+  margin: 6px 0 0;
+  font-family: var(--serif);
+  font-size: var(--t-2);
+  color: var(--text-dim);
+}
+
+.cg-lede {
+  margin: 22px 0 0;
+  max-width: 30em;
+  font-size: var(--t-1);
+  line-height: 1.85;
+  color: var(--text);
+}
+
+.cg-note {
+  margin: 18px 0 0;
+  padding: 12px 16px;
+  max-width: 34em;
+  border-left: 2px solid var(--hairline-strong);
+  background: var(--paper);
+  color: var(--ink-paper-soft);
+  font-size: var(--t--1);
+  line-height: 1.8;
+}
+
+.cg-note.is-live {
+  border-left-color: var(--live);
+  color: var(--ink-paper);
+}
+
+.cg-poster {
+  margin: 22px 0 0;
+  max-width: 44em;
+  border: 1px solid var(--hairline);
+  box-shadow: var(--elev-1);
+}
+
+.cg-poster img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.cg-poster figcaption {
+  padding: 8px 12px;
+  border-top: 1px solid var(--hairline);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+/* ── the catalogue ──────────────────────────────────────────────────────── */
+.cg-list {
+  max-width: var(--cg-measure);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  list-style: none;
+}
+
+.cg-item {
+  border-top: 1px solid var(--hairline);
+}
+
+.cg-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: clamp(24px, 4vw, 44px);
+  align-items: center;
+  padding-block: clamp(28px, 4vw, 48px);
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Alternating sides, the way a magazine sets a picture essay. Reading order
+   is untouched — this moves the picture, never the text. */
+.cg-item:nth-child(even) .cg-plate {
+  order: 2;
+}
+
+.cg-plate {
+  margin: 0;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--elev-1);
+}
+
+.cg-plate img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cg-accession {
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+
+.cg-work {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: clamp(1.6rem, 1.1rem + 1.6vw, 2.667rem);
+  line-height: 1.02;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.cg-ja {
+  margin: 4px 0 0;
+  font-family: var(--serif);
+  font-size: var(--t-0);
+  color: var(--text-dim);
+}
+
+.cg-desc {
+  margin: 14px 0 0;
+  font-size: var(--t--1);
+  line-height: 1.9;
+  color: var(--text);
+}
+
+.cg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.cg-year {
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.cg-card .cta {
+  margin-top: 16px;
+}
+
+/* Colour and shadow are feedback, not motion, and stay outside the scope. */
+.cg-card:hover .cg-plate,
+.cg-card:focus-visible .cg-plate {
+  border-color: var(--hairline-strong);
+  box-shadow: var(--elev-2);
+}
+
+.cg-card:hover .cg-work,
+.cg-card:focus-visible .cg-work {
+  color: var(--accent-ink);
+}
+
+html.motion-on .cg-plate {
+  transition: translate var(--dur-3) var(--ease-out);
+}
+
+html.motion-on .cg-card:hover .cg-plate {
+  translate: 0 calc(var(--lift) * -1);
+}
+
+/* ── close ──────────────────────────────────────────────────────────────── */
+.cg-foot {
+  max-width: var(--cg-measure);
+  margin: 0 auto;
+  padding: clamp(48px, 7vw, 96px) var(--gutter) clamp(64px, 9vw, 128px);
+  border-top: 1px solid var(--hairline);
+  background: var(--cg-page, transparent);
+}
+
+.cg-foot-line {
+  margin: 0 0 18px;
+  max-width: 34em;
+  font-family: var(--serif);
+  font-size: var(--t--1);
+  line-height: 1.9;
+  color: var(--text-faint);
+}
+
+/* ── stacked ────────────────────────────────────────────────────────────── */
+@media (max-width: 879px) {
+  .cg-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The alternation is a two-column device. Stacked, it would put a picture
+     below its own caption on every other row. */
+  .cg-item:nth-child(even) .cg-plate {
+    order: 0;
+  }
+}
+
+/* ── the corridor ───────────────────────────────────────────────────────── */
+/*
+ * Only reachable with html.cg-live, which GpuRoot adds after the device is
+ * up. Every rule here is layout or opacity: nothing in this block moves, so
+ * nothing in it needs the motion scope — and cg-live is never added while
+ * motion is off in any case.
+ */
+html.cg-live .cg {
+  /* The canvas is the ground now. Both the page and the two solid plates that
+     float over it read this one token. */
+  --cg-page: transparent;
+}
+
+html.cg-live .cg-intro,
+html.cg-live .cg-foot {
+  /* Opaque, not translucent. Type over a rendered corridor has no ground a
+     contrast check can measure — the v14 glass plates shipped near-illegible
+     for exactly that reason, with zero reported failures. A wall label is a
+     solid card. */
+  --cg-page: var(--bg);
+  max-width: min(var(--cg-measure), 52ch);
+  margin-inline: var(--gutter);
+  padding: clamp(28px, 4vw, 48px);
+  border: 1px solid var(--hairline);
+  box-shadow: var(--elev-2);
+}
+
+html.cg-live .cg-masthead {
+  --cg-chrome: var(--bg);
+}
+
+/* ── the wall label ──────────────────────────────────────────────────────
+ * A museum caption, fixed at the bottom-left of the corridor. Opaque for the
+ * same reason the entrance card is: type over a rendered scene has no ground
+ * an audit can measure, so it is given one.
+ */
+.cg-label {
+  position: fixed;
+  z-index: 25;
+  left: var(--gutter);
+  bottom: clamp(20px, 4vh, 44px);
+  width: min(340px, calc(100vw - var(--gutter) * 2));
+  padding: 16px 18px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--accent-ink);
+  box-shadow: var(--elev-2);
+}
+
+.cg-label-no {
+  margin: 0 0 8px;
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+
+.cg-label-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: var(--t-2);
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.cg-label-ja {
+  margin: 2px 0 12px;
+  font-family: var(--serif);
+  font-size: var(--t--1);
+  color: var(--text-dim);
+}
+
+.cg-label-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: var(--t--2);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  border-bottom: 1px solid currentColor;
+  padding-bottom: 3px;
+}
+
+.cg-label-cta:hover,
+.cg-label-cta:focus-visible {
+  color: var(--ink);
+}
+
+@media (max-width: 620px) {
+  .cg-label {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    border-left-width: 1px;
+    border-top: 2px solid var(--accent-ink);
+  }
+}
+
+/* One slab of scroll per work. The row's contents stop painting; the row
+   itself becomes the distance between two frames. */
+html.cg-live .cg-item {
+  height: var(--cg-slab);
+  overflow: hidden;
+  border-top: 0;
+}
+
+html.cg-live .cg-card {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/*
+ * Focus is the keyboard reader's way through the corridor, so it has to land
+ * somewhere legible. Centred with inset + auto margins rather than a
+ * translate: this is a reveal, not a movement, and the page has one channel
+ * for movement.
+ */
+html.cg-live .cg-card:focus-visible {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  z-index: 30;
+  width: min(var(--cg-measure), 92vw);
+  height: max-content;
+  max-height: 88svh;
+  overflow: auto;
+  opacity: 1;
+  pointer-events: auto;
+  padding: clamp(20px, 3vw, 36px);
+  background: var(--bg);
+  border: 1px solid var(--hairline-strong);
+  box-shadow: var(--elev-3);
+}

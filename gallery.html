@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LONG GALLERY // 曲がった回廊 — AlicE sYsTeM</title>
+    <meta
+      name="description"
+      content="LONG GALLERY — AlicE sYsTeM の全作品を、曲線の回廊に掛けた WebGPU の3Dギャラリー。スクロールで歩き、額の前で止まるとその作品へ入れる。非対応の環境では作品一覧としてそのまま読める。"
+    />
+    <meta name="theme-color" content="#f2f3f5" />
+    <!-- Same theme boot as index.html. theme.css is a chunk shared by every
+         document on this site, so "dark" must be decided the same way here or
+         the shared stylesheet would mean two different things. -->
+    <script>
+      try {
+        if (localStorage.getItem("alice_theme") === "dark") {
+          document.documentElement.dataset.theme = "dark";
+          document.querySelector('meta[name="theme-color"]').setAttribute("content", "#061c31");
+        }
+      } catch (e) {}
+    </script>
+    <!-- Same motion boot as index.html / harbor.html. Missing this script is a
+         silent failure with no error anywhere — the class is simply absent and
+         every html.motion-on rule in the shared stylesheet dies on this page
+         alone. It is copied rather than imported because it has to run before
+         first paint, ahead of any module. -->
+    <script>
+      try {
+        var m = localStorage.getItem("alice_motion");
+        if (m === "on" || (m !== "off" && matchMedia("(prefers-reduced-motion: no-preference)").matches)) {
+          document.documentElement.classList.add("motion-on");
+        }
+      } catch (e) {}
+    </script>
+    <link rel="canonical" href="https://xenithone.github.io/alice-system/gallery.html" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%BASE_URL%assets/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="64x64" href="%BASE_URL%assets/favicon-64.png" />
+    <link rel="apple-touch-icon" href="%BASE_URL%assets/apple-touch-icon.png" />
+    <link rel="manifest" href="%BASE_URL%site.webmanifest" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="ja_JP" />
+    <meta property="og:site_name" content="AlicE sYsTeM" />
+    <meta property="og:title" content="LONG GALLERY // 曲がった回廊" />
+    <meta
+      property="og:description"
+      content="全作品を、曲線の回廊に掛けた WebGPU の3Dギャラリー。スクロールで歩く。"
+    />
+    <meta property="og:url" content="https://xenithone.github.io/alice-system/gallery.html" />
+    <meta
+      property="og:image"
+      content="https://xenithone.github.io/alice-system/assets/gallery/long-gallery-poster.webp"
+    />
+    <meta property="og:image:alt" content="曲がった白い回廊と、壁から振り出された作品の額" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:image"
+      content="https://xenithone.github.io/alice-system/assets/gallery/long-gallery-poster.webp"
+    />
+    <meta name="twitter:title" content="LONG GALLERY // 曲がった回廊" />
+    <meta
+      name="twitter:description"
+      content="全作品を、曲線の回廊に掛けた WebGPU の3Dギャラリー。スクロールで歩く。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Shippori+Mincho:wght@500&family=Space+Mono:wght@400;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/gallery/main.tsx"></script>
+  </body>
+</html>

@@ -38,6 +38,10 @@ export type WorkStatus = "playable" | "released" | "coming-soon" | "in-dev";
 export type Engine =
   | "Three.js"
   | "Three.js + Rapier"
+  /* The WebGPU renderer and TSL, not the WebGL one. A separate name because
+     it is a separate requirement on the reader's machine, and the chip on the
+     card is the only place the site says so. */
+  | "Three.js (WebGPU)"
   | "Unity"
   | "Canvas 2D"
   | "Web Audio"
@@ -296,6 +300,23 @@ export const WORKS: Work[] = [
   },
 
   // ── EXPERIMENTS — playable web toys ─────────────────────────────────────────
+  {
+    id: "long-gallery",
+    title: "LONG GALLERY",
+    titleJa: "曲がった回廊",
+    description:
+      "このサイトの全作品を、一本の曲線に沿って掛けたWebGPUの回廊。スクロールがそのまま歩みになり、額の前で止まるとその作品へ入れる。額は近づくとピントが合う。",
+    href: "gallery.html",
+    cover: "assets/long-gallery-brick.webp",
+    year: "2026",
+    kind: "experience",
+    engine: "Three.js (WebGPU)",
+    platform: ["web"],
+    status: "playable",
+    tags: ["WebGPU", "Scroll", "Depth of Field"],
+    aiTools: ["Claude"],
+    featured: true
+  },
   {
     id: "atelier-adrift",
     title: "ATELIER ADRIFT",
