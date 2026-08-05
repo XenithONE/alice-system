@@ -1,12 +1,13 @@
 import {
+  ACESFilmicToneMapping,
   CapsuleGeometry,
-  Color,
   DirectionalLight,
   Fog,
   Group,
   HemisphereLight,
   Mesh,
   MeshStandardNodeMaterial,
+  PCFSoftShadowMap,
   PerspectiveCamera,
   Scene,
   Vector3,
@@ -18,6 +19,8 @@ import { disposeTree } from "../../gpu/dispose";
 import { FIELD, bladeCount, buildQuality, heightAt, type GpuQuality } from "../field";
 import { buildTerrain, extremes, spawnPoint } from "./terrain";
 import { buildGrass } from "./grass";
+import { buildSky } from "./sky";
+import { buildPost } from "./post";
 import { createWalker, step as walkStep, type Keys } from "./walker";
 
 /**
@@ -85,24 +88,87 @@ export async function createWindFieldWorld(
     hooks.onDeviceLost(String((info as { message?: string }).message ?? "GPU デバイスが失われました"));
   };
   renderer.setPixelRatio(quality.dpr);
+  /*
+   * The single largest visual change in this file.
+   *
+   * The default is NoToneMapping, which writes linear radiance straight into an
+   * sRGB buffer: a sunlit sky clips to flat white and everything under it lives
+   * in the bottom of the range. ACES is what the repo's WebGL scenes already
+   * use (renderEnv.ts) and it is applied here in a separate full-screen pass
+   * that preserves MSAA rather than inline.
+   */
+  renderer.toneMapping = ACESFilmicToneMapping;
+  /*
+   * ⚠ SkyMesh emits physical-scale radiance, not 0..1.
+   *
+   * The first attempt used 0.86 — a sane number for a scene lit by lights you
+   * typed in — and the render came back solid white: sky, grass, avatar, all
+   * of it. three's own sky examples run around 0.5 with the sky alone, and
+   * this scene also takes its ambient from a PMREM bake OF that sky, so the
+   * two stack. The three knobs below are overridable from the query string
+   * because the only way to pick them is to look at the result.
+   */
+  const tune = new URLSearchParams(window.location.search);
+  const num = (key: string, fallback: number): number => {
+    const raw = Number(tune.get(key));
+    return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+  };
+  renderer.toneMappingExposure = num("exp", 0.28);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
   await renderer.init();
 
   const scene = new Scene();
-  const sky = new Color("#a8c8e4");
-  scene.background = sky;
-  scene.fog = new Fog(sky, FIELD.size * 0.35, FIELD.size * 1.25);
+  const camera = new PerspectiveCamera(58, 1, 0.1, FIELD.size * 6);
 
-  const camera = new PerspectiveCamera(58, 1, 0.1, FIELD.size * 2.4);
+  /* The sky is a real object in the scene and also the source of the ambient
+     light, baked into scene.environment. It has to be built before the fog,
+     because the fog takes its colour. */
+  const sky = buildSky(renderer, scene);
+  scene.fog = new Fog(sky.horizon, FIELD.size * 0.45, FIELD.size * 1.9);
 
-  const sun = new DirectionalLight("#fff3dc", 2.4);
-  sun.position.set(-34, 46, 22);
+  /*
+   * One sun that casts, and a small hemisphere fill on top of the environment
+   * map. The fill is a fraction of what it was: with scene.environment doing
+   * the ambient properly, a strong HemisphereLight only flattens it back out.
+   */
+  /* scene.environment carries the ambient now, so the sun is a key light
+     rather than the whole lighting rig, and the fill under it is a whisper. */
+  scene.environmentIntensity = num("env", 0.45);
+  const sun = new DirectionalLight("#fff3dc", num("sun", 2.6));
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  /* An orthographic shadow camera sized to the field. Too large and every
+     blade gets a quarter of a texel; too small and the far side of the island
+     has no shadows at all, which reads as a lighting bug rather than a budget. */
+  const shadowCam = sun.shadow.camera;
+  shadowCam.left = -FIELD.size * 0.62;
+  shadowCam.right = FIELD.size * 0.62;
+  shadowCam.top = FIELD.size * 0.62;
+  shadowCam.bottom = -FIELD.size * 0.62;
+  shadowCam.near = 1;
+  shadowCam.far = FIELD.size * 2.4;
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 0.06;
   scene.add(sun);
-  scene.add(new HemisphereLight("#cfe4f6", "#4a5a34", 1.05));
+  scene.add(sun.target);
+  scene.add(new HemisphereLight("#cfe4f6", "#4a5a34", num("fill", 0.18)));
 
   const ground = new Group();
   scene.add(ground);
   const terrain = await buildTerrain(renderer, ground);
+  terrain.mesh.castShadow = true;
+  terrain.mesh.receiveShadow = true;
   const grass = await buildGrass(renderer, ground, quality, terrain.attribute);
+  /* Grass receives but does not cast. A shadow pass runs the vertex shader for
+     every blade a second time — a million more vertices for silhouettes a
+     metre high. Darkening the roots is cheaper and reads the same. */
+  grass.mesh.receiveShadow = true;
+  grass.mesh.castShadow = false;
+
+  /* Bake the environment now that the renderer is up. Before init() this logs
+     a warning and quietly does nothing. */
+  sky.refresh();
 
   const spawn = spawnPoint(terrain.field);
   const walker = createWalker(spawn.x, spawn.z, terrain.field);
@@ -113,6 +179,8 @@ export async function createWindFieldWorld(
     new CapsuleGeometry(0.24, 0.9, 4, 10),
     new MeshStandardNodeMaterial({ color: "#efe6d4", roughness: 0.8 })
   );
+  avatar.castShadow = true;
+  avatar.receiveShadow = true;
   scene.add(avatar);
 
   /* ── input ────────────────────────────────────────────────────────────── */
@@ -180,6 +248,10 @@ export async function createWindFieldWorld(
   canvas.addEventListener("pointerup", onPointerUp);
   window.addEventListener("blur", onBlur);
 
+  /* Everything is in the scene, so the pass can be built. From here the scene
+     is only ever drawn through the pipeline. */
+  const post = buildPost(renderer, scene, camera);
+
   /* ── frame ────────────────────────────────────────────────────────────── */
   const clock = new FrameClock();
   let last = performance.now();
@@ -217,6 +289,14 @@ export async function createWindFieldWorld(
     const dt = Math.min(deltaMs, 100) / 1000;
     walkStep(walker, keys, cameraYaw, dt, terrain.field);
     place();
+    /* The shadow camera is a box around the sun's direction; parking it on the
+       walker keeps its texels where the reader is rather than spread over a
+       field they are nowhere near. */
+    sun.target.position.set(walker.x, walker.y, walker.z);
+    sun.position
+      .copy(sun.target.position)
+      .addScaledVector(sky.sunDirection, FIELD.size * 0.9);
+    sun.target.updateMatrixWorld();
     grass.update(renderer, walker.x, walker.z, quality.motionScale);
   };
 
@@ -237,7 +317,7 @@ export async function createWindFieldWorld(
       last = now;
       clock.push(delta);
       advance(delta);
-      renderer.render(scene, camera);
+      post.render();
     })
     .catch((error) => {
       if (import.meta.env.DEV) console.warn("Wind field loop stopped.", error);
@@ -254,7 +334,7 @@ export async function createWindFieldWorld(
       if (override) Object.assign(keys, override);
       advance(deltaMs);
       clock.push(deltaMs);
-      await renderer.renderAsync(scene, camera);
+      post.render();
     },
     getDebugState: () => {
       const stats = clock.stats();
@@ -302,6 +382,8 @@ export async function createWindFieldWorld(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       if (window.__windField) delete window.__windField;
+      post.dispose();
+      sky.dispose();
       grass.dispose();
       terrain.dispose();
       disposeTree(scene);
