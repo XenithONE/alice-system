@@ -289,13 +289,28 @@ function g6(): Result {
   const undersized = EXHIBITS.filter((w) => derivativeFor(w.cover, LOD.near, "/").width < LOD.near).map(
     (w) => w.id
   );
-  const ok = worst <= CAP && missing.length === 0 && undersized.length === 0;
+  /*
+   * The base request must resolve to EXACTLY LOD.base, not merely to something.
+   *
+   * derivativeFor returns the narrowest encoded width that is at least the one
+   * asked for, so a cover whose manifest lacks a 400 resolves to, say, 560. The
+   * plate then holds a 560 while the LOD bookkeeping asks for 400, they never
+   * compare equal, and that plate re-issues a load on every single index change
+   * for the rest of the session. Silent, permanent, and invisible until someone
+   * profiles a scroll. The manifest already contains widths like 360 and 560 —
+   * they belong to poster files today, which is one edit away from a cover.
+   */
+  const offBase = EXHIBITS.filter((w) => derivativeFor(w.cover, LOD.base, "/").width !== LOD.base).map(
+    (w) => `${w.id}=${derivativeFor(w.cover, LOD.base, "/").width}`
+  );
+  const ok = worst <= CAP && missing.length === 0 && undersized.length === 0 && offBase.length === 0;
   return {
     ok,
     detail: ok
-      ? `最悪同時 ${(worst / 1048576).toFixed(1)}MB / 上限 40MB（全${COUNT}点が ${LOD.base} と ${LOD.near} を持つ）`
+      ? `最悪同時 ${(worst / 1048576).toFixed(1)}MB / 上限 40MB（全${COUNT}点が ${LOD.base} ちょうどと ${LOD.near} 以上を持つ）`
       : `${(worst / 1048576).toFixed(1)}MB / 派生なし: ${missing.join(",") || "なし"} / ` +
-        `${LOD.near}未満: ${undersized.join(",") || "なし"}`
+        `${LOD.near}未満: ${undersized.join(",") || "なし"} / ` +
+        `${LOD.base}ちょうどに解決しない: ${offBase.join(",") || "なし"}`
   };
 }
 

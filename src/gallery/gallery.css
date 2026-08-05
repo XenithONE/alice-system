@@ -358,6 +358,13 @@ html.cg-live .cg-foot {
 
 html.cg-live .cg-masthead {
   --cg-chrome: var(--bg);
+  /*
+   * And the blur goes with it. The ground above is fully opaque here, so the
+   * compositor was blurring a backdrop nobody could see — every scroll frame,
+   * for nothing. backdrop-filter is not free just because its result is
+   * invisible.
+   */
+  backdrop-filter: none;
 }
 
 /* ── the wall label ──────────────────────────────────────────────────────

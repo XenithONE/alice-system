@@ -151,7 +151,22 @@ const load = () => Promise.resolve(loadCorridor);
  * failures, because the auditor skips any element sitting on a
  * background-image.
  */
-function WallLabel({ index, hovered }: { index: number; hovered: number }) {
+function WallLabel() {
+  /*
+   * This component subscribes to the corridor itself rather than taking props.
+   *
+   * It used to be state on GalleryPage, which meant every change of active
+   * frame — and every hover — re-rendered the seventeen-row catalogue below:
+   * about two hundred elements reconciled, plus cardArt() and primaryCta()
+   * recomputed for all seventeen, in the SAME tick as the texture promotion.
+   * Two costs that had nothing to do with each other, landing together, at
+   * exactly the moment the reader saw a hitch.
+   */
+  const [index, setIndex] = useState(0);
+  const [hovered, setHovered] = useState(-1);
+  useEffect(() => watchIndex(ACTIVE_EVENT, setIndex), []);
+  useEffect(() => watchIndex(HOVER_EVENT, setHovered), []);
+
   /* What the pointer is over wins over where the reader is standing: the
      label should answer "what is this one" while they are reaching for it. */
   const shown = hovered >= 0 ? hovered : index;
@@ -173,12 +188,7 @@ function WallLabel({ index, hovered }: { index: number; hovered: number }) {
 export function GalleryPage() {
   const motion = useMotion();
   const [gpu, setGpu] = useState<GpuState>({ kind: "idle" });
-  const [active, setActive] = useState(0);
-  const [hovered, setHovered] = useState(-1);
   const onState = useCallback((next: GpuState) => setGpu(next), []);
-
-  useEffect(() => watchIndex(ACTIVE_EVENT, setActive), []);
-  useEffect(() => watchIndex(HOVER_EVENT, setHovered), []);
 
   /*
    * Tabbing through the catalogue walks the corridor.
@@ -210,6 +220,15 @@ export function GalleryPage() {
           ? { kind: "failed" }
           : { kind: "catalogue" };
   const live = status.kind === "live";
+  /*
+   * While the probe and the renderer boot, `status` is "catalogue" and the rows
+   * render their <img>. Measured on the live page, that fetched four covers at
+   * 720 — a width nothing on this page draws — and threw them away the instant
+   * cg-live arrived, having spent the bandwidth and the decode slot at exactly
+   * the moment the corridor was uploading its own textures. Wait until the
+   * answer is known.
+   */
+  const settled = status.kind !== "catalogue";
 
   return (
     <div className="cg">
@@ -247,7 +266,7 @@ export function GalleryPage() {
         )}
       </section>
 
-      {live && <WallLabel index={active} hovered={hovered} />}
+      {live && <WallLabel />}
 
       <ol className="cg-list" id="cg-catalogue" aria-label={`作品${TOTAL}点`}>
         {EXHIBITS.map((work, i) => {
@@ -269,7 +288,7 @@ export function GalleryPage() {
                    * invisible <img> in the tree would fetch every cover a
                    * second time at a width nothing draws.
                    */}
-                  {!live && (
+                  {settled && !live && (
                     <img
                       src={art.src}
                       srcSet={art.srcSet || undefined}

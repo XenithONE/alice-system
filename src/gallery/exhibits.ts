@@ -94,7 +94,16 @@ export function gpuBytes(width: number, height: number): number {
   return Math.round(width * height * 4 * (4 / 3));
 }
 
-/** The most GPU memory the wall can be holding at once. */
+/**
+ * The most GPU memory the wall can be holding at once.
+ *
+ * Every plate keeps its small texture for the life of the page, and the window
+ * adds a large one on top. That is a change from the first version, which
+ * REPLACED the small with the large and charged only the difference — cheaper
+ * on paper, and the reason demoting a plate cost a fetch, a decode, an upload
+ * and ten mipmap passes for a file it had held a moment earlier. Holding
+ * 17 x 0.53 MB permanently is what buys a free demotion.
+ */
 export function worstCaseTextureBytes(count: number = EXHIBITS.length, base = "/"): number {
   const promoted = Math.min(count, LOD.window * 2 + 1);
   let total = 0;
@@ -103,9 +112,7 @@ export function worstCaseTextureBytes(count: number = EXHIBITS.length, base = "/
     total += gpuBytes(small.width, small.height);
     if (i < promoted) {
       const large = derivativeFor(work.cover, LOD.near, base);
-      /* The promoted plate replaces its small texture rather than adding to
-         it, so only the difference is charged. */
-      total += gpuBytes(large.width, large.height) - gpuBytes(small.width, small.height);
+      total += gpuBytes(large.width, large.height);
     }
   });
   return total;

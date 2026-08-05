@@ -290,9 +290,9 @@ export async function createGalleryWorld(canvas: HTMLCanvasElement, hooks: GpuHo
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
     measure();
+    measureCanvas();
   };
   window.addEventListener("resize", resize, { passive: true });
-  resize();
 
   /* ── picking ──────────────────────────────────────────────────────────── */
   /*
@@ -310,11 +310,31 @@ export async function createGalleryWorld(canvas: HTMLCanvasElement, hooks: GpuHo
   let pointerInside = false;
   let hovered = -1;
 
-  const onPointerMove = (event: PointerEvent): void => {
+  /*
+   * The canvas rectangle, cached.
+   *
+   * The pointer handler used to call getBoundingClientRect() on every move —
+   * a forced layout flush of a 10,540 px document, a few hundred times a
+   * second while the mouse crosses a scrolling page. The canvas is fixed and
+   * fills the viewport, so the rect only changes when the viewport does, and
+   * resize() already runs then.
+   */
+  let rectLeft = 0;
+  let rectTop = 0;
+  let rectWidth = 1;
+  let rectHeight = 1;
+  const measureCanvas = (): void => {
     const rect = canvas.getBoundingClientRect();
+    rectLeft = rect.left;
+    rectTop = rect.top;
+    rectWidth = Math.max(1, rect.width);
+    rectHeight = Math.max(1, rect.height);
+  };
+
+  const onPointerMove = (event: PointerEvent): void => {
     pointer.set(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1
+      ((event.clientX - rectLeft) / rectWidth) * 2 - 1,
+      -((event.clientY - rectTop) / rectHeight) * 2 + 1
     );
     pointerInside = true;
   };
@@ -330,6 +350,10 @@ export async function createGalleryWorld(canvas: HTMLCanvasElement, hooks: GpuHo
   canvas.addEventListener("pointermove", onPointerMove, { passive: true });
   canvas.addEventListener("pointerleave", onPointerLeave, { passive: true });
   canvas.addEventListener("click", onClick);
+
+  /* resize() reads measureCanvas, which is declared just above, so the first
+     call has to come after both exist rather than at the definition site. */
+  resize();
 
   const pick = (): void => {
     let next = -1;
@@ -429,6 +453,17 @@ export async function createGalleryWorld(canvas: HTMLCanvasElement, hooks: GpuHo
   /* Standing at the reader's actual scroll position before the first frame,
      so arriving mid-page does not start at the entrance and fly. */
   place();
+
+  /*
+   * Build the pipelines before the first frame, not during one.
+   *
+   * three takes the SYNCHRONOUS device.createRenderPipeline on the normal draw
+   * path; createRenderPipelineAsync is only reached when a compile is driven
+   * from compileAsync(). Doing it here puts that cost inside the boot await —
+   * where the page is still showing the catalogue — instead of inside whichever
+   * frame first draws a new material.
+   */
+  await renderer.compileAsync(scene, camera);
   await render();
 
   return {
