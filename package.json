@@ -9,7 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "sitemap": "npx tsx scripts/sitemap.ts",
-    "site:gates": "npx tsx src/portfolio/bentoSelftest.ts && npx tsx scripts/cssSelftest.ts && npx tsx src/portfolio/qualitySelftest.ts && npm run gallery:gates && npx tsx scripts/fonts.ts --check && npx tsx scripts/sitemap.ts --check && python scripts/optimize_covers.py --check && node scripts/measure_closure.mjs",
+    "site:gates": "npx tsx src/portfolio/bentoSelftest.ts && npx tsx scripts/cssSelftest.ts && npx tsx src/portfolio/qualitySelftest.ts && npm run gallery:gates && npm run windfield:gates && npx tsx scripts/fonts.ts --check && npx tsx scripts/sitemap.ts --check && python scripts/optimize_covers.py --check && node scripts/measure_closure.mjs",
     "vortex:content-gates": "npx tsx src/vortex/content/gates.ts && npx tsx src/vortex/content/fxSelftest.ts && npx tsx src/vortex/audio/selftest.ts",
     "vortex:endless-gates": "npx tsx src/vortex/endless/selftest.ts",
     "vortex:launch-gates": "npx tsx src/vortex/launch/selftest.ts",
@@ -32,7 +32,8 @@
     "kart:budget-gates": "npx tsx src/kart/render/budgetSelftest.ts",
     "kart:audio-gates": "npx tsx src/kart/audio/audioSelftest.ts",
     "kart:modes-gates": "npx tsx src/kart/modes/modesSelftest.ts",
-    "gallery:gates": "npx tsx src/gallery/gallerySelftest.ts"
+    "gallery:gates": "npx tsx src/gallery/gallerySelftest.ts",
+    "windfield:gates": "npx tsx src/windfield/fieldSelftest.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",

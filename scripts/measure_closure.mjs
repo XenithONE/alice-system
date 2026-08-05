@@ -48,7 +48,8 @@ const BANNED = {
   ],
   "harbor.html": [/^spark\.module-/, /^rapier-/],
   "atelier.html": [/^spark\.module-/, /^rapier-/],
-  "gallery.html": [/^spark\.module-/, /^rapier-/]
+  "gallery.html": [/^spark\.module-/, /^rapier-/],
+  "windfield.html": [/^spark\.module-/, /^rapier-/]
 };
 
 /**
@@ -148,7 +149,8 @@ const REQUIRED = {
   /* The corridor. three/webgpu currently gets inlined into the page's own
      world chunk rather than emitted as three.webgpu-*, so the core is what
      proves the renderer is still reachable. */
-  "gallery.html": /^three\.core-/
+  "gallery.html": /^three\.core-/,
+  "windfield.html": /^three\.core-/
 };
 for (const [page, re] of Object.entries(REQUIRED)) {
   const row = report.find((r) => r.page === page);

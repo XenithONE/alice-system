@@ -301,6 +301,22 @@ export const WORKS: Work[] = [
 
   // ── EXPERIMENTS — playable web toys ─────────────────────────────────────────
   {
+    id: "wind-field",
+    title: "WIND FIELD",
+    titleJa: "歩ける草原",
+    description:
+      "百万本の草がコンピュートシェーダで揺れる、歩けるWebGPUの草原。地形も風も毎フレームGPUが計算し、足元の高さと草の根元は同じ配列から来る。",
+    href: "windfield.html",
+    cover: "assets/wind-field-brick.webp",
+    year: "2026",
+    kind: "experience",
+    engine: "Three.js (WebGPU)",
+    platform: ["web"],
+    status: "playable",
+    tags: ["WebGPU", "Compute", "Walkable"],
+    aiTools: ["Claude"]
+  },
+  {
     id: "long-gallery",
     title: "LONG GALLERY",
     titleJa: "曲がった回廊",

@@ -1,0 +1,160 @@
+/*
+ * WIND FIELD. Scoped to .wf-* and rendered on windfield.html alone; tokens and
+ * chrome come from theme.css + portfolio.css, exactly as the gallery does.
+ *
+ * Two shapes from one DOM, like the gallery: without html.wf-live this is a
+ * finished page about a field that describes what the field does and shows a
+ * real render of it. With it, the canvas takes the viewport and the same text
+ * becomes the instructions.
+ */
+.wf {
+  min-height: 100svh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--jp);
+}
+
+.wf-stage {
+  position: relative;
+  height: 100svh;
+  background: #a8c8e4;
+}
+
+.wf-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+  cursor: grab;
+  opacity: 0;
+  transition: opacity var(--dur-5) var(--ease-out);
+}
+
+.wf-canvas:active { cursor: grabbing; }
+html.wf-live .wf-canvas { opacity: 1; }
+
+/*
+ * Without the world the stage collapses — and the canvas has to GO, not just
+ * be transparent. A <canvas> with no CSS height falls back to its intrinsic
+ * 300x150 ratio, which at a 1280 viewport is a 640px empty blue box above the
+ * text. Measured, on the page that was otherwise a perfect fallback.
+ */
+html:not(.wf-live) .wf-stage { height: auto; min-height: 0; background: transparent; }
+html:not(.wf-live) .wf-canvas { display: none; }
+/* The chrome cannot stay absolute inside a collapsed stage or it lands on top
+   of the heading. */
+html:not(.wf-live) .wf-chrome { position: static; padding-top: 18px; }
+
+.wf-chrome {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px var(--gutter);
+  pointer-events: none;
+}
+
+.wf-chrome > * { pointer-events: auto; }
+
+.wf-back {
+  font-family: var(--mono);
+  font-size: var(--t--1);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: rgb(var(--ground-rgb) / 0.9);
+  padding: 7px 12px;
+  border: 1px solid var(--hairline);
+}
+
+/* A solid card over the field. Type on grass has no ground a contrast audit
+   can measure, and the v14 glass plates proved what that costs. */
+.wf-keys {
+  position: absolute;
+  z-index: 3;
+  left: var(--gutter);
+  bottom: clamp(18px, 4vh, 40px);
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--accent-ink);
+  box-shadow: var(--elev-2);
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  line-height: 1.9;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.wf-keys b { color: var(--ink); font-weight: 700; }
+.wf-keys p { margin: 0; }
+
+.wf-copy {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: clamp(40px, 7vw, 96px) var(--gutter) clamp(56px, 9vw, 120px);
+}
+
+.wf-eyebrow {
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.wf-title {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(2.6rem, 1.4rem + 5vw, 6rem);
+  line-height: 0.94;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.wf-sub { margin: 6px 0 0; font-family: var(--serif); font-size: var(--t-2); color: var(--text-dim); }
+.wf-lede { margin: 22px 0 0; max-width: 34em; font-size: var(--t-1); line-height: 1.85; }
+.wf-note {
+  margin: 18px 0 0;
+  padding: 12px 16px;
+  max-width: 34em;
+  border-left: 2px solid var(--hairline-strong);
+  background: var(--paper);
+  color: var(--ink-paper-soft);
+  font-size: var(--t--1);
+  line-height: 1.8;
+}
+
+.wf-tech { margin: 26px 0 0; max-width: 40em; }
+.wf-tech dt {
+  margin-top: 14px;
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.wf-tech dd { margin: 4px 0 0; font-size: var(--t--1); line-height: 1.9; color: var(--text); }
+
+.wf-poster { margin: 26px 0 0; max-width: 44em; border: 1px solid var(--hairline); box-shadow: var(--elev-1); }
+.wf-poster img { display: block; width: 100%; height: auto; }
+.wf-poster figcaption {
+  padding: 8px 12px;
+  border-top: 1px solid var(--hairline);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: var(--t--2);
+  color: var(--text-faint);
+}
+
+@media (max-width: 620px) {
+  .wf-keys { left: 0; right: 0; bottom: 0; border-left-width: 1px; border-top: 2px solid var(--accent-ink); }
+}
