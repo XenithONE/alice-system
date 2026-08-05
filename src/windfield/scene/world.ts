@@ -20,6 +20,7 @@ import { FIELD, bladeCount, buildQuality, heightAt, type GpuQuality } from "../f
 import { buildTerrain, extremes, spawnPoint } from "./terrain";
 import { buildGrass } from "./grass";
 import { buildSky } from "./sky";
+import { buildWater } from "./water";
 import { buildPost } from "./post";
 import { createWalker, step as walkStep, type Keys } from "./walker";
 
@@ -125,7 +126,16 @@ export async function createWindFieldWorld(
      light, baked into scene.environment. It has to be built before the fog,
      because the fog takes its colour. */
   const sky = buildSky(renderer, scene);
-  scene.fog = new Fog(sky.horizon, FIELD.size * 0.45, FIELD.size * 1.9);
+    /*
+   * Haze over kilometres, not over the island.
+   *
+   * The first values (43 m to 182 m) were sized for a field you could see the
+   * far edge of. With a sea running out to 672 m they fogged the whole ocean to
+   * flat grey and left a hard line where the water ended and the unfogged sky
+   * began — the horizon read as a torn edge. The sea has to fade over its own
+   * length for the horizon to dissolve.
+   */
+  scene.fog = new Fog(sky.horizon, FIELD.size * 1.6, FIELD.size * 8.5);
 
   /*
    * One sun that casts, and a small hemisphere fill on top of the environment
@@ -165,6 +175,9 @@ export async function createWindFieldWorld(
      metre high. Darkening the roots is cheaper and reads the same. */
   grass.mesh.receiveShadow = true;
   grass.mesh.castShadow = false;
+
+  /* The sea, reading the same heightfield the island was built from. */
+  const water = buildWater(scene, terrain.attribute);
 
   /* Bake the environment now that the renderer is up. Before init() this logs
      a warning and quietly does nothing. */
@@ -298,6 +311,7 @@ export async function createWindFieldWorld(
       .addScaledVector(sky.sunDirection, FIELD.size * 0.9);
     sun.target.updateMatrixWorld();
     grass.update(renderer, walker.x, walker.z, quality.motionScale);
+    water.update(quality.motionScale);
   };
 
   const resize = (): void => {
@@ -383,6 +397,7 @@ export async function createWindFieldWorld(
       canvas.removeEventListener("pointerup", onPointerUp);
       if (window.__windField) delete window.__windField;
       post.dispose();
+      water.dispose();
       sky.dispose();
       grass.dispose();
       terrain.dispose();

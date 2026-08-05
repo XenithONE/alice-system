@@ -145,7 +145,22 @@ export async function buildGrass(
     const y = mix(mix(h00, h10, tx), mix(h01, h11, tx), tz);
 
     const varyN = mx_noise_float(vec2(x.mul(0.21), z.mul(0.21))).mul(0.5).add(0.5);
-    const height = float(BLADE.height).mul(float(1 - BLADE.vary / 2).add(varyN.mul(BLADE.vary)));
+    /*
+     * ── grass does not grow in the sea, and it thins on the sand ──────────
+     *
+     * Height is scaled by how far above the waterline the blade's own root is,
+     * read from the SAME heightfield the walker stands on. A blade below sea
+     * level gets height zero, which collapses its three triangles to a point
+     * and costs a degenerate triangle rather than a branch — and because the
+     * threshold is the water's own level rather than a painted mask, the grass
+     * line follows every bay in the coast without being told the coast exists.
+     */
+    const shoreFade = y.smoothstep(0.35, 2.2);
+    const patchy = mx_noise_float(vec2(x.mul(0.13), z.mul(0.13))).mul(0.5).add(0.62).clamp(0, 1);
+    const height = float(BLADE.height)
+      .mul(float(1 - BLADE.vary / 2).add(varyN.mul(BLADE.vary)))
+      .mul(shoreFade)
+      .mul(patchy);
     layout.element(i).assign(vec4(x, y, z, height));
 
     const angle = mx_noise_float(vec2(x.mul(1.7), z.mul(1.7))).mul(3.14159);

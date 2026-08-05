@@ -9,7 +9,18 @@ import {
   type Object3D,
   type WebGPURenderer
 } from "three/webgpu";
-import { Fn, float, instanceIndex, mx_fractal_noise_float, storage, vec2 } from "three/tsl";
+import {
+  Fn,
+  float,
+  instanceIndex,
+  mix,
+  mx_fractal_noise_float,
+  normalWorld,
+  positionWorld,
+  storage,
+  vec2,
+  vec3
+} from "three/tsl";
 import { FIELD, cellSize } from "../field";
 
 /**
@@ -69,7 +80,46 @@ export async function buildTerrain(renderer: WebGPURenderer, parent: Object3D): 
        the hills noisier without making them any more like hills. */
     const broad = mx_fractal_noise_float(vec2(x.mul(BROAD), z.mul(BROAD)), 4, 2, 0.5, 1);
     const fine = mx_fractal_noise_float(vec2(x.mul(FINE), z.mul(FINE)), 3, 2, 0.55, 1);
-    const h = broad.mul(FIELD.relief * 0.5).add(fine.mul(FIELD.relief * 0.08));
+
+    /*
+     * ── the island ────────────────────────────────────────────────────────
+     *
+     * A radial profile multiplied into the noise, not added to it. Adding a
+     * dome to FBM gives you a hill with the same roughness everywhere,
+     * including out at sea where there is nothing to be rough; multiplying
+     * makes the land carry the detail and the sea floor go quiet, which is
+     * also what a real bathymetry looks like.
+     *
+     * The coastline is deliberately NOT a circle. `wobble` pushes the radius
+     * in and out with angle, so the shore has bays and points instead of
+     * reading as a coin dropped in a bath — and because it is a function of
+     * the same x and z, the beach, the grass line and the water depth all
+     * bend together without any of them being told about the others.
+     */
+    const r = vec2(x, z).length().div(FIELD.size * 0.5);
+    const angle = z.atan(x);
+    const wobble = angle
+      .mul(3)
+      .sin()
+      .mul(0.055)
+      .add(angle.mul(5).add(1.7).sin().mul(0.032))
+      .add(angle.mul(2).sub(0.6).sin().mul(0.045));
+    const shore = float(FIELD.shore).add(wobble);
+    /* 1 well inside the shore, 0 well outside it. The two smoothstep edges are
+       what make the beach a BAND rather than a line — the land tapers into the
+       water over about four metres, which is where the foam and the wet sand
+       will live. */
+    const land = r.smoothstep(shore.add(0.1), shore.sub(0.22));
+
+    /*
+     * Height above sea level. The summit is `relief`, the rim is `-depth`, and
+     * the waterline falls wherever `land` crosses the balance point — it is
+     * never written down, which is why the beach cannot drift away from the
+     * water when either constant is retuned.
+     */
+    const above = broad.mul(0.5).add(0.62).mul(FIELD.relief).add(fine.mul(FIELD.relief * 0.09));
+    const below = float(FIELD.depth).mul(r.smoothstep(shore.sub(0.05), 1.05)).negate();
+    const h = above.mul(land).add(below.mul(land.oneMinus()));
     heights.element(instanceIndex).assign(h);
   })().compute(posts);
 
@@ -138,11 +188,52 @@ export async function buildTerrain(renderer: WebGPURenderer, parent: Object3D): 
   geometry.setIndex(new BufferAttribute(index, 1));
   geometry.computeBoundingSphere();
 
-  const material = new MeshStandardNodeMaterial({
-    color: "#5d7a44",
-    roughness: 0.97,
-    metalness: 0
+  /*
+   * ── one surface, four materials ────────────────────────────────────────
+   *
+   * Sand at the waterline, grass above it, rock where it is too steep for
+   * either, and wet sand in the band the water reaches. Blended in the shader
+   * from the SAME height the walker stands on (positionWorld.y) and the same
+   * normal the mesh was built with — not from a painted mask, which would be a
+   * second description of where the beach is and would slide off it the first
+   * time anyone retuned FIELD.shore.
+   *
+   * Roughness varies with the blend too. Wet sand is the only smooth thing on
+   * the island and it is what makes the tideline read as wet rather than as a
+   * darker sand.
+   */
+  const material = new MeshStandardNodeMaterial({ metalness: 0 });
+  const groundBlend = Fn(() => {
+    const h = positionWorld.y;
+    const steep = normalWorld.y.oneMinus();
+    /* Grain, so a 22 m beach is not one flat colour. */
+    const grain = mx_fractal_noise_float(
+      vec2(positionWorld.x.mul(0.9), positionWorld.z.mul(0.9)),
+      3,
+      2,
+      0.5,
+      1
+    )
+      .mul(0.5)
+      .add(0.5);
+
+    const wetSand = vec3(0.28, 0.235, 0.19);
+    const drySand = vec3(0.78, 0.71, 0.56);
+    const turf = vec3(0.2, 0.3, 0.13);
+    const rock = vec3(0.36, 0.34, 0.31);
+
+    /* Underwater and the splash zone are wet; the dry beach runs from about
+       ankle height to knee height above the water. */
+    const sand = mix(wetSand, drySand, h.smoothstep(-0.15, 0.85));
+    const withTurf = mix(sand, turf, h.smoothstep(0.7, 2.1));
+    const withRock = mix(withTurf, rock, steep.smoothstep(0.26, 0.52));
+    return withRock.mul(grain.mul(0.22).add(0.89));
   });
+  material.colorNode = groundBlend();
+  material.roughnessNode = Fn(() => {
+    /* Wet sand reflects; dry sand and turf do not. */
+    return float(0.42).add(positionWorld.y.smoothstep(-0.1, 0.9).mul(0.55));
+  })();
   const mesh = new Mesh(geometry, material);
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();

@@ -25,9 +25,22 @@ export const FIELD = {
    * exactly once, and 522,242 triangles of ground.
    */
   grid: 512,
-  /** Peak-to-trough of the terrain, metres. */
-  relief: 5.2
+  /** How high the island stands above the water at its summit, metres. */
+  relief: 6.4,
+  /** How deep the sea floor drops at the far edge of the field, metres. */
+  depth: 7.5,
+  /**
+   * Where the land ends, as a fraction of the half-width.
+   *
+   * 0.46 puts the waterline about 22 m from the centre and leaves 26 m of
+   * open water inside the field before the edge — enough that the horizon is
+   * sea from anywhere on the island, which is the whole point of an islet.
+   */
+  shore: 0.46
 } as const;
+
+/** Sea level. Everything is measured from it, including the walker. */
+export const SEA_LEVEL = 0;
 
 export const cellSize = (): number => FIELD.size / (FIELD.grid - 1);
 
